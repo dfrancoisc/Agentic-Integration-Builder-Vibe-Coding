@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="25">
+<Document name="agentic-interop.ZPM">
+<Module>
+<Name>agentic-interop</Name>
+<Version>0.1.0</Version>
+<Description>Configuration-driven AI Copilot for InterSystems IRIS for Health. Built on the %AI Framework. Namespace-agnostic — installs into the namespace where zpm load is run.</Description>
+<Keywords>iris ai copilot mcp interop fhir hl7</Keywords>
+<Packaging>module</Packaging>
+<SourcesRoot>src</SourcesRoot>
+
+<!-- Phase 0+ will register classes via this resource declaration.
+     Leaving the body empty for the first commit; Phase 0 fills it in
+     once the AgenticInterop.* package is scaffolded. -->
+<Resource Name="AgenticInterop.PKG"/>
+
+<!-- Phase 0+ will add CSPApplication entries here for /agentic (static UI)
+     and /api/agentic (REST). Both will be created in the namespace where
+     zpm load runs (no <Namespace> override) per the namespace-agnostic
+     restriction in docs/PLAN.md. UseSession=0 on every CSP app to avoid
+     the iframe-fetch deadlock documented in the framework skills. -->
+
+</Module>
+</Document>
+</Export>

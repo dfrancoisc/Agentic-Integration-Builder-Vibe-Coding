@@ -1,0 +1,211 @@
+# agentic_interop — Architecture and Build Plan
+
+This document is the source of truth for what we are building, what constraints apply, and what order things happen in. Updated at every phase boundary. Supersedes any prior kickoff spec where they conflict.
+
+## What this is
+
+A configuration-driven AI Copilot for IRIS for Health. The end user opens a chatbot mounted into a post-login Angular page, asks questions in natural language about Productions, Transformations, HL7, and FHIR, and the copilot uses tools backed by IRIS to answer or act. Everything (Agents, MCP groupings, Toolsets, Tools, Skills, LLM Providers) is configurable through an admin UI — no code edits to add a tool or change a model.
+
+Single agent in v1, named Health Interop. Multi-agent supported by data model from day one.
+
+## Restrictions (immutable)
+
+These are user-set rules captured at kickoff. Any deviation must be documented inline below the section it affects, with rationale.
+
+1. Always use the %AI Framework. If a bug forces something off-framework, document the deviation here.
+2. Runtime LLM separation. The chatbot uses whatever Provider the IRIS administrator configures via the admin UI. Claude Code's dev assistance is a separate connection — only acts on the chatbot when explicitly asked.
+3. No icon on the IRIS login page. The chatbot launcher appears only on post-login Angular pages.
+4. IPM-compliant from day one. Another developer must be able to clone the repo and `zpm load` into a clean IRIS for Health instance with no machine-specific paths anywhere.
+5. Always commit changes to GitHub.
+6. README current at every phase boundary.
+7. Namespace-agnostic. Code must not hardcode a namespace. Detect `$namespace` at request time, respect it, display it in the chatbot UI for user verification.
+
+## Architecture
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│  Customer Angular page (post-login)                              │
+│  ┌──────────────────────────────────────────────────────────┐    │
+│  │  React chatbot bundle (mounted via window.AgenticInterop │    │
+│  │  .mount(rootEl, {namespace, ...})). Admin UI mounted     │    │
+│  │  separately at /agentic/admin/.                          │    │
+│  └──────────────────────────────────────────────────────────┘    │
+└──────────────────────────────────────┬───────────────────────────┘
+                                       │ REST + SSE
+                                       ▼
+┌──────────────────────────────────────────────────────────────────┐
+│  IRIS for Health (any namespace where zpm load was run)          │
+│                                                                  │
+│  CSP web apps (created at install time):                         │
+│    /agentic/        — static React bundle (Type 1 CSP app)       │
+│    /api/agentic/    — REST (Type 2, UseSession=0)                │
+│                                                                  │
+│  AgenticInterop.REST.Dispatch reads X-IRIS-Namespace header,     │
+│  validates user has access, does `new $namespace` to honor it.   │
+│                                                                  │
+│  ┌────────────────────────────────────────────────────────────┐  │
+│  │  AgenticInterop.Agent.HealthInterop (extends %AI.Agent)    │  │
+│  │  • System prompt: includes Skills + active $namespace      │  │
+│  │  • Provider: %AI.Provider, configured per Provider row     │  │
+│  │  • ToolManager: %AI.ToolMgr                                │  │
+│  └────────────────────────────────────────────────────────────┘  │
+│                                ▼                                 │
+│  ┌────────────────────────────────────────────────────────────┐  │
+│  │  Four logical "MCP groupings" — surfaced to admin UI as    │  │
+│  │  MCP rows; backed at runtime by direct ToolSet calls       │  │
+│  │  (no HTTP loopback). Each grouping is one %AI.ToolSet:     │  │
+│  │   • AgenticInterop.ToolSet.Production                      │  │
+│  │   • AgenticInterop.ToolSet.Transform                       │  │
+│  │   • AgenticInterop.ToolSet.Testing                         │  │
+│  │   • AgenticInterop.ToolSet.Catalog                         │  │
+│  └────────────────────────────────────────────────────────────┘  │
+│                                ▼                                 │
+│  ┌────────────────────────────────────────────────────────────┐  │
+│  │  Tool implementations (per-row in Tool table):             │  │
+│  │   • SQL                                                    │  │
+│  │   • ObjectScript class methods                             │  │
+│  │   • Embedded Python class methods                          │  │
+│  │   • REST wrappers                                          │  │
+│  │  Dispatched by AgenticInterop.Tool.* executors.            │  │
+│  └────────────────────────────────────────────────────────────┘  │
+│                                ▼                                 │
+│  IRIS native stores in current namespace:                        │
+│   • Secured Wallet (LLM API keys)                                │
+│   • SQL tables (config rows, conversations, audit)               │
+│   • Vector tables (catalog.ens, catalog.hs — FastEmbed 384d)     │
+│   • Live Productions / DTL / BPL the agent operates on           │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+Binding rules enforced by the data model:
+- Agent (1) → MCP groupings (N)
+- MCP grouping (1) → Toolsets (N)
+- Toolset (1) → Tools (N)
+- Skill (N) ↔ Agent (N)
+- Provider (1) → Agent (N)
+
+The MCP layer is a logical grouping for admin UX; runtime calls go straight from `%AI.ToolMgr` to the bound `%AI.ToolSet` classes (decided in this conversation — see ai-hub-mcp skill rationale).
+
+## Data model
+
+All persistent classes extend `%Persistent` and `%JSON.Adaptor`. Stored in the install namespace. See docs/MIGRATION.md for the class-by-class file map.
+
+| Class | Purpose |
+|---|---|
+| AgenticInterop.Data.Provider | LLM provider config + Wallet ref + semaphore status |
+| AgenticInterop.Data.Agent | Agent config, system prompt, model, temperature, references to MCPs and Skills |
+| AgenticInterop.Data.MCPServer | Logical MCP grouping (UI label only, no HTTP) |
+| AgenticInterop.Data.Toolset | Maps to a runtime %AI.ToolSet class |
+| AgenticInterop.Data.Tool | Tool definition: name, description, schema, implementation kind, body, timeout, requires-confirmation |
+| AgenticInterop.Data.Skill | Markdown injected into agent system prompt |
+| AgenticInterop.Data.Conversation | Chat session header |
+| AgenticInterop.Data.Message | Chat message rows |
+| AgenticInterop.Data.ToolInvocation | Audit trail per tool call |
+
+## Provider strategy
+
+The %AI.Provider abstraction means the app is provider-agnostic. The customer picks via admin UI; the system swaps with no code change.
+
+Reference dev provider: Anthropic direct (`provider.Create("anthropic", {"api_key": "@{wallet.AgenticInteropSecrets.AnthropicKey}"})`). Confirmed working with %AI.Agent tool calls in 2026.2 AI 162.0.
+
+Bedrock: configurable via the same admin UI. KNOWN ISSUE — the %AI.Agent tool-result round-trip hangs at the Rust HTTP layer when sending a `tool_result` message back to Bedrock. Reproduces on `agent.Run()` and `agent.StreamChat()`, model-independent and endpoint-independent. Open WRC ticket; root cause below the ObjectScript surface, so we cannot patch it from app code. Bedrock chat-without-tools works fine. The Provider table will accept Bedrock rows from day one; the chat will hang on the first tool call until the upstream fix lands.
+
+Azure OpenAI: configurable, untested in this project; expected to work with tools per ai-hub-framework capability matrix.
+
+LLM testing during development: live testing happens in the admin UI with the user's own API key. Unit tests use a mocked Provider stub so CI doesn't depend on external services.
+
+## Catalogs
+
+Two FastEmbed-backed `%AI.RAG.KnowledgeBase` instances. FastEmbed is bundled (no API key, 384-dim, AllMiniLML6V2 ONNX), satisfying restriction "no external dependencies for core functionality".
+
+| Catalog | Tool name | Rows | Used by |
+|---|---|---|---|
+| catalog.ens | search_ens | ~180 | ToolSet.Production, ToolSet.Testing |
+| catalog.hs  | search_hs  | ~50  | ToolSet.Transform, ToolSet.Testing |
+
+Source data: `InterSystems_IRIS_Health_Complete_Class_Catalog.xlsx` (13 sheets, 8-column schema: Class Name, Namespace, Package, Type, Abstract, Purpose, When to Use, Key Settings). Classification per-row by Namespace/Package column rather than by sheet, since some sheets straddle both catalogs. The XLS is shipped as a seed under `seeds/` in the repo; ingest is idempotent and triggerable from the admin UI.
+
+The vector tables are created in the install namespace (per restriction 7). Multi-namespace customers get one catalog per install.
+
+## Build phases
+
+Each phase ends with a working slice and a commit + push to dfrancoisc/agentic_interop. README updated at every phase boundary (restriction 6).
+
+### Phase 0 — Skeleton + IPM compliance
+- Repo structure under `src/cls/AgenticInterop/...` matching MIGRATION.md
+- module.xml registers the package and creates two CSP apps (`/agentic/`, `/api/agentic/`)
+- AgenticInterop.REST.Dispatch with a `/health` route returning `{"ok": true, "namespace": "<current>"}`
+- AgenticInterop.REST.NamespaceAPI returning the current `$namespace`
+- Sample host HTML under `src/csp/agentic/index.html` that loads the React bundle (placeholder content for now)
+- README install instructions verified by uninstalling + reinstalling on iris-agentic
+- Definition of done: `zpm "load ."` from a clean IRIS namespace creates the apps; `curl http://localhost:22773/api/agentic/health` returns 200 with namespace info.
+
+### Phase 1 — Data model + Provider config + semaphore
+- All Data.* classes
+- AgenticInterop.Wallet.Vault (helpers around %Wallet.KeyValue)
+- AgenticInterop.Provider.Factory (Provider row → %AI.Provider)
+- ProviderAPI: CRUD + healthcheck + secret-write endpoints
+- React admin page for Providers with semaphore (green/red/unknown)
+- Definition of done: configure Anthropic provider through UI, click Save and test, see green semaphore.
+
+### Phase 2 — Single ToolSet + non-streaming chat
+- AgenticInterop.ToolSet.Catalog with a stub `search_ens(query)` returning fake data
+- AgenticInterop.Agent.HealthInterop wired to the Anthropic provider
+- AgenticInterop.Agent.Manager + Runtime + Monitor (iteration deadline, token budget, no streaming yet)
+- ChatAPI returning full response (non-SSE)
+- Definition of done: ask the chatbot a question, see it call `search_ens`, see the answer.
+
+### Phase 3 — Streaming + tool-call telemetry + namespace-in-UI
+- SSE chat endpoint with token + tool-lifecycle events
+- React chat with tool-call cards
+- Active namespace shown in chatbot header; first message includes the namespace
+- Definition of done: stream chat with tool calls visible in real time; refuse if user lacks namespace access.
+
+### Phase 4 — Remaining MCP groupings + confirmation gate
+- AgenticInterop.ToolSet.Production / Transform / Testing with their initial tools
+- AgenticInterop.Policy.ConfirmationGate (Authorization policy) for tools with RequiresConfirmation = 1
+- React inline Approve / Reject UI
+- Definition of done: a mutating tool pauses with the inline prompt; rejection cancels the iteration cleanly.
+
+### Phase 5 — Catalog builders + real vector search
+- XLS ingester (Embedded Python via openpyxl) → catalog.ens / catalog.hs vector tables
+- AgenticInterop.Catalog.SearchToolSet exposing search_ens / search_hs
+- Refresh button in admin UI
+- Definition of done: ask a question requiring catalog lookup, agent calls the right catalog tool, returns relevant classes.
+
+### Phase 6 — Admin UI completion
+- All entity CRUD pages (Agents, MCPs, Toolsets, Tools, Skills, Providers)
+- Tool form with Dry-run panel
+- Skill editor (markdown)
+- Definition of done: every entity creatable / editable / deletable from the UI.
+
+### Phase 7 — Polish + handover
+- Audit trail UI for ToolInvocation
+- Error reporting page
+- Mount API documentation for customers integrating into their Angular shell
+- Operations runbook
+- Definition of done: another developer can clone, install, configure, and use without asking for help.
+
+## Chatbot UI quality bar
+
+The React chatbot bundle is the core deliverable and must work perfectly regardless of where it is mounted — sample host HTML, customer Angular page, or any future surface. Treat the bundle as a self-contained, reusable component that handles its own state, errors, retries, and lifecycle. Never assume properties of the host page beyond what the documented `mount()` contract guarantees.
+
+This applies across phases. The phase column below indicates when each chatbot capability ships, but every shipped capability must be production-quality at that point — no placeholder UI, no broken states, no half-working flows.
+
+## Open items
+
+- Customer Angular shell — none provided. Phase 0 ships a sample host HTML so dev works. Customers wire the React bundle into their own Angular page using the documented `mount()` API; we do not own that integration.
+- Multi-namespace install ergonomics: install once per target namespace. Future enhancement could add a "deploy to all my namespaces" admin action.
+- mcp.testing isolation default: recommend always-isolated test production by default (configurable).
+
+## Known risks
+
+- Bedrock + tools hang (above). Workaround: pick another provider in the admin UI. The app keeps shipping; Bedrock rows just won't function until WRC fix lands.
+- IRIS for Health 2026.1 vs 2026.2: kickoff spec mentioned both. We target 2026.2 because that is what the dev container ships and what the %AI Framework class catalog used for design verification was extracted from.
+- FastEmbed memory: bundled ONNX runs in-process; first-time load is a few hundred MB. Document in README ops section once we hit Phase 5.
+
+## Notes for a developer reading this for the first time
+
+- The "MCP" terminology in the data model and admin UI is a logical grouping only. There is no MCP HTTP/SSE between the agent and its tools. The decision and rationale live in `.claude/skills/ai-hub-mcp/SKILL.md` ("Internal chatbot + internal tools = skip the MCP layer").
+- The agent never has hardcoded provider credentials. Always resolved through the Wallet via `@{wallet.AgenticInteropSecrets.<KeyName>}` placeholders at runtime.
+- All multi-class refactors must update docs/MIGRATION.md before the code change, not after.
