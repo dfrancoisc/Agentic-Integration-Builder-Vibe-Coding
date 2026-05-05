@@ -12,7 +12,10 @@
 <!-- ObjectScript classes -->
 <Resource Name="AgenticInterop.PKG"/>
 
-<!-- Static UI bundle (HTML/CSS/JS for /agentic/ and /agentic/admin/) -->
+<!-- Static UI bundle (HTML/CSS/JS for /agentic/ and /agentic/admin/).
+     Authenticated only — no anonymous access. The user must already
+     have an IRIS session before any agentic_interop asset is served
+     (restriction #3: no UI visible to unauthenticated users). -->
 <CSPApplication
     Url="/agentic"
     Path="${cspdir}agentic"
@@ -21,28 +24,28 @@
     Recurse="1"
     AuthenticationMethods="64"
     PasswordAuthEnabled="1"
-    UnauthenticatedEnabled="1"
+    UnauthenticatedEnabled="0"
     UseCookies="1"
     AutoCompile="0"
     DefaultTimeout="900"
     CookiePath="/agentic/"
     UseSessionCookie="0"
-    Description="agentic_interop static UI bundle (chat + admin)"
+    Description="agentic_interop static UI bundle (chat + admin) — authenticated"
 />
 
-<!-- REST API. Type=2 (REST), UseSession=0 (avoid iframe deadlock),
-     UnauthenticatedEnabled=1 for now — will gate by namespace access in
-     Dispatch.OnPreDispatch once auth is wired in Phase 1. -->
+<!-- REST API. Type=2 (REST), UseSession=0 (avoid iframe deadlock).
+     Authenticated only. Dispatch.OnPreDispatch double-checks $username
+     and audit-logs every request to AgenticInterop.Data.AuditLog. -->
 <CSPApplication
     Url="/api/agentic"
     DispatchClass="AgenticInterop.REST.Dispatch"
     AuthenticationMethods="64"
     PasswordAuthEnabled="1"
-    UnauthenticatedEnabled="1"
+    UnauthenticatedEnabled="0"
     UseSessionCookie="0"
     UseCookies="1"
     AutoCompile="0"
-    Description="agentic_interop REST API"
+    Description="agentic_interop REST API — authenticated + audited"
 />
 
 <!-- Patch the shipped IRIS Interop Editor to load /agentic/inject.js

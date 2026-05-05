@@ -19,6 +19,7 @@ XData UrlMap [ XMLNamespace = "http://www.intersystems.com/urlmap" ]
 <Routes>
     <Route Url="/health"             Method="GET"  Call="Health" />
     <Route Url="/namespace"          Method="GET"  Call="Namespace" />
+    <Route Url="/whoami"             Method="GET"  Call="WhoAmI" />
 
     <!-- Registries (for UI dropdowns) -->
     <Route Url="/registry/agents"    Method="GET"  Call="ListAgents" />
@@ -52,31 +53,80 @@ XData UrlMap [ XMLNamespace = "http://www.intersystems.com/urlmap" ]
 </Routes>
 }
 
-/// Switch namespace based on X-IRIS-Namespace header before any route
-/// runs. Returning $$$ERROR with a non-empty message blocks the request.
+/// Auth + namespace + audit gate. Per restriction #3 every request must
+/// belong to an authenticated user; per the audit requirement every call
+/// is logged to AgenticInterop.Data.AuditLog with username, namespace,
+/// session id, and timing.
 ClassMethod OnPreDispatch(pUrl As %String, pMethod As %String, ByRef pContinue As %Boolean) As %Status
 {
     Set pContinue = 1
-    Set targetNs = $get(%request.CgiEnvs("HTTP_X_IRIS_NAMESPACE"))
-    If targetNs '= "", targetNs '= $namespace {
-        // Validate the user has access. For now (no auth), accept any
-        // namespace that exists. Phase 1 wires real auth.
-        Set tSC = $$$OK
-        Try {
-            Set $namespace = targetNs
-        } Catch ex {
-            Set %response.Status = "400 Bad Request"
-            Do ..%WriteJSON({"error": "Invalid namespace", "namespace": (targetNs)})
-            Set pContinue = 0
+    Set %agenticReqStart = $zhorolog
+    Set %agenticPath = pUrl
+    Set %agenticMethod = pMethod
+    Set %agenticReqSize = +$get(%request.CgiEnvs("CONTENT_LENGTH"))
+
+    // Reject anonymous. CSP web app is UnauthenticatedEnabled=0 so this
+    // should already be blocked at the gateway, but defense in depth —
+    // never trust the gateway alone. ($username is a special variable;
+    // do not wrap it in $get.)
+    Set user = $username
+    If (user = "") || (user = "UnknownUser") {
+        Set %response.Status = "401 Unauthorized"
+        Do ..%WriteJSON({"error": "Authentication required"})
+        Set pContinue = 0
+        Do ..AuditEnd(401, "anonymous request rejected")
+    }
+
+    If pContinue {
+        // Optional namespace switch via X-IRIS-Namespace header.
+        Set targetNs = $get(%request.CgiEnvs("HTTP_X_IRIS_NAMESPACE"))
+        If targetNs '= "", targetNs '= $namespace {
+            Try {
+                Set $namespace = targetNs
+            } Catch ex {
+                Set %response.Status = "400 Bad Request"
+                Do ..%WriteJSON({"error": "Invalid namespace", "namespace": (targetNs)})
+                Set pContinue = 0
+                Do ..AuditEnd(400, "invalid namespace " _ targetNs)
+            }
         }
     }
+
     Quit $$$OK
 }
 
+/// Called from the route handlers (or implicitly when OnPreDispatch
+/// rejects) to write the audit row. Safe to call multiple times — only
+/// the first call is recorded.
+ClassMethod AuditEnd(pStatus As %Integer = 0, pError As %String = "")
+{
+    If $get(%agenticAudited, 0) { Quit }
+    Set %agenticAudited = 1
+    Set duration = 0
+    If $get(%agenticReqStart) '= "" {
+        Set duration = $fnumber(($zhorolog - %agenticReqStart) * 1000, "", 0)
+    }
+    Set path = $get(%agenticPath, "")
+    Set method = $get(%agenticMethod, "")
+    Set kind = ##class(AgenticInterop.Data.AuditLog).ClassifyPath(path)
+    Set sessionId = ""
+    Try { Set sessionId = %session.SessionId } Catch {}
+    Set reqSize = +$get(%agenticReqSize)
+    Try {
+        Do ##class(AgenticInterop.Data.AuditLog).Record(kind, $username, $namespace, sessionId, method, path, pStatus, reqSize, 0, duration, pError)
+    } Catch {}
+}
+
+/// Common JSON response writer. Audit-logs the request as it returns.
+/// Note: %response.Status is multi-dimensional — read it with explicit
+/// fallback through a Try, never $get.
 ClassMethod %WriteJSON(pObj As %DynamicObject) As %Status
 {
     Set %response.ContentType = "application/json"
     Do pObj.%ToJSON()
+    Set status = 200
+    Try { Set s = %response.Status If s '= "" { Set status = +s } } Catch {}
+    Do ..AuditEnd(status)
     Quit $$$OK
 }
 
@@ -85,6 +135,7 @@ ClassMethod Health() As %Status
     Do ..%WriteJSON({
         "ok": 1,
         "namespace": ($namespace),
+        "username": ($username),
         "agentClass": "AgenticInterop.Agent.HealthInterop"
     })
     Quit $$$OK
@@ -93,6 +144,21 @@ ClassMethod Health() As %Status
 ClassMethod Namespace() As %Status
 {
     Do ..%WriteJSON({"namespace": ($namespace)})
+    Quit $$$OK
+}
+
+ClassMethod WhoAmI() As %Status
+{
+    // Used by inject.js to verify the IRIS session before showing any UI.
+    // Returns 200 only when the session is real and a username is bound.
+    Set sessionId = ""
+    Try { Set sessionId = %session.SessionId } Catch {}
+    Do ..%WriteJSON({
+        "ok": 1,
+        "username": ($username),
+        "namespace": ($namespace),
+        "sessionId": (sessionId)
+    })
     Quit $$$OK
 }
 
