@@ -4,7 +4,12 @@ Internal AI Copilot for InterSystems IRIS for Health. A configuration-driven cha
 
 ## Status
 
-Pre-alpha. See [docs/PLAN.md](docs/PLAN.md) for architecture decisions and [docs/MIGRATION.md](docs/MIGRATION.md) for the class-by-class build map.
+Pre-alpha. See:
+
+- [docs/PLAN.md](docs/PLAN.md) — architecture decisions, restrictions, build phases
+- [docs/MIGRATION.md](docs/MIGRATION.md) — class-by-class build map
+- [docs/SKILLS.md](docs/SKILLS.md) — INSTRUCTIONS markdown for each `AgenticInterop.Skill.*` class, distilled from the IRIS for Health PDFs (grows batch-by-batch as PDFs are read)
+- [docs/TOOLS.md](docs/TOOLS.md) — full catalog of agent tools, each one mapped to its IRIS API and source citation
 
 ## Requirements
 
