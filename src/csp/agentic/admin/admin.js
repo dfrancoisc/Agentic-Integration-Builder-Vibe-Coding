@@ -1,17 +1,50 @@
 // agentic_interop admin — vanilla JS SPA against /api/agentic/*
 //
-// Auth model (post-2026-05-05 redesign):
-// The IRIS Interop SPA uses Bearer tokens in JS memory and DOES NOT share
-// a CSP session cookie with /api/agentic, so this admin UI maintains its
-// own auth: on first 401 we show an inline login form, capture IRIS
-// credentials, store the base64-encoded user:pass in sessionStorage under
-// AGENTIC_AUTH (cleared on tab close), and attach Authorization: Basic to
-// every fetch. Server-side audit captures the resulting $username on
-// every request so the trail still attaches to a real IRIS user.
+// Auth model:
+// When opened from inject.js inside the Interop Editor (URL has
+// ?via=interop), this admin UI asks the parent window for the Bearer
+// JWT the Interop SPA captured. /api/agentic shares JWTAuthEnabled +
+// GroupById=%ISCMgtPortal with /api/interop-editors so the SAME token
+// authenticates seamlessly — no second login. The handshake is via
+// postMessage and times out after 1.5s; if no Bearer arrives we fall
+// back to the inline login overlay (used for direct/standalone access
+// to /agentic/admin/).
 
 const API = '/api/agentic';
 const TABS = ['agents', 'mcps', 'toolsets', 'tools', 'skills'];
 const AUTH_KEY = 'AGENTIC_AUTH';
+
+// Bearer + namespace received from inject.js via postMessage. Set
+// during bootstrap before any API call.
+let bridgeBearer = '';
+let bridgeNamespace = '';
+
+function isViaInterop() {
+    try { return new URLSearchParams(window.location.search).get('via') === 'interop'; }
+    catch { return false; }
+}
+
+function urlNamespace() {
+    try { return new URLSearchParams(window.location.search).get('namespace') || ''; }
+    catch { return ''; }
+}
+
+async function fetchBridgeAuth() {
+    return new Promise((resolve) => {
+        let done = false;
+        function finish(payload) { if (done) return; done = true; resolve(payload || {}); }
+        function listener(e) {
+            const d = e.data || {};
+            if (d && d.type === 'agentic:auth:response') {
+                window.removeEventListener('message', listener);
+                finish(d);
+            }
+        }
+        window.addEventListener('message', listener);
+        try { window.parent.postMessage({ type: 'agentic:auth:request' }, '*'); } catch {}
+        setTimeout(() => { window.removeEventListener('message', listener); finish({}); }, 1500);
+    });
+}
 
 const state = {
     tab: 'agents',
@@ -92,27 +125,39 @@ function showLoginOverlay(message) {
 
 // -------- HTTP helpers --------
 
+async function ensureAuth() {
+    if (bridgeBearer) return bridgeBearer;
+    const stored = getStoredAuth();
+    if (stored) return stored;
+    await showLoginOverlay();
+    return getStoredAuth();
+}
+
 async function api(path, opts = {}) {
-    let auth = getStoredAuth();
-    if (!auth) {
-        await showLoginOverlay();
-        auth = getStoredAuth();
-    }
-    const res = await fetch(API + path, {
-        ...opts,
-        headers: {
-            'Content-Type': 'application/json',
-            'Authorization': auth,
-            ...(opts.headers || {})
-        }
-    });
+    const auth = await ensureAuth();
+    const headers = {
+        'Content-Type': 'application/json',
+        'Authorization': auth,
+        ...(opts.headers || {})
+    };
+    // bridgeNamespace is captured for display + future Phase 2 tool
+    // calls (passed in request body), NOT as an X-IRIS-Namespace
+    // header — the gateway's namespace switch reaches a USER ns where
+    // AgenticInterop.REST.Dispatch isn't compiled, so the request 500s.
+    // The dispatch always runs in its install namespace (HSCUSTOM by
+    // default); per-tool handlers will switch context internally.
+    const res = await fetch(API + path, { ...opts, headers });
     const text = await res.text();
     let json = null;
     try { json = text ? JSON.parse(text) : null; } catch (e) { /* keep null */ }
     if (res.status === 401) {
-        // Stored creds rejected — clear and re-prompt, then retry once
+        // Bearer rejected (expired) — clear stored creds, re-prompt,
+        // retry once. We do not auto-retry the bridge bearer because
+        // if it's expired the SPA itself will see 401s and prompt the
+        // user upstream.
+        if (bridgeBearer) { bridgeBearer = ''; }
         clearStoredAuth();
-        await showLoginOverlay('Session expired or credentials invalid. Sign in again.');
+        await showLoginOverlay('Session expired. Sign in again.');
         return api(path, opts);
     }
     if (!res.ok) {
@@ -768,6 +813,14 @@ function parseJson(s) { try { return s ? JSON.parse(s) : {}; } catch { return {}
 // -------- bootstrap --------
 
 (async () => {
+    // If opened from inject.js inside the Interop Editor, ask the
+    // parent for the Bearer + namespace BEFORE any API call.
+    if (isViaInterop()) {
+        const bridge = await fetchBridgeAuth();
+        if (bridge.bearer) bridgeBearer = bridge.bearer;
+        if (bridge.namespace) bridgeNamespace = bridge.namespace;
+        else if (urlNamespace()) bridgeNamespace = urlNamespace();
+    }
     try {
         const ns = await get('/namespace');
         state.namespace = ns.namespace;

@@ -34,21 +34,27 @@
     Description="agentic_interop static UI bundle (chat + admin) — authenticated"
 />
 
-<!-- REST API. Type=2 (REST), UseSession=0 (avoid iframe deadlock).
-     Authenticated only. Dispatch.OnPreDispatch double-checks $username
-     and audit-logs every request to AgenticInterop.Data.AuditLog. -->
+<!-- REST API. JWTAuthEnabled=1 + GroupById=%ISCMgtPortal so the IRIS
+     JWT the Interop SPA already holds authenticates here too — no
+     second login. AutheEnabled=32 (allow unauth at gateway) lets the
+     dispatch class enforce auth itself; OnPreDispatch rejects
+     $username = "" or "UnknownUser" with 401, and writes an audit row
+     for both successes and rejections. UseCookies=2 disables the
+     per-app session cookie so we don't fight the shared-session
+     model. -->
 <CSPApplication
     Url="/api/agentic"
     DispatchClass="AgenticInterop.REST.Dispatch"
-    AuthenticationMethods="96"
+    AuthenticationMethods="32"
     PasswordAuthEnabled="1"
     UnauthenticatedEnabled="1"
+    JWTAuthEnabled="1"
     UseSessionCookie="0"
-    UseCookies="1"
+    UseCookies="2"
     AutoCompile="0"
     CookiePath="/"
     GroupById="%ISCMgtPortal"
-    Description="agentic_interop REST API — authenticated + audited"
+    Description="agentic_interop REST API — authenticated via shared IRIS JWT + audited"
 />
 
 <!-- Patch the shipped IRIS Interop Editor to load /agentic/inject.js

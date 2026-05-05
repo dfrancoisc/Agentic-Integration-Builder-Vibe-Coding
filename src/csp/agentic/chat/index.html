@@ -7,35 +7,115 @@
 <meta http-equiv="pragma" content="no-cache">
 <title>agentic_interop · Chat</title>
 <style>
-  body { margin: 0; background: #0f1115; color: #e6e8eb; font-family: ui-sans-serif, system-ui, sans-serif; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
-  .card { max-width: 720px; padding: 36px; border: 1px solid #2a313c; border-radius: 8px; background: #161a21; }
-  h1 { margin: 0 0 12px 0; }
-  .muted { color: #8b95a6; }
-  ul { padding-left: 20px; line-height: 1.8; }
-  code { background: #0b0d11; padding: 2px 6px; border-radius: 3px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
-  .badge { display: inline-block; padding: 2px 8px; border-radius: 3px; font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; background: rgba(245,158,11,0.15); color: #f59e0b; margin-left: 8px; }
-  a { color: #3b82f6; text-decoration: none; }
-  a:hover { text-decoration: underline; }
+  :root { --bg:#0f1115; --panel:#161a21; --panel2:#1c2129; --border:#2a313c; --text:#e6e8eb; --muted:#8b95a6; --primary:#3b82f6; --success:#22c55e; --warn:#f59e0b; --danger:#ef4444; }
+  * { box-sizing: border-box; }
+  html, body { margin:0; padding:0; background:var(--bg); color:var(--text); font:14px ui-sans-serif, system-ui, sans-serif; min-height:100vh; }
+  .topbar { display:flex; align-items:center; justify-content:space-between; padding:10px 18px; background:var(--panel2); border-bottom:1px solid var(--border); }
+  .brand { font-weight:600; }
+  .brand .muted { color:var(--muted); font-weight:400; }
+  .ns-pill { display:inline-flex; align-items:center; gap:6px; padding:4px 10px; border-radius:14px; background:#0b0d11; border:1px solid var(--border); font:600 12px ui-monospace, Menlo, monospace; color:var(--text); }
+  .ns-pill .label { color:var(--muted); font-weight:400; text-transform:uppercase; letter-spacing:0.04em; font-size:10px; }
+  .ns-pill .value { color:var(--success); }
+  .ns-pill.unknown .value { color:var(--warn); }
+  main { max-width:920px; margin:0 auto; padding:24px 20px; }
+  .banner { padding:14px 16px; background:rgba(245,158,11,0.10); border:1px solid var(--warn); border-radius:6px; color:var(--warn); margin-bottom:16px; font-size:13px; line-height:1.4; }
+  .banner.success { background:rgba(34,197,94,0.10); border-color:var(--success); color:var(--success); }
+  .card { background:var(--panel); border:1px solid var(--border); border-radius:6px; padding:24px; }
+  h1 { margin:0 0 8px 0; font-size:20px; }
+  ul { padding-left:20px; line-height:1.7; }
+  code { background:#0b0d11; padding:2px 6px; border-radius:3px; font-family:ui-monospace, SFMono-Regular, Menlo, monospace; font-size:12px; }
+  .muted { color:var(--muted); }
+  .badge { display:inline-block; padding:2px 8px; border-radius:3px; font-size:10px; letter-spacing:0.04em; text-transform:uppercase; background:rgba(245,158,11,0.15); color:var(--warn); margin-left:8px; vertical-align:middle; }
+  a { color:var(--primary); text-decoration:none; }
+  a:hover { text-decoration:underline; }
 </style>
 </head>
 <body>
-<div class="card">
-  <h1>AI Chatbot <span class="badge">Phase 2</span></h1>
-  <p class="muted">The chat surface for the agentic_interop copilot lands in Phase 2 of the build plan (see <code>docs/PLAN.md</code>).</p>
-  <p>What's wired right now:</p>
-  <ul>
-    <li>Agent class <code>AgenticInterop.Agent.HealthInterop</code> — router prompt + Parameters MCPS / SKILLS</li>
-    <li>4 MCPs (Production, Transform, Testing, Catalog) and 9 Skills, all CRUD-able from the AI Configuration tab</li>
-    <li><code>AgenticInterop.Agent.Manager.Build(provider)</code> assembles the agent from class metadata</li>
-    <li>REST endpoints under <code>/api/agentic/editor/*</code> with full %Dictionary roundtrip</li>
-  </ul>
-  <p>What Phase 2 adds:</p>
-  <ul>
-    <li>Provider configuration UI (Anthropic / Bedrock / Azure OpenAI rows in <code>AgenticInterop.Data.Provider</code>)</li>
-    <li>Streaming SSE chat endpoint</li>
-    <li>This page becomes a live conversation surface mounted into the Interop editor as a modal</li>
-  </ul>
-  <p class="muted">In the meantime, configure tools and skills in <a href="../admin/index.html">AI Configuration</a>.</p>
-</div>
+<header class="topbar">
+  <div class="brand">agentic_interop <span class="muted">· Chat</span></div>
+  <div id="ns-pill" class="ns-pill unknown">
+    <span class="label">Namespace</span>
+    <span class="value" id="ns-value">unknown</span>
+  </div>
+</header>
+
+<main>
+  <div id="ns-banner" class="banner">
+    Detecting active IRIS namespace…
+  </div>
+
+  <div class="card">
+    <h1>AI Chatbot <span class="badge">Phase 2</span></h1>
+    <p class="muted">The streaming conversation surface for the IRIS for Health copilot ships in Phase 2 of the build plan (see <code>docs/PLAN.md</code>).</p>
+
+    <p>Right now this page acts as the <strong>namespace anchor</strong> — the moment you open it from the Interop Editor, the active namespace (the one your Production Configuration / Rule Editor / etc. is operating on) is captured and displayed at the top. Every chat message in Phase 2 will be scoped to this namespace, and any tool the agent invokes will run with the same namespace privileges and visibility you have.</p>
+
+    <p class="muted">Why this matters: the same question can have different answers in different namespaces (e.g. "show me running productions" against <code>USER</code> vs <code>HSCUSTOM</code>), so the chatbot must always know where it is before it speaks.</p>
+
+    <p>What's wired right now:</p>
+    <ul>
+      <li>Agent class <code>AgenticInterop.Agent.HealthInterop</code> — router prompt + Parameters MCPS / SKILLS</li>
+      <li>4 MCPs (Production, Transform, Testing, Catalog) and 9 Skills, configurable from <a href="../admin/index.html">AI Configuration</a></li>
+      <li>REST endpoints under <code>/api/agentic/editor/*</code> with full %Dictionary roundtrip</li>
+      <li>JWT auth via the Interop SPA — no second login required</li>
+    </ul>
+    <p class="muted">In the meantime, configure tools and skills in <a href="../admin/index.html">AI Configuration</a> (cross-namespace).</p>
+  </div>
+</main>
+
+<script>
+(async function () {
+  const pill = document.getElementById('ns-pill');
+  const pillVal = document.getElementById('ns-value');
+  const banner = document.getElementById('ns-banner');
+
+  function urlParam(k) {
+    try { return new URLSearchParams(window.location.search).get(k) || ''; } catch { return ''; }
+  }
+
+  function setNamespace(ns, source) {
+    if (!ns) {
+      pill.classList.add('unknown');
+      pillVal.textContent = 'unknown';
+      banner.className = 'banner';
+      banner.textContent =
+        'Active namespace could not be determined. Open the chat from inside the Interop Editor (the AI Chatbot button) so the current namespace is captured.';
+      return;
+    }
+    pill.classList.remove('unknown');
+    pillVal.textContent = ns;
+    banner.className = 'banner success';
+    banner.textContent =
+      'Active IRIS namespace: ' + ns + '. The chatbot will scope every question, tool call, and audit row to this namespace (' + source + ').';
+  }
+
+  // 1. Try the URL param the parent injected (?namespace=…).
+  let ns = urlParam('namespace');
+  let source = ns ? 'from URL param' : '';
+
+  // 2. If the parent is reachable, ask via postMessage as well — the
+  //    parent may have a more authoritative value than the URL.
+  if (window.parent !== window) {
+    try {
+      await new Promise((resolve) => {
+        let done = false;
+        function listener(e) {
+          const d = e.data || {};
+          if (d && d.type === 'agentic:auth:response') {
+            window.removeEventListener('message', listener);
+            if (d.namespace) { ns = d.namespace; source = 'from parent SPA'; }
+            done = true; resolve();
+          }
+        }
+        window.addEventListener('message', listener);
+        try { window.parent.postMessage({ type: 'agentic:auth:request' }, '*'); } catch {}
+        setTimeout(() => { if (!done) { window.removeEventListener('message', listener); resolve(); } }, 1500);
+      });
+    } catch {}
+  }
+
+  setNamespace(ns, source || 'unsourced');
+})();
+</script>
 </body>
 </html>

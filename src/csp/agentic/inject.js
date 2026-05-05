@@ -3,32 +3,126 @@
  * authenticated. Per kickoff restriction #3, NO part of agentic_interop
  * appears on the login screen.
  *
- * Design notes (after a long day of failed attempts):
- *   - The Interop SPA (2026.2 modern UI) is fully Bearer-token based;
- *     its auth lives in JS memory, not in any cookie. There is no
- *     IRIS session cookie that can be shared with /api/agentic — so the
- *     earlier "call /api/agentic/whoami first" approach can't work
- *     without re-authenticating.
- *   - Therefore inject.js NO LONGER calls any auth endpoint. It renders
- *     the buttons whenever the SPA is in its post-login chrome state
- *     (detected purely from the DOM). The buttons open the agentic UI
- *     in a modal iframe; that iframe handles its OWN auth (inline
- *     login form, sessionStorage Basic creds, all REST calls audited
- *     server-side).
- *   - We do not poke into Angular's tree — the launchers mount as a
- *     sibling of the SPA's "Back to standard UI" button using one-shot
- *     insertBefore + an observer that disconnects on success. A 2s
- *     watchdog re-mounts if Angular re-renders the chrome.
+ * Auth model:
+ *   - The Interop Editor SPA (2026.2 modern UI) authenticates via an
+ *     IRIS-issued JWT it sends as `Authorization: Bearer <jwt>` on
+ *     every API call. The token lives in JS memory, not in any cookie.
+ *   - This script intercepts window.fetch and XMLHttpRequest at the
+ *     earliest possible moment (before the SPA bundle runs) and
+ *     captures the Bearer the SPA uses on its own /api/interop-editors
+ *     calls.
+ *   - The captured Bearer is held in a closure-scoped variable. When
+ *     the user clicks a launcher, the iframe is opened with a
+ *     postMessage handshake — the iframe asks "what's my auth?" and
+ *     this script answers with the Bearer. The iframe then attaches
+ *     it to every /api/agentic call.
+ *   - /api/agentic has JWTAuthEnabled=1 and shares
+ *     GroupById=%ISCMgtPortal with /api/interop-editors so the IRIS
+ *     gateway validates the same Bearer there. No second login,
+ *     server-side $username is the real user, audit log captures it.
  */
 (function () {
     'use strict';
 
-    var STATE = { injected: false, observer: null, container: null };
+    var STATE = { injected: false, observer: null, container: null, bearer: '' };
+
+    /* Read the active IRIS namespace from the Interop Editor URL.
+     * The SPA sets it as ?$NAMESPACE=<ns> (URL-encoded as %24NAMESPACE)
+     * and switches the SPA's session into that namespace. We forward
+     * it to BOTH iframes so:
+     *   - admin: configuration is cross-namespace by design but we
+     *     surface the active namespace for awareness.
+     *   - chat: namespace is load-bearing — it bounds the data and
+     *     restrictions the chatbot must respect, and is the FIRST
+     *     thing the chat UI needs to know on open. */
+    function currentNamespace() {
+        try {
+            var params = new URLSearchParams(window.location.search);
+            return params.get('$NAMESPACE') || params.get('%24NAMESPACE') || '';
+        } catch { return ''; }
+    }
+
+    function tabUrl(base) {
+        var ns = currentNamespace();
+        var sep = base.indexOf('?') >= 0 ? '&' : '?';
+        var u = base + sep + 'via=interop';
+        if (ns) u += '&namespace=' + encodeURIComponent(ns);
+        return u;
+    }
 
     var TABS = [
-        { id: 'agentic-config', label: 'AI Configuration', url: '/agentic/admin/index.html', color: '#3b82f6', icon: '⚙' },
-        { id: 'agentic-chat',   label: 'AI Chatbot',       url: '/agentic/chat/index.html',  color: '#22c55e', icon: '💬' }
+        { id: 'agentic-config', label: 'AI Configuration', base: '/agentic/admin/index.html', color: '#3b82f6', icon: '⚙' },
+        { id: 'agentic-chat',   label: 'AI Chatbot',       base: '/agentic/chat/index.html',  color: '#22c55e', icon: '💬' }
     ];
+
+    /* ---------------- Bearer capture ---------------- */
+
+    function captureFromHeaders(headers) {
+        try {
+            var auth;
+            if (headers instanceof Headers) {
+                auth = headers.get('Authorization') || headers.get('authorization');
+            } else if (headers && typeof headers === 'object') {
+                auth = headers.Authorization || headers.authorization;
+                if (Array.isArray(headers)) {
+                    for (var i = 0; i < headers.length; i++) {
+                        if (Array.isArray(headers[i]) && /^authorization$/i.test(headers[i][0])) {
+                            auth = headers[i][1]; break;
+                        }
+                    }
+                }
+            }
+            if (typeof auth === 'string' && auth.indexOf('Bearer ') === 0) {
+                STATE.bearer = auth;
+            }
+        } catch {}
+    }
+
+    function installInterceptors() {
+        // fetch
+        var origFetch = window.fetch;
+        window.fetch = function (input, init) {
+            try {
+                if (input instanceof Request) captureFromHeaders(input.headers);
+                if (init && init.headers) captureFromHeaders(init.headers);
+            } catch {}
+            return origFetch.apply(this, arguments);
+        };
+        // XMLHttpRequest.setRequestHeader
+        var origSet = XMLHttpRequest.prototype.setRequestHeader;
+        XMLHttpRequest.prototype.setRequestHeader = function (name, value) {
+            try {
+                if (/^authorization$/i.test(name) && typeof value === 'string' && value.indexOf('Bearer ') === 0) {
+                    STATE.bearer = value;
+                }
+            } catch {}
+            return origSet.apply(this, arguments);
+        };
+    }
+
+    installInterceptors();
+
+    /* ---------------- postMessage bridge ---------------- */
+
+    window.addEventListener('message', function (e) {
+        var data = e.data || {};
+        if (data && data.type === 'agentic:auth:request') {
+            // Reply to the iframe with the captured Bearer + active
+            // namespace. If we haven't seen a Bearer yet (rare —
+            // happens when the user clicks a button before the SPA
+            // has issued any API call), the iframe falls back to the
+            // inline login overlay.
+            try {
+                if (e.source && e.source.postMessage) {
+                    e.source.postMessage({
+                        type: 'agentic:auth:response',
+                        bearer: STATE.bearer || '',
+                        namespace: currentNamespace()
+                    }, '*');
+                }
+            } catch {}
+        }
+    });
 
     /* ---------------- modal ---------------- */
 
@@ -101,7 +195,7 @@
         btn.innerHTML =
             '<span style="font-size:13px;line-height:1;">' + tab.icon + '</span>' +
             '<span>' + tab.label + '</span>';
-        btn.addEventListener('click', function () { openModal(tab.label, tab.url); });
+        btn.addEventListener('click', function () { openModal(tab.label, tabUrl(tab.base)); });
         btn.addEventListener('mouseover', function () { btn.style.filter = 'brightness(1.08)'; });
         btn.addEventListener('mouseout',  function () { btn.style.filter = ''; });
         return btn;
@@ -174,8 +268,6 @@
 
     function start() {
         if (!tryMount()) watch();
-        // Re-check on a 2s cadence so login -> post-login transitions
-        // (and the reverse) are picked up without busy-watching the DOM.
         setInterval(function () {
             if (isLoginScreen()) { teardown(); return; }
             if (STATE.injected) {
