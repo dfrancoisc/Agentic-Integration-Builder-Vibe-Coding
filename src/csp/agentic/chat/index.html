@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="cache-control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="pragma" content="no-cache">
+<title>agentic_interop · Chat</title>
+<style>
+  body { margin: 0; background: #0f1115; color: #e6e8eb; font-family: ui-sans-serif, system-ui, sans-serif; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
+  .card { max-width: 720px; padding: 36px; border: 1px solid #2a313c; border-radius: 8px; background: #161a21; }
+  h1 { margin: 0 0 12px 0; }
+  .muted { color: #8b95a6; }
+  ul { padding-left: 20px; line-height: 1.8; }
+  code { background: #0b0d11; padding: 2px 6px; border-radius: 3px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 3px; font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; background: rgba(245,158,11,0.15); color: #f59e0b; margin-left: 8px; }
+  a { color: #3b82f6; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>AI Chatbot <span class="badge">Phase 2</span></h1>
+  <p class="muted">The chat surface for the agentic_interop copilot lands in Phase 2 of the build plan (see <code>docs/PLAN.md</code>).</p>
+  <p>What's wired right now:</p>
+  <ul>
+    <li>Agent class <code>AgenticInterop.Agent.HealthInterop</code> — router prompt + Parameters MCPS / SKILLS</li>
+    <li>4 MCPs (Production, Transform, Testing, Catalog) and 9 Skills, all CRUD-able from the AI Configuration tab</li>
+    <li><code>AgenticInterop.Agent.Manager.Build(provider)</code> assembles the agent from class metadata</li>
+    <li>REST endpoints under <code>/api/agentic/editor/*</code> with full %Dictionary roundtrip</li>
+  </ul>
+  <p>What Phase 2 adds:</p>
+  <ul>
+    <li>Provider configuration UI (Anthropic / Bedrock / Azure OpenAI rows in <code>AgenticInterop.Data.Provider</code>)</li>
+    <li>Streaming SSE chat endpoint</li>
+    <li>This page becomes a live conversation surface mounted into the Interop editor as a modal</li>
+  </ul>
+  <p class="muted">In the meantime, configure tools and skills in <a href="../admin/index.html">AI Configuration</a>.</p>
+</div>
+</body>
+</html>

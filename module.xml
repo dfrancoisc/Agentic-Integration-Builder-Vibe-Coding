@@ -45,6 +45,13 @@
     Description="agentic_interop REST API"
 />
 
+<!-- Patch the shipped IRIS Interop Editor to load /agentic/inject.js
+     so the AI Configuration + AI Chatbot buttons appear at the top of
+     /ui/interop/interop-editor/index.html. Idempotent; backs up
+     the original on first run; reverted on uninstall. -->
+<Invoke Class="AgenticInterop.Install.InteropEditorPatch" Method="Apply" Phase="Activate" />
+<Invoke Class="AgenticInterop.Install.InteropEditorPatch" Method="Revert" Phase="UnConfigure" />
+
 </Module>
 </Document>
 </Export>

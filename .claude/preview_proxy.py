@@ -1,14 +1,22 @@
 """Simple HTTP proxy that forwards every request to the iris-agentic
 container (localhost:22773). Used only by the preview tool — do not ship.
 
+Adds Basic auth automatically so the preview iframe doesn't get stopped
+by IRIS's login challenge on /ui/interop/* (the customer's portal will
+already be authenticated; the preview is just a shortcut).
+
 Default URL on start: http://127.0.0.1:8088/agentic/index.html
 """
+import base64
 import http.server
 import http.client
 import sys
 
 UPSTREAM_HOST = "localhost"
 UPSTREAM_PORT = 22773
+USER = "_SYSTEM"
+PASS = "Agentic1!"
+BASIC = "Basic " + base64.b64encode(f"{USER}:{PASS}".encode()).decode()
 
 
 class ProxyHandler(http.server.BaseHTTPRequestHandler):
@@ -18,12 +26,13 @@ class ProxyHandler(http.server.BaseHTTPRequestHandler):
         if length:
             body = self.rfile.read(int(length))
         conn = http.client.HTTPConnection(UPSTREAM_HOST, UPSTREAM_PORT, timeout=30)
-        # Strip hop-by-hop and Host headers; we add our own.
         fwd = {}
         for k, v in self.headers.items():
-            if k.lower() in ("host", "connection", "content-length", "transfer-encoding"):
+            if k.lower() in ("host", "connection", "content-length",
+                             "transfer-encoding", "authorization"):
                 continue
             fwd[k] = v
+        fwd["Authorization"] = BASIC
         try:
             conn.request(method, self.path, body=body, headers=fwd)
             resp = conn.getresponse()
