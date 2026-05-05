@@ -16,7 +16,8 @@
 }
 
 * { box-sizing: border-box; }
-html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; font-size: 14px; }
+html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; font-size: 14px; height: 100%; }
+body { display: flex; flex-direction: column; }
 
 .topbar {
   display: flex; align-items: center; justify-content: space-between;
@@ -37,19 +38,30 @@ html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); f
 /* List on the left stays compact (just enough for class name + meta).
  * The detail panel takes the rest of the available width so source-code
  * + form fields have room. No max-width on #main — the AI Settings
- * overlay is full-screen, let it use it. */
-#main { display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 16px; padding: 16px 20px; }
+ * overlay is full-screen, let it use it. flex:1 so the grid fills the
+ * remaining viewport height (no wasted footer space). min-height:0 is
+ * required for nested flex children to actually scroll. */
+#main {
+  flex: 1; min-height: 0;
+  display: grid; grid-template-columns: 320px minmax(0, 1fr);
+  gap: 16px; padding: 16px 20px;
+}
 @media (max-width: 900px) { #main { grid-template-columns: 1fr; } }
 
-.panel { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+.panel {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 6px;
+  overflow: hidden;
+  display: flex; flex-direction: column; min-height: 0;
+}
 .panel-head {
+  flex: 0 0 auto;
   display: flex; align-items: center; justify-content: space-between;
   padding: 12px 16px; border-bottom: 1px solid var(--border); background: var(--panel-2);
 }
 .panel-head h2 { margin: 0; font-size: 14px; font-weight: 600; letter-spacing: 0.02em; text-transform: uppercase; color: var(--muted); }
 .panel-head .actions { display: flex; gap: 8px; }
 
-.list { padding: 8px; max-height: 70vh; overflow: auto; }
+.list { flex: 1; min-height: 0; padding: 8px; overflow: auto; }
 .list-item {
   padding: 10px 12px; border-radius: 4px; cursor: pointer; border: 1px solid transparent;
   display: flex; flex-direction: column; gap: 4px; margin-bottom: 4px;
@@ -64,7 +76,7 @@ html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); f
 .badge.user { background: rgba(34, 197, 94, 0.15); color: var(--success); }
 .badge.abstract { background: rgba(139, 149, 166, 0.15); color: var(--muted); }
 
-.form { padding: 16px; max-height: 70vh; overflow: auto; }
+.form { flex: 1; min-height: 0; padding: 16px; overflow: auto; }
 .field { margin-bottom: 14px; }
 .field label { display: block; color: var(--muted); font-size: 12px; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.04em; }
 .field input, .field textarea, .field select {
@@ -73,8 +85,11 @@ html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); f
   font-family: inherit; font-size: 13px;
 }
 .field input:focus, .field textarea:focus, .field select:focus { outline: none; border-color: var(--primary); }
-.field textarea { min-height: 80px; resize: vertical; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
-.field textarea.tall { min-height: 220px; }
+/* Descriptions render as multi-line wrapped text — give them enough
+ * height to show 4-6 lines of copy without scrolling on first sight. */
+.field textarea { min-height: 110px; resize: vertical; font-family: inherit; font-size: 13px; line-height: 1.45; }
+.field textarea.tall { min-height: 240px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; line-height: 1.5; }
+.field textarea.short { min-height: 70px; }
 .field .hint { font-size: 11px; color: var(--muted); margin-top: 4px; }
 .field.readonly input, .field.readonly textarea { color: var(--muted); }
 .field-row { display: flex; gap: 12px; }

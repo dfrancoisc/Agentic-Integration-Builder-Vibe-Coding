@@ -471,18 +471,17 @@ function renderMCPDetail() {
             <label>Class</label>
             <input type="text" value="${escapeAttr(m.class)}" readonly>
         </div>
-        <div class="field-row">
-            <div class="field">
-                <label>Name (Parameter NAME)</label>
-                <input id="f-name" type="text" value="${escapeAttr(m.name || '')}" ${ro}>
-            </div>
-            <div class="field">
-                <label>Short description (Parameter DESCRIPTION)</label>
-                <input id="f-shortDescription" type="text" value="${escapeAttr(m.shortDescription || '')}" ${ro}>
-            </div>
+        <div class="field">
+            <label>Name (Parameter NAME)</label>
+            <input id="f-name" type="text" value="${escapeAttr(m.name || '')}" ${ro}>
         </div>
         <div class="field">
-            <label>Class description</label>
+            <label>Short description (Parameter DESCRIPTION)</label>
+            <textarea id="f-shortDescription" ${ro}>${escapeHtml(m.shortDescription || '')}</textarea>
+            <div class="hint">Shown in the AI's tool catalog. One sentence is fine; multiple sentences are fine too. The chatbot reads this when deciding whether to use this MCP.</div>
+        </div>
+        <div class="field">
+            <label>Class description (developer comment, behind ///)</label>
             <textarea id="f-description" ${ro}>${escapeHtml(m.description || '')}</textarea>
         </div>
         <div class="field">
