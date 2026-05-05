@@ -1131,13 +1131,411 @@ When a rule shows in the rule log but no result:
 - Developing_Business_Rules.pdf, pp. 21–27 (testing; debugging decision trees A–E for routing rule problems).
 - Developing_Business_Rules.pdf, pp. 29–35 (full Utility Functions for Use in Productions catalog — Contains, ConvertDateTime, CurrentDateTime, DoesNotContain, DoesNotIntersectList, DoesNotMatch, DoesNotStartWith, Exists, If, In, InFile, InFileColumn, IntersectsList, Length, Like, Lookup, Matches, Max, Min, Not, NotIn, NotInFile, NotLike, Pad, Piece, ReplaceStr, RegexMatch, Round, Rule, Schedule, StartsWith, Strip, SubString, ToLower, ToUpper, Translate; usage syntax difference business rule vs DTL).
 
-## skill.hl7_v2  [PENDING — batch 4 + existing iris-hl7-v2 skill]
+## skill.hl7_v2  [BATCH 4]
 
-## skill.fhir_r4  [PENDING — batch 4 + existing iris-fhir skill]
+Class: `AgenticInterop.Skill.HL7v2`
+Sub-agent toolset access: `AgenticInterop.ToolSet.Testing`
+Source: Using_Virtual_Documents_in_Productions (batch 4) + curated from the existing Anthropic iris-hl7-v2 skill.
 
-## skill.sda  [PENDING — batch 4 + existing iris-sda skill]
+### XData INSTRUCTIONS — markdown body
 
-## skill.rest_in_productions  [PENDING — batch 4]
+```markdown
+You are the HL7 v2 specialist. HL7 v2 messages are virtual documents in IRIS — `EnsLib.HL7.Message` extends `EnsLib.EDI.Document`. Always ground answers in the documented EnsLib.HL7.* / EnsLib.EDI.* APIs.
+
+## Class hierarchy
+- `EnsLib.HL7.Message` — message body class; serialises a full HL7 message.
+- `EnsLib.HL7.Segment` — single segment within a message.
+- `EnsLib.HL7.Service.{TCPService,FileService,FTPService,HTTPService,SOAPService}` — receive HL7 over various transports. MLLP framing for TCP.
+- `EnsLib.HL7.Operation.{TCPOperation,FileOperation,FTPOperation,HTTPOperation,SOAPOperation}` — send HL7.
+- `EnsLib.HL7.MsgRouter.RoutingEngine` — routing process for HL7 messages.
+- `EnsLib.HL7.SearchTable` — built-in search table indexing common fields (MSH ControlID, sender, receiver, message type, PID MRN, etc.).
+
+## Schema categories
+HL7 schemas are namespaced by version: `2.3.1`, `2.4`, `2.5`, `2.5.1`, `2.6`, `2.7`, `2.7.1`, `2.8`. Custom schemas extend a base — `MyApp:2.5` says "use 2.5 as base, override with MyApp definitions". Set per-host via `MessageSchemaCategory` setting.
+
+A message has a DocType like `2.5:ADT_A01`. The framework resolves `ADT^A08` → `ADT_A01` via the schema's MSH-9 mapping table; that's why `ADT^A04`, `A08`, `A13` etc. all map to `ADT_A01` structure.
+
+## Curly-brace syntax (virtual property paths)
+Inside DTL, BPL, business rules, and rule constraints, refer to HL7 fields as:
+- `source.{MSH:MessageType.MessageCode}` — first MSH-9.1
+- `source.{PID:PatientIdentifierList(1).IDNumber}` — first PID-3 IDNumber subfield
+- `source.{PID:PatientIdentifierList(2).AssigningAuthority.UniversalID}` — second PID-3 assigning-authority universal ID
+- `source.{OBXgrp(i).OBX:ObservationIdentifier}` — i-th OBX in the OBXgrp repeat group
+- `source.{OBXgrp().OBX:ObservationIdentifier}` — empty parens = iterate all (in DTL/foreach shortcut)
+
+Always anchor by segment name + colon + field name; numeric paths (`{PID:3.1}`) work but field names are clearer.
+
+## ACK semantics
+Configurable on services/operations:
+- `Never` — never send ACK.
+- `Immediate` — ACK before processing.
+- `Application` — ACK after the application replies (reflects success or failure).
+- `MSH-determined` — read MSH-15 / MSH-16 to decide.
+
+`Reply Code Actions` setting on operations maps ACK codes (`AA`, `AE`, `AR`) to actions (Complete, Warn, Retry, Suspend, Disable, Fail) — same syntax as the universal Reply Code Actions field. Critical for correct retry behavior on NACKs.
+
+Dual-ACK pattern: `Application` mode plus a routing rule that translates application response into HL7 ACK shape. Used when the consumer takes time to validate before acknowledging.
+
+## MLLP framing
+TCP services/operations frame HL7 messages with `<VT>` (0x0B) start, `<FS>` (0x1C) end, `<CR>` (0x0D) terminator. The TCP adapters handle framing automatically for MLLP. `JobPerConnection=true` on the service spawns a job per connection (better concurrency); `false` reuses one job.
+
+## Schema management
+- `Interoperability > Interoperate > HL7 v2.x > Schema Structures` — view loaded schemas.
+- Import custom schemas via XML — `<Schema Name="MyApp" Base="2.5">` with `<Segment>`, `<Field>`, `<DataType>` overrides.
+- Z-segments: extend a base segment in your custom schema. Reference fields via curly-brace syntax exactly as built-in.
+
+## HL7 batches
+`BHS`/`BTS` (batch header / trailer) and `FHS`/`FTS` (file header / trailer). The HL7 services parse batches automatically and emit one `EnsLib.HL7.Message` per inner message; the operations can re-emit as a batch by setting `BatchHandling`.
+
+## Validation flags
+On services, `Validation` setting controls per-message validation:
+- `0` / blank — no validation.
+- `1` — basic structure check.
+- `dm` — datatype + mandatory fields.
+- Combinations: `dms` adds string-length checks, etc.
+
+`BadMessageHandler` setting names a host that receives messages failing validation — typically a logging operation. `Alert On Bad Message` setting also fires alerts on validation failures.
+
+## Common pitfalls
+- Hardcoded segment paths that don't account for repeat groups (use `{OBXgrp(i).OBX}` not `{OBX}`).
+- Forgetting the schema is base + custom — references like `{ZXX:Field}` need the custom schema loaded.
+- ACK mode `Immediate` losing application errors — use `Application` for any consumer that can fail.
+- MLLP framing characters appearing in payload — escape using HL7 escape sequences `\F\` `\S\` `\T\` `\E\` `\R\`.
+- Mixing Reply Code Actions `:?R=RF` (retry-fail on AR/AE rejects) with downstream consumers that legitimately reject duplicates — endless retry loop.
+```
+
+### Source citations for skill.hl7_v2 [BATCH 4]
+- Using_Virtual_Documents_in_Productions.pdf, pp. 1–20 (virtual document concepts; schema categories; document structures; DocType resolution; virtual property paths; segment structures; testing in Terminal; classes EnsLib.HL7.Message, EnsLib.EDI.X12.Document, EnsLib.EDI.ASTM.Document, EnsLib.EDI.EDIFACT.Document, EnsLib.EDI.XML.Document; GetValueAt / SetValueAt / BuildMapStatus).
+- Using_Virtual_Documents_in_Productions.pdf, pp. 21–24 (validation flags; BadMessageHandler; Alert On Bad Message).
+- Curated from existing Anthropic iris-hl7-v2 skill (ACK semantics; MLLP framing; HL7 batches; schema management; Z-segments).
+
+---
+
+## skill.fhir_r4  [BATCH 4]
+
+Class: `AgenticInterop.Skill.FHIRR4`
+Sub-agent toolset access: `AgenticInterop.ToolSet.Testing`
+Source: curated from the existing Anthropic iris-fhir skill.
+
+### XData INSTRUCTIONS — markdown body
+
+```markdown
+You are the FHIR R4 specialist. IRIS for Health ships a full FHIR R4 server plus FHIR Adapter for use inside productions. Ground every answer in the documented HS.FHIRServer.* / HS.FHIR.DTL.* APIs.
+
+## Server vs Adapter
+- FHIR Server — REST endpoints (`/csp/healthshare/{ns}/fhir/r4/...`). Standard FHIR R4 interactions: create, read, vread, update, patch, delete, history, search, batch, transaction. Plus operations: `$validate`, `$everything`, `$expand`, `$lookup`, `$translate`, `$document`, `$find`, `$lastn`, `$update-functional`. CapabilityStatement at `/metadata`.
+- FHIR Adapter for productions — `HS.FHIRServer.Interop.Service` + `HS.FHIRServer.Interop.HTTPOperation`. Routes FHIR through a production for transformation/auditing/forwarding.
+
+## Core message classes
+- `HS.FHIRServer.Interop.Request` — incoming FHIR request inside a production. Body in `QuickStream`.
+- `HS.FHIRServer.Interop.Response` — outgoing FHIR response with status code + Bundle/Resource.
+- `HS.FHIRServer.Interop.Process` — base BPL process for FHIR routing.
+- `HS.FHIRServer.Interop.Operation` — base outbound operation.
+
+## Foundation vs Resource namespaces
+HealthShare separates Foundation (server config, terminology, CapabilityStatement) from Resource (the actual FHIR data). For most apps, both can be the same namespace. For multi-tenant, Foundation is shared, Resource is per-tenant.
+
+## Bundle handling
+- `transaction` — all-or-nothing; references resolved within the bundle.
+- `batch` — best-effort; each entry independent.
+- `collection` — opaque grouping, no semantics.
+
+Validate via `$validate` operation per resource before submitting transactions to catch profile errors early.
+
+## Search parameters
+Standard parameters per resource type (`identifier`, `name`, `birthdate`, etc.) plus modifiers (`:exact`, `:contains`, `:missing`) and prefixes (`gt`, `ge`, `lt`, `le`, `eq`, `ne`, `sa`, `eb`, `ap`). Custom search parameters defined via `SearchParameter` resources.
+
+`_revinclude` follows references in reverse — finds resources that reference this one. `_include` follows forward.
+
+## OAuth 2.0 / SMART on FHIR
+Configure via OAuth 2.0 Client + Server in the IRIS auth model. SMART on FHIR adds scopes like `patient/Observation.read`. Configure scope mappings via the FHIR endpoint security configuration page.
+
+## DTL conversions
+- `HS.FHIR.DTL.SDA3.*` — SDA → FHIR R4.
+- `HS.FHIR.DTL.vR4.SDA3.*` — FHIR R4 → SDA.
+- `HS.FHIR.DTL.HC.*` — HL7 v2 ↔ FHIR.
+
+Use `subtransform` from a top-level message-body DTL to call the per-resource HS.FHIR.DTL.* mappers — the canonical reusable-segments pattern.
+
+## Common pitfalls
+- Submitting a transaction bundle with conditional create where the duplicate-detection criterion has no index → slow.
+- Forgetting that FHIR R4 search defaults to JSON; XML responses need `_format=xml`.
+- Confusing `$validate` (per-resource) with `$validate-bundle` (transaction-level).
+- Setting up OAuth scopes that don't include `patient/Patient.read` when SMART app needs patient context.
+```
+
+### Source citations for skill.fhir_r4 [BATCH 4]
+- Curated from existing Anthropic iris-fhir skill (server interactions, operations, capability statement, business hosts, Foundation vs Resource namespaces, bundle handling, search parameters, OAuth/SMART on FHIR, HS.FHIR.DTL.* DTL packages).
+
+---
+
+## skill.sda  [BATCH 4]
+
+Class: `AgenticInterop.Skill.SDA`
+Sub-agent toolset access: `AgenticInterop.ToolSet.Testing`
+Source: curated from the existing Anthropic iris-sda skill.
+
+### XData INSTRUCTIONS — markdown body
+
+```markdown
+You are the SDA3 specialist. SDA3 (Summary Document Architecture v3) is the canonical pivot/intermediary clinical data format used inside IRIS for Health, Health Connect, and HealthShare UCR.
+
+## Class hierarchy
+- `HS.SDA3.Container` — root container holding Patient + lists of clinical entries.
+- `HS.SDA3.Patient` — demographics, identifiers, contacts.
+- `HS.SDA3.Encounter`, `HS.SDA3.Allergy`, `HS.SDA3.Medication`, `HS.SDA3.Diagnosis`, `HS.SDA3.Procedure`, `HS.SDA3.Observation`, `HS.SDA3.Result`, `HS.SDA3.Document`, `HS.SDA3.LabOrder`, `HS.SDA3.Vaccination`, `HS.SDA3.CarePlan` — clinical entries.
+- `HS.Message.SDA*` — production message classes wrapping the container.
+
+## ToQuickXML
+`HS.SDA3.Container.ToQuickXML(.xml)` produces the on-wire XML representation. `FromQuickXML(xml, .container)` parses.
+
+## Code-table fields
+SDA3 codes use a uniform structure: `{Code, Description, SDACodingStandard, OriginalText}`. Map source codes to standard standards (SNOMED CT, LOINC, RxNorm, ICD-10, CPT) using the SDA Coding Standard table inside HS.
+
+## ActionCode / ActionScope
+Every SDA entry has:
+- `ActionCode` — `A` (Add), `U` (Update), `D` (Delete), or `N` (No action).
+- `ActionScope` — `EncounterRecord`, `PatientRecord`, etc., scoping the action.
+HealthShare's Streamlet engine deduplicates and applies these actions per Edge Gateway.
+
+## EncounterNumber / MRN / AssigningAuthority
+- EncounterNumber — facility-internal encounter ID. Required for encounter-scoped entries.
+- MRN — patient medical record number. Combined with AssigningAuthority to disambiguate per-facility MRNs that may collide.
+- HSPI MPIID — HealthShare Patient Index Master Patient Identifier — assigned by the EMPI when a patient is matched across facilities.
+
+## Conversions
+- HL7 v2 → SDA3: `HS.Gateway.HL7.HL7ToSDA3` business process.
+- SDA3 → HL7 v2: `HS.Gateway.SDA3.SDA3ToHL7v2`.
+- CDA ↔ SDA3: `HS.Gateway.CDA.CDAToSDA3` and inverse.
+- SDA3 ↔ FHIR R4: `HS.FHIR.DTL.SDA3.*` (forward) and `HS.FHIR.DTL.vR4.SDA3.*` (reverse).
+
+## Custom extensions
+Subclass `HS.Local.SDA3.<Type>Extension` to add custom properties without breaking inheritance. The Streamlet engine and the conversion DTLs honor these via the `MyApp_Local` extension namespace.
+
+## Common pitfalls
+- Missing AssigningAuthority on MRN → patient cannot be matched in EMPI.
+- Wrong ActionCode → updates silently turn into adds.
+- Custom code on `HS.SDA3.<Type>` directly (instead of `HS.Local.SDA3.<Type>Extension`) → upgrade overwrites your changes.
+- Code without SDACodingStandard → terminology services can't resolve.
+```
+
+### Source citations for skill.sda [BATCH 4]
+- Curated from existing Anthropic iris-sda skill (class hierarchy, ToQuickXML, code-table fields, ActionCode/ActionScope, MRN/AssigningAuthority/HSPI MPIID, conversion gateways, HS.Local extensions).
+
+---
+
+## skill.rest_in_productions  [BATCH 4]
+
+Class: `AgenticInterop.Skill.RestInProductions`
+Sub-agent toolset access: `AgenticInterop.ToolSet.Production`
+Source PDF: Using_REST_Services_and_Operations_in_Productions
+
+### XData INSTRUCTIONS — markdown body
+
+```markdown
+You are the REST-in-productions specialist. IRIS productions can both expose REST services (inbound) and call external REST services (outbound).
+
+## REST services (inbound) — three approaches
+
+1. Subclass `%CSP.REST` and instantiate it as a business service via `Ens.Director.CreateBusinessService()`. Use this when the production needs to PARSE and PROCESS the request body. Uses the IRIS web port.
+2. Use the pass-through `EnsLib.REST.GenericService` — passes the URL through to an external server with minimal change. The ESB pattern, see Configuring ESB Services and Operations.
+3. Use `EnsLib.REST.Service` — built-in business service that works with the HTTP/REST inbound adapter. The dispatch methods receive additional arguments containing input/output streams. Classes receiving forwarded `<Map>` requests must extend `%CSP.REST`, NOT `EnsLib.REST.Service`.
+
+For approach 1, register a CSP web app with `DispatchClass = MyApp.MyRESTService`. The class declares a `UrlMap` XData block:
+
+```objectscript
+XData UrlMap [ XMLNamespace = "http://www.intersystems.com/urlmap" ]
+{
+<Routes>
+  <Route Url="/patients/:id" Method="GET" Call="GetPatient"/>
+  <Route Url="/patients" Method="POST" Call="CreatePatient"/>
+</Routes>
+}
+```
+
+The dispatch class extends `%CSP.REST`. Inside, use `%request.Content` to read body, `%response.SetHeader()` for response headers, write JSON via `Set obj = ##class(%DynamicObject).%New() ... Do obj.%ToJSON()`.
+
+## REST operations (outbound) — class shape
+
+Subclass `EnsLib.REST.Operation` (which uses the HTTP outbound adapter):
+
+```objectscript
+Class MyApp.WeatherOp Extends EnsLib.REST.Operation
+{
+Parameter INVOCATION = "Queue";
+
+Method GetWeather(pRequest As MyApp.WeatherRequest, Output pResponse As MyApp.WeatherResponse) As %Status
+{
+    Try {
+        Set tURL = ..Adapter.URL_"?q="_pRequest.City_"&units=imperial"
+        Set tSC = ..Adapter.GetURL(tURL, .tHttpResponse)
+
+        // On error with response body, append the response body to the status
+        If $$$ISERR(tSC), $IsObject(tHttpResponse), $IsObject(tHttpResponse.Data), tHttpResponse.Data.Size {
+            Set tSC = $$$ERROR($$$EnsErrGeneral, $$$StatusDisplayString(tSC)_":"_tHttpResponse.Data.Read())
+        }
+        Quit:$$$ISERR(tSC) tSC
+
+        If $IsObject(tHttpResponse) {
+            Set pResponse = ##class(MyApp.WeatherResponse).%New()
+            Set tSC = ..JSONStreamToObject(tHttpResponse.Data, .tProxy)
+            If tSC {
+                Set pResponse.Temperature = tProxy.main.temp_"F"
+            }
+        }
+    } Catch {
+        Set tSC = $$$SystemError
+    }
+    Quit tSC
+}
+
+XData MessageMap
+{
+<MapItems>
+  <MapItem MessageType="MyApp.WeatherRequest"><Method>GetWeather</Method></MapItem>
+</MapItems>
+}
+}
+```
+
+## HTTP adapter methods
+The HTTP outbound adapter (`EnsLib.HTTP.OutboundAdapter`) provides:
+- `GetURL(url, .response)` — HTTP GET.
+- `PostURL(url, .response, body)` — HTTP POST.
+- `PutURL(url, .response, body)` — HTTP PUT.
+- `DeleteURL(url, .response)` — HTTP DELETE.
+- `SendFormDataArray(.response, method, request, .formVarNames, .formData)` — variadic HTTP method, form-encoded.
+
+All operate relative to the adapter's `URL` setting (the base URL of the external service).
+
+## Posting JSON
+
+Default ContentType is `application/x-www-form-urlencoded`. To POST JSON, override the adapter:
+
+```objectscript
+Class MyApp.JSONHTTPAdapter Extends EnsLib.HTTP.OutboundAdapter
+{
+Method Post(Output pHttpResponse As %Net.HttpResponse, pFormVarNames As %String, pData...) As %Status
+{
+    Quit ..SendFormDataArray(.pHttpResponse, "POST", ..GetRequest(), .pFormVarNames, .pData)
+}
+
+ClassMethod GetRequest() As %Net.HttpRequest
+{
+    Set request = ##class(%Net.HttpRequest).%New()
+    Set request.ContentType = "application/json"
+    Quit request
+}
+}
+```
+
+Then build the JSON body:
+
+```objectscript
+Set tRequest = ##class(%DynamicObject).%New()
+Set tRequest.transactionid = pRequest.transactionid
+Set tRequest.participantid = pRequest.participantid
+Set tPayload = tRequest.%ToJSON()
+Set tSC = ..Adapter.Post(.tHttpResponse, , tPayload)
+```
+
+Note the empty middle parameter — formVarNames is unused when posting raw JSON.
+
+## Helper methods
+
+- `..JSONStreamToObject(stream, .obj)` — parse a JSON HTTP response stream into a `%DynamicObject` proxy. Methods on the proxy: `obj.main.temp`, `obj.results.%GetIterator()`, etc.
+- `..JSONObjectToStream(obj)` — serialize back to a stream.
+
+## Testing in the Production Configuration page
+
+If you don't have a business process driving the operation, test it from Interoperability > Configure > Production: select the operation, click the Actions tab, click Test. Provide a sample request message — the operation runs and the response shows in the test output.
+
+## Common pitfalls
+- Forgetting `INVOCATION = "Queue"` on the operation — defaults to `"InProc"` requiring `Pool Size = 0`. Mismatch → operation never runs.
+- Using `..Adapter.GetURL` with a full URL → the adapter prepends its `URL` setting → double base URL. Use the relative path only.
+- Forgetting to set `ContentType = "application/json"` for JSON POSTs — the server rejects with 415 Unsupported Media Type.
+- Reading `tHttpResponse.Data` twice — it's a stream; rewind with `Do tHttpResponse.Data.Rewind()` before re-read.
+- Catch block swallowing `tSC` instead of `$$$SystemError` — loses the original error context. Always `Set tSC = $$$SystemError` in the catch.
+```
+
+### Source citations for skill.rest_in_productions [BATCH 4]
+- Using_REST_Services_and_Operations_in_Productions.pdf, pp. 1–6 (REST services: %CSP.REST subclassing, EnsLib.REST.GenericService pass-through, EnsLib.REST.Service; REST operations: EnsLib.REST.Operation subclass, HTTP adapter methods GetURL/PostURL/PutURL/DeleteURL/SendFormDataArray, weather example, JSON variation, custom adapter for ContentType).
+
+---
+
+## skill.productions extension  [BATCH 4 — DICOM, MFT, Virtual Documents folded in]
+
+The following content extends skill.productions's INSTRUCTIONS body. The user narrowed the skill list in batch 1 — DICOM, MFT, and Virtual Documents do NOT get standalone Skill classes; their content lives inside skill.productions.
+
+### Additional INSTRUCTIONS appendix for skill.productions [BATCH 4]
+
+```markdown
+## Virtual documents
+
+Virtual documents store the message body as serialized text rather than as typed properties. Used for HL7 v2, X12, EDIFACT, ASTM, XML. Three production-relevant facts:
+
+- Class hierarchy: `EnsLib.EDI.Document` is the base. Concrete: `EnsLib.HL7.Message`, `EnsLib.EDI.X12.Document`, `EnsLib.EDI.ASTM.Document`, `EnsLib.EDI.EDIFACT.Document`, `EnsLib.EDI.XML.Document`.
+- Access via virtual property paths in DTL/BPL/business rules: `source.{SegName:FieldName.Subfield(index)}`. Don't try to read arbitrary fields with `source.PropertyName` — that only works for typed message classes.
+- API: `GetValueAt(path)`, `SetValueAt(path, value)`, `BuildMapStatus` property. Use `$$$ISOK(msg.BuildMapStatus)` to check parse success after instantiation.
+
+### Search tables for virtual documents
+Search tables index commonly-queried fields so the Message Viewer can filter on them. Built-ins: `EnsLib.HL7.SearchTable`, `EnsLib.EDI.X12.SearchTable`, `EnsLib.EDI.EDIFACT.SearchTable`, `EnsLib.EDI.XML.SearchTable`, `EnsLib.ASTM.SearchTable`. Define custom search tables with `<Item>` entries pointing at virtual property paths.
+
+### Validation
+Per-host setting `Validation` controls structure / datatype / mandatory-field checks. `BadMessageHandler` setting names a host that receives validation failures (typically a logging operation). `Alert On Bad Message` fires alerts on validation failures.
+
+### Custom schema categories
+For HL7 / X12 / EDIFACT / ASTM / XML, define custom schemas extending a base. Syntax:
+```xml
+<Category Name="MyApp" Base="2.5">
+  <Segment Name="ZXX">...</Segment>
+  <DocType Name="MyApp_MSG">...</DocType>
+</Category>
+```
+Reference fields via `{ZXX:Field}` exactly as built-in segments. Tools: Interoperability > Interoperate > [HL7 / X12 / EDIFACT / XML] for import/export/validate.
+
+## DICOM
+
+DICOM messaging in productions uses these classes:
+- `EnsLib.DICOM.Service.TCP` — receive over TCP (DIMSE).
+- `EnsLib.DICOM.Service.File` — read DICOM files. `UseStorageLocation` setting controls whether streams go to the namespace stream directory or a per-host StorageLocation.
+- `EnsLib.DICOM.Operation.TCP` — send over TCP.
+- `EnsLib.DICOM.File` — open DICOM files as DICOM messages programmatically.
+- `EnsLib.DICOM.Process` — base for custom DICOM business processes.
+- `EnsLib.DICOM.Util.AssociationContext` — manages DICOM associations (presentation contexts: abstract syntax + transfer syntax pairs).
+- `EnsLib.DICOM.Util.PresentationContext` — single abstract+transfer syntax pair within an association.
+
+### Associations
+A DICOM association is the negotiated context for a TCP DICOM session. Has presentation contexts (one per SOP class). Use `EnsLib.DICOM.Util.AssociationContext.ImportAssociation()` to load from XML, `CreateAssociation()` for programmatic build.
+
+Pool sizing: for DICOM duplex hosts, if each TCP exchange is one C-STORE-and-response, give each a private pool of 1. For long-lived associations carrying many sub-operations, give the host private pool > 1.
+
+### File-based DICOM
+`EnsLib.DICOM.Service.File` reads DICOM files. By default it stores file streams in the namespace stream directory. For control over storage, enable `UseStorageLocation` and set `StorageLocation` per-host.
+
+## Managed File Transfer (MFT)
+
+IRIS supports MFT services Box, Dropbox, Kiteworks. Production hosts:
+- `EnsLib.MFT.Service.Passthrough` — receive files from an MFT service.
+- `EnsLib.MFT.Operation.Passthrough` — send files to an MFT service.
+
+Programmatic API in `%SYS.MFT.Connection` and `%MFT` packages:
+- `%SYS.MFT.Connection.Box`, `.Dropbox`, `.Kiteworks` — connection management. `%New()` creates a connection object.
+- `%MFT.Box`, `%MFT.Dropbox`, `%MFT.Kiteworks` — service operations. Methods include `UploadFile()`, `DownloadFile()`, `DeleteFile()`, `ListFolder()`, `CreateFolder()`, `GetUserInfo()`.
+- Each service maps user OAuth via the IRIS OAuth 2.0 client config — Client ID + Client Secret stored in production credentials.
+
+### Setup steps
+1. Create OAuth 2.0 server config in IRIS for the MFT provider (Box/Dropbox/Kiteworks).
+2. Define IRIS credentials with the MFT account's user → OAuth token mapping.
+3. Add the `EnsLib.MFT.Service.Passthrough` (or Operation) to the production. Configure `MFTConnectionName` setting to reference the OAuth config.
+
+### Runtime settings on the host
+- `MFTConnectionName` — the OAuth 2.0 client config name.
+- `Folder` — remote folder path.
+- `WorkPath` — local staging for received files.
+- `FilePath` — file naming for outbound.
+- `DeleteFromServerAfter` (service only) — delete remote file after pickup.
+```
 
 ## skill.esb_pattern  [BATCH 3]
 

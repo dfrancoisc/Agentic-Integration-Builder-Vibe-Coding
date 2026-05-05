@@ -590,4 +590,150 @@ Tools for the ESB pattern (Public + External Service Registry). Source PDF: Usin
 
 ---
 
-## ToolSet.Testing  [PENDING — batch 4]
+## ToolSet.Testing  [BATCH 4]
+
+Tools for sending and validating HL7 v2, FHIR R4, SDA, DICOM messages, plus generic REST testing. Source PDFs: Using_REST_Services_and_Operations_in_Productions, Using_Virtual_Documents_in_Productions, Routing_DICOM_Documents_in_Productions, Enabling_Productions_to_Use_Managed_File_Transfer_Services. Operations are sandbox-isolated by default.
+
+### ensure_test_production / list_test_productions
+
+- Description: Identify or create a sandboxed test production for safe `send_*` operations. The agent never sends test traffic into a customer's running production by default — it routes into a per-namespace test production with file-based services/operations (the live/test toggle pattern from Best_Practices).
+- Implementation: ObjectScript: scan productions for ones tagged `Category=test` or with name suffix `_TestProduction`; if none exists, scaffold one with empty config.
+- Input schema (ensure): `{ namespace: { type: "string", description: "Default = current namespace" } }`.
+- Output schema: `{ productionName, exists, isRunning }`.
+- Timeout: 10 seconds. RequiresConfirmation: TRUE (creates a class).
+
+### send_hl7
+
+- Description: Send an HL7 v2 message into a target service. Default target is the test production's `EnsLib.HL7.Service.File` (file drop). For wire testing, allow `targetType: "tcp"` to use `EnsLib.HL7.Service.TCPService` with explicit confirmation. Returns the resulting Ens.MessageHeader id so the agent can call `get_message_trace` to inspect the flow.
+- Implementation: ObjectScript: instantiate `EnsLib.HL7.Message` from raw text, call the target service's `OnProcessInput` (file mode) or actually deliver via MLLP (TCP mode).
+- Input schema: `{ message: { type: "string", required: true, description: "Raw HL7 v2 text" }, targetService: { type: "string", description: "Defaults to the test production's HL7 file service" }, targetType: { type: "string", enum: ["file","tcp"], default: "file" }, schemaCategory: { type: "string", description: "e.g. 2.5" } }`.
+- Output schema: `{ ok, messageId, sessionId, deliveredTo }`.
+- Timeout: 30 seconds. RequiresConfirmation: TRUE for `targetType=tcp`; false for file (sandboxed).
+
+### send_fhir
+
+- Description: Send a FHIR R4 resource or bundle to an endpoint. Default target is the IRIS FHIR Server's REST endpoint (`/csp/healthshare/{ns}/fhir/r4/...`). Supports POST (create), PUT (update), DELETE, and bundle (transaction/batch) submissions.
+- Implementation: ObjectScript via `%Net.HttpRequest` against the local FHIR Server endpoint; or via `HS.FHIRServer.Interop.Service` if testing through a production.
+- Input schema: `{ resource: { type: "object", description: "FHIR resource or Bundle as JSON" }, method: { type: "string", enum: ["POST","PUT","DELETE","GET"], default: "POST" }, resourceType: { type: "string" }, resourceId: { type: "string" }, endpoint: { type: "string", description: "Default = local FHIR Server" } }`.
+- Output schema: `{ ok, statusCode, locationHeader, responseBody }`.
+- Timeout: 30 seconds. RequiresConfirmation: TRUE for non-default endpoint.
+
+### send_sda
+
+- Description: Send an SDA3 container into a target SDA-receiving service. Used in HealthShare-style workflows.
+- Implementation: ObjectScript: build `HS.SDA3.Container` from JSON or XML, send via `HS.Gateway.SDA3.SDA3Operation` or directly into a test process.
+- Input schema: `{ container: { type: "object", description: "SDA3 container as JSON or XML" }, format: { type: "string", enum: ["json","xml"], default: "json" }, targetService: { type: "string" } }`.
+- Output schema: `{ ok, messageId }`.
+- Timeout: 30 seconds. RequiresConfirmation: TRUE.
+
+### send_dicom
+
+- Description: Send a DICOM message (typically a C-STORE) over TCP to a `EnsLib.DICOM.Service.TCP` host, or read a DICOM file through `EnsLib.DICOM.Service.File`. Requires negotiated association context.
+- Implementation: ObjectScript via `EnsLib.DICOM.File` to load + the operation's send method.
+- Input schema: `{ filePath: { type: "string" }, dicomContent: { type: "string" }, targetService: { type: "string", required: true }, associationContext: { type: "string", description: "AssociationContext class name; default = test production's standard context" } }`.
+- Output schema: `{ ok, messageId, ackStatus }`.
+- Timeout: 60 seconds. RequiresConfirmation: TRUE.
+
+### send_mft_file / list_mft_folder / download_mft_file
+
+- Description: Send a file to an MFT service (Box / Dropbox / Kiteworks), list a remote folder, or download a file. Useful for end-to-end MFT-pass-through testing.
+- Implementation: ObjectScript via `%MFT.Box`, `%MFT.Dropbox`, `%MFT.Kiteworks` API.
+- Input schema (send): `{ provider: { type: "string", enum: ["Box","Dropbox","Kiteworks"], required: true }, mftConnectionName: { type: "string", required: true }, localFilePath: { type: "string", required: true }, remoteFolder: { type: "string", required: true }, remoteFilename: { type: "string" } }`.
+- Input schema (list): `{ provider, mftConnectionName, remoteFolder }`.
+- Input schema (download): `{ provider, mftConnectionName, remoteFolder, remoteFilename, localDestination }`.
+- Output schema: depends on operation.
+- Timeout: 60 seconds for send/download, 15 for list. RequiresConfirmation: TRUE for send/download.
+
+### validate_hl7_structure
+
+- Description: Validate an HL7 v2 message against its declared schema (e.g., `2.5:ADT_A01`). Reports missing required segments, fields, or datatypes. No side effects.
+- Implementation: ObjectScript: instantiate `EnsLib.HL7.Message`, check `BuildMapStatus`, then call validation per the host's `Validation` setting flags (`d`, `m`, `s` etc.).
+- Input schema: `{ message: { type: "string", required: true }, schemaCategory: { type: "string", description: "e.g. 2.5; auto-detect from MSH-12 if omitted" }, docType: { type: "string", description: "e.g. ADT_A01; auto-detect from MSH-9 if omitted" }, validationFlags: { type: "string", default: "dms" } }`.
+- Output schema: `{ ok, valid, buildMapStatus, errors: [ { segment, field, code, message } ] }`.
+- Timeout: 10 seconds. RequiresConfirmation: false.
+
+### validate_hl7_semantics
+
+- Description: Beyond structure, run profile-based semantic checks (e.g., MRN must be 7 digits, MessageType must be in a whitelist, sender facility must match a lookup table). Driven by an optional rule set.
+- Implementation: ObjectScript: invoke a per-profile `Ens.Rule.Definition` against the parsed message.
+- Input schema: `{ message: { type: "string", required: true }, profile: { type: "string", description: "Name of validation rule definition class" } }`.
+- Output schema: `{ ok, valid, ruleHits: [ { ruleName, severity, message } ] }`.
+- Timeout: 15 seconds. RequiresConfirmation: false.
+
+### validate_fhir_resource
+
+- Description: Run `$validate` on a FHIR R4 resource. Checks against the resource's profile (or a custom profile if supplied). Returns OperationOutcome with issues.
+- Implementation: ObjectScript: POST to `/fhir/r4/{ResourceType}/$validate` on the local FHIR Server, OR call `HS.FHIRServer.Util.Validator` directly.
+- Input schema: `{ resource: { type: "object", required: true }, profile: { type: "string", description: "Custom profile URL" } }`.
+- Output schema: `{ ok, valid, issues: [ { severity, code, diagnostics, location } ] }`.
+- Timeout: 15 seconds. RequiresConfirmation: false.
+
+### compare_messages
+
+- Description: Diff two messages of the same type. For HL7 / X12 / EDIFACT: segment-level diff. For FHIR: JSON diff. For SDA: per-entry diff. Used to verify a DTL produces the expected output.
+- Implementation: ObjectScript: parse both, walk virtual property paths or JSON paths.
+- Input schema: `{ messageA: { type: "string", required: true }, messageB: { type: "string", required: true }, format: { type: "string", enum: ["hl7","x12","edifact","fhir","sda","auto"], default: "auto" } }`.
+- Output schema: `{ identical, differences: [ { path, valueA, valueB } ] }`.
+- Timeout: 10 seconds. RequiresConfirmation: false.
+
+### test_rest_endpoint
+
+- Description: Send a generic HTTP request (GET/POST/PUT/DELETE) to an external REST endpoint via the production's HTTP outbound adapter pattern. Useful for testing the network path before wiring up a `EnsLib.REST.Operation`.
+- Implementation: ObjectScript via `%Net.HttpRequest` configured per the input.
+- Input schema: `{ method: { type: "string", enum: ["GET","POST","PUT","DELETE","PATCH"], required: true }, url: { type: "string", required: true }, headers: { type: "object" }, body: { type: "string" }, contentType: { type: "string", default: "application/json" }, expectedStatusCodes: { type: "array", items: "integer" } }`.
+- Output schema: `{ ok, statusCode, headers, body, elapsedMs }`.
+- Timeout: 60 seconds. RequiresConfirmation: TRUE for non-GET methods.
+
+### get_test_message_samples
+
+- Description: Return curated sample messages for HL7 v2 (ADT_A01, ORM_O01, ORU_R01, MDM_T02, etc.), FHIR R4 (Patient, Observation, Bundle), SDA3 (Container with Patient + Encounter + Observation), DICOM. Useful when the user asks for a quick test message without writing one from scratch.
+- Implementation: SQL against `AgenticInterop_Catalog.TestSamples` (seeded by Catalog.HsBuilder per the catalog plan).
+- Input schema: `{ format: { type: "string", enum: ["hl7","fhir","sda","dicom"], required: true }, messageType: { type: "string", description: "ADT_A01, Patient, etc." } }`.
+- Output schema: `{ samples: [ { name, message, description, source } ] }`.
+- Timeout: 5 seconds. RequiresConfirmation: false.
+
+### get_iris_fhir_capability_statement
+
+- Description: Return the local FHIR Server's CapabilityStatement. Useful for "what FHIR operations does this server support" / "is `$everything` enabled" queries.
+- Implementation: ObjectScript via GET `/fhir/r4/metadata`.
+- Input schema: `{ endpoint: { type: "string", description: "Default = local FHIR Server" } }`.
+- Output schema: `{ ok, capabilityStatement: { ... } }`.
+- Timeout: 10 seconds. RequiresConfirmation: false.
+
+---
+
+## ToolSet.Production extensions  [BATCH 4 — DICOM + MFT + Virtual Documents helpers]
+
+These extend the Production toolset with batch 4 specifics. They live alongside the existing Production tools.
+
+### list_dicom_associations / get_dicom_association / create_dicom_association
+
+- Description: Manage DICOM associations (`EnsLib.DICOM.Util.AssociationContext` rows). Each association declares one or more presentation contexts (abstract syntax + transfer syntax pairs).
+- Implementation: ObjectScript via `EnsLib.DICOM.Util.AssociationContext.ImportAssociation()` / programmatic creation.
+- Input schema (create): `{ name: { type: "string", required: true }, presentationContexts: { type: "array", items: { type: "object", properties: { abstractSyntax: { type: "string" }, transferSyntaxes: { type: "array", items: "string" } } } } }`.
+- Output schema: `{ ok, associationName }`.
+- Timeout: 10 seconds. RequiresConfirmation: TRUE for create.
+
+### list_mft_connections / register_mft_connection
+
+- Description: View / create the OAuth 2.0 client configurations IRIS uses to talk to Box / Dropbox / Kiteworks. These are referenced by `MFTConnectionName` on MFT business hosts.
+- Implementation: ObjectScript via `%SYS.MFT.Connection.{Box,Dropbox,Kiteworks}` API.
+- Input schema (register): `{ provider: { type: "string", enum: ["Box","Dropbox","Kiteworks"], required: true }, name: { type: "string", required: true }, clientId: { type: "string", required: true }, clientSecret: { type: "string", required: true, description: "Stored in IRIS Secured Wallet" }, redirectUri: { type: "string" } }`.
+- Output schema: `{ ok, connectionName }`.
+- Timeout: 10 seconds. RequiresConfirmation: TRUE.
+
+### list_search_tables / get_search_table_indexes / rebuild_search_table_index
+
+- Description: View virtual-document search tables (`EnsLib.HL7.SearchTable`, `EnsLib.EDI.X12.SearchTable`, custom subclasses). Rebuild indexes when the search table definition changes (the framework re-indexes incoming messages but historical messages need explicit rebuild).
+- Implementation: ObjectScript via `Ens.SearchTableBase.Rebuild*()` methods.
+- Input schema (rebuild): `{ searchTableClass: { type: "string", required: true }, range: { type: "object", properties: { from: { type: "string" }, to: { type: "string" } }, description: "Time range to rebuild; default = all" } }`.
+- Output schema: `{ ok, recordsRebuilt, durationMs }`.
+- Timeout: 600 seconds. RequiresConfirmation: TRUE.
+
+### list_schema_categories / get_schema_structure / import_custom_schema
+
+- Description: View loaded HL7 / X12 / EDIFACT / ASTM / XML schema categories. Get a specific document structure within a category. Import a custom schema XML.
+- Implementation: ObjectScript via `EnsLib.HL7.Schema`, `EnsLib.EDI.X12.Schema`, etc.
+- Input schema (get structure): `{ category: { type: "string", required: true, description: "e.g. 2.5 or MyApp:2.5" }, docType: { type: "string", required: true, description: "e.g. ADT_A01" }, format: { type: "string", enum: ["hl7","x12","edifact","astm","xml"], default: "hl7" } }`.
+- Input schema (import): `{ schemaXml: { type: "string", required: true }, format: { type: "string", required: true } }`.
+- Timeout: 5–30 seconds. RequiresConfirmation: TRUE for import.
