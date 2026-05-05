@@ -1580,6 +1580,247 @@ Workflow:
 
 When a tool returns one of these codes in the standard envelope, surface it to the user with the human-readable description (the chatbot can call `lookup_error_code` to retrieve it). For DTL/BPL compile errors, follow up with the line/column from `compile_dtl` or `compile_bpl` output.
 
+## CPF [Actions] section — deployment-time config (configuration merge)
+
+The `[Actions]` section is valid ONLY in a configuration merge file (set via `ISC_CPF_MERGE_FILE` env var or `iris merge` command), NOT in the live `iris.cpf`. Adding `[Actions]` to a live CPF causes startup to fail. The actions are idempotent — only execute if they would change state.
+
+Key actions for interoperability deployment:
+
+`ConfigProduction:Namespace=NS,Path=/path/to/production.xml,Name=MyApp.Production,AutoStart=1`
+- Deploys an exported production XML into a namespace. If the namespace doesn't exist, IRIS auto-creates databases (a default-globals DB + default-routines DB, both protected by a new resource named after the namespace, in `install-dir/mgr`), creates the namespace, and enables interoperability. If the namespace exists but isn't interop-enabled, IRIS auto-enables it.
+- `AutoStart=1` (default 0) marks the loaded production for auto-start.
+- This is the canonical way to ship a production to a new instance via container deployment / installer scripts. The chatbot's IPM-install path is the alternative — see PLAN.md "IPM-compliant from day one".
+
+`Execute:Namespace=NS,ClassName=Pkg.Class,MethodName=Method,Arg1=...,Arg2=...`
+- Runs `##class(Pkg.Class).Method(arg1, arg2, ...)`. Method must return %Status. Always processed last in the [Actions] block. Useful for post-deployment fix-ups (e.g., seed catalog data, compile a class hierarchy, register web apps that the standard module.xml didn't cover).
+- Or `Execute:Namespace=NS,RoutineName=$$Tag^ZTEST,Arg1=...` for routine entry points.
+
+`CreateDatabase:Name=X,Directory=/path,Size=N,MaxSize=M[,Server=ECPNode,LogicalOnly=1][,MirrorSetName=Y,MirrorDBName=Z,Seed=/path/old.dat]`
+- Creates a database. `Server` + `LogicalOnly=1` registers a remote ECP database without creating a physical file. `MirrorSetName` + `Seed` adds an existing database to a mirror.
+
+`ModifyConfig:Property1=Value1,Property2=Value2`
+- Modifies the [config] section (memory, journals, gmheap, etc.) via `Config.config.Modify()`.
+
+Other actions: `CreateApplication`/`Modify`/`Delete` (security applications), `CreateNamespace`/`Modify` with `Interop=1`, `CreateMirrorMember`, `CreateLDAPConfiguration`, `CreateUser`/`Role`/`Resource`/`Service`/`Event` (security objects). All idempotent.
+
+For runtime CPF changes (without going through merge), use the `Config.*` API package directly: `Config.Startup.Modify("EnsembleAutoStart", 1)`, `Config.Namespaces.Modify(name, props)`, etc. Most require IRIS restart to take full effect.
+
+## Key [Startup] CPF parameters affecting interoperability
+
+- `EnsembleAutoStart=1|0` (default 1) — when enabled, the production marked auto-start in each interop namespace starts at IRIS startup. Disable to debug troubled productions without auto-start firing. Editable via System Administration > Configuration > Additional Settings > Startup, or `Config.Startup.Modify()`.
+- `JobServers=N` (default 0; valid 0–2000) — pre-allocated job server pool. Faster process spawning at the cost of memory. Effective target depends on total: ≤4 → 5; 5–19 → 10; 20–99 → 20; 100+ → effective = parameter. Monitor every 5 seconds; trims excess every 3 minutes.
+- `JobStart=1|0` (default 1) — runs `JOB^%ZSTART` when a background job starts. Useful for per-job initialization. JobHalt is the analogue for cleanup.
+- `ProcessStart=1|0` / `ProcessHalt=1|0` — same for foreground/terminal processes. `^%ZSTART` / `^%ZSTOP` route entries.
+- `SystemStart=1|0` / `SystemHalt=1|0` — runs at instance startup/shutdown.
+- `CallinStart=1|0` / `CallinHalt=1|0` — runs for external programs doing a CALLIN.
+- `IPv6=1|0` (default 0) — enable IPv6 support. Required if your TCP/HL7/FHIR endpoints listen on IPv6.
+- `ErrorPurge=N` (default 30; range 1–1000) — days to keep `^%ETN` error globals. Errors older than N days are purged on next restart.
+- `DefaultPortBindAddress=IP` — limits superserver to a single host IP on multihomed machines. Empty = all interfaces.
+
+## InterSystems Glossary — terms the chatbot must use precisely
+
+Authoritative definitions distilled from InterSystems_Glossary_of_Terms. The chatbot must use these terms with these meanings; do NOT confuse them with similar-looking concepts from other platforms.
+
+Production-domain terms:
+- foundation — in IRIS for Health and HealthShare, a namespace enabled for healthcare interoperability.
+- production — a specialized package of software and documentation that integrates multiple disparate software systems via business hosts (services / processes / operations) communicating through messages.
+- (For the rest, the production-specific terminology — business host, service, process, operation, adapter, virtual document, etc. — is defined in skill.productions's main body.)
+
+Class-system terms:
+- abstract class — cannot be instantiated; template for non-abstract subclasses.
+- abstract persistent class — cannot be instantiated but is projected to InterSystems SQL as a table containing all data stored in its subclasses.
+- class — encapsulates state and behavior of a single entity; consists of properties, methods, parameters, queries, indexes.
+- class member — properties, methods, parameters, queries, indexes, triggers, or XData blocks of a class.
+- class method — invocable whether or not an instance exists in memory.
+- instance method — invoked from a specific instance.
+- code method — executes ObjectScript.
+- expression method — may be placed in-line by the class compiler.
+- method generator — generates runtime code based on class parameter values at compile time.
+- callback method — called by system methods to allow user processing during specific events. Names follow `%OnEvent` form.
+- final class / method / property — cannot be extended or overridden.
+- registered class — derived from `%RegisteredObject`. IRIS auto-manages object references and supports polymorphism.
+- persistent class — objects can be stored in the database. Inherits the persistent interface from `%Persistent`.
+- embeddable class — objects exist independently in memory but, when stored, exist only within a persistent object. See `%SerialObject`.
+- system class — built-in IRIS classes.
+- factory class — Java-side; manages connections to IRIS.
+
+Storage and identity:
+- OID (object identifier) — uniquely identifies an object on disk within the entire database. Valid for the life of the object; not reused after delete.
+- OREF (object reference) — points to a specific in-memory object. Valid only while the object is open.
+- GUID (globally unique identifier) — trusted-unique identifier across all IRIS instances. Used for object synchronization. APIs: `%ExtentMgr.GUID`, `%Library.GlobalIdentifier`.
+- Row ID — uniquely identifies a row in a SQL table. For class-projected tables, the Row ID is the object ID (auto or ID-Key).
+- IDKEY — index designating ID contents. Properties used in IDKEY must remain static across object lifetime.
+- extent — spans the entire hierarchy tree of a root class. SQL tables contain the entire extent.
+- root class — top of an extent's class hierarchy.
+- primary persistent superclass — determines persistent behavior of a class. Default = leftmost persistent superclass.
+- shallow save vs deep save — `%Save` saves the object only / saves and recursively saves referenced objects.
+- swizzling — automatic loading of embedded/persistent objects when referenced (lazy loading).
+
+Data types and collections:
+- data type class — class with `DATATYPE` keyword set, supporting validation and SQL interoperability.
+- client data type — used to project data to clients (Java, etc.) via the IRIS Object Server.
+- collection — list (slot-numbered) or array (key-value).
+- multidimensional property — array-node-like; no property methods, no dot-syntax access, not projected to SQL or Java.
+- transient property — in-memory only; not stored on disk.
+- calculated property — no in-memory storage; computed on each access.
+- computed field — value derived from compiled ObjectScript that may reference other fields.
+
+Database and globals:
+- global — multidimensional storage structure (balanced-tree). The fundamental IRIS data primitive.
+- IRIS.DAT — primary volume in an IRIS database file.
+- database — an IRIS.DAT file containing code and data.
+- database cache — RAM holding recently-read data for performance.
+- mounted / dismounted — connection state of a database to an IRIS instance. References to dismounted databases implicitly mount them.
+- replicated global — namespace mapping defines duplicate locations. SET/KILL on the original copy propagates to all copies.
+- temporary global — stored in IRISTEMP; cleared on restart.
+- mapped global reference — logical reference to a global in a different directory; the system resolves the path.
+- extended global reference / explicit reference — `^["NS"]GlobalName` or `^["^node^/path"]GlobalName` form. Overrides the current namespace mapping.
+
+Namespaces:
+- namespace — logical entity providing access to data and code in databases. Namespace mappings specify physical locations.
+- implied namespace — a namespace IRIS creates internally when an extended global reference uses a directory or directory+system.
+- system manager's directory — `install-dir/mgr` containing the manager database with system globals/routines. Subdirectory `MGR` of the IRIS install.
+
+Process and concurrency:
+- process — entity scheduled by system software; context for server-based code.
+- JOBbed process — background process started by `JOB` command.
+- principal device — input/output device associated with a process. JOB command can override; default for jobs is null device.
+- partition — process-private memory section.
+- concurrency mode — type of locking when opening/saving objects. Modes 0–4: no locking, atomic, shared, shared retained, exclusive.
+- atomic lock — no locking for single-node data; shared while loading multi-node data; exclusive while saving.
+- exclusive lock — prevents other processes from viewing or editing.
+- shared lock — held while loading from DB; exclusive while saving multi-node or updating.
+- incoming lock / server lock — local lock issued by a remote process.
+- outgoing lock / client lock — local process issues lock on remote item.
+- lock table — internal table of all LOCK commands.
+
+Authentication and security:
+- authentication — proving the user is who they claim. Mechanisms: password (Instance Authentication), Kerberos, LDAP, OS-based, delegated.
+- authorization — determining what an authenticated user can do.
+- KDC (Key Distribution Center) — Kerberos server that generates ticket-granting tickets and service tickets. On Windows, part of the Domain Controller.
+- privilege — ability to perform an action on a resource. Held only by roles.
+- role — entity that receives privileges. Users become role members.
+- target role / matching role — role granted by an application to users already in a matching role.
+- service — entity regulating access to IRIS through an existing pathway (Telnet, JDBC, etc.).
+- resource — smallest granular unit protected by IRIS security. Represents one or more assets.
+- search user — IRIS connects to an LDAP server with this user's credentials to perform searches.
+- target user — user attempting to authenticate via LDAP.
+
+Configuration:
+- CPF (Configuration Parameter File) — `iris.cpf`. Defines a configuration. Loaded at startup.
+- configuration — describes IRIS resources at startup. Defined in the Management Portal. Multiple may exist; one is current.
+
+Network and ECP:
+- ECP (Enterprise Cache Protocol) — IRIS internal networking. Distributed-database support across nodes.
+- DMNNET — IRIS process handling incoming global requests from a network.
+- RECEIVE — IRIS process broadcasting network configuration info to remote computers.
+
+Files and devices:
+- ITG file — `.ITG` extension; database integrity report from an integrity check.
+- GSA file — `.GSA` extension; saved globals.
+- I/O translation — NLS facility transforming between computer character set and a device's character set.
+
+Programming concepts:
+- callout interface — IRIS facility to execute and evaluate ObjectScript from C programs. Also usable from `$ZF` routines.
+- $ZF function — IRIS-specific function to invoke external programs/routines from within IRIS.
+- query interface — common mechanism for preparing, executing, processing queries regardless of type/language.
+- swizzling, polymorphism, encapsulation, multiple inheritance — standard OO terms; IRIS uses them per the standard meanings with one nuance: polymorphism dispatches by actual object type even when accessed through a parent-class reference.
+
+For the rest of the glossary (95+ terms), the chatbot can call `lookup_glossary_term(term)`. The terms above are the ones the chatbot must recognize without a tool call.
+
+## Detailed API Index — canonical entry points
+
+The InterSystems Detailed API Index organizes IRIS APIs by topic. The ones most relevant to interoperability work, with their authoritative class entry points (use `describe_class` for the full surface):
+
+Productions:
+- `Ens.Director` — start/stop productions, query state, settings access. Methods: `EnableConfigItem`, `GetHostSettings`, `GetProductionStatus`, `ProductionNeedsUpdate`, `StartProduction`, `StopProduction`, plus the rest.
+- `%SYS.Ensemble` — `CreateDocumentation`, `GetEnsMetrics`, `StartProduction`, `StopProduction`. Available from any namespace.
+
+Configuration / CPF:
+- `Config.*` package (Config.Databases, Config.MapGlobals, Config.SQL, Config.Startup, Config.Namespaces, Config.config, Config.Devices, Config.DeviceSubTypes, Config.MapPackages, Config.MapRoutines, Config.ECP, Config.ECPServers) — modify CPF sections programmatically. Most are persistent; many provide queries.
+- Configuration merge feature — `iris merge` command + `ISC_CPF_MERGE_FILE` env var; `[Actions]` section in merge file.
+- `%SYS.System.GetCPFFileName()` — returns the active CPF path.
+- `%Library.EnsembleMgr.EnableNamespace(ns)` — enable an existing namespace for interop. Idempotent. NOT for IRIS for Health / HealthShare (use Installer Wizard instead).
+
+Database / globals:
+- `SYS.Database` — properties + methods for database files. `Copy`, `DisableJournaling`, `EnableJournaling`, `GetDatabaseFreeSpace`. Queries: `FreeSpace`, `List`, `RemoteDatabaseList`. %SYS only.
+- `^DATABASE` routine — manage databases as alternative to portal.
+- `^NAMESPACE` routine — manage namespaces as alternative to portal.
+- `%Installer.Manifest` — install-time scripted configuration (databases, namespaces, package mappings, routine mappings).
+
+Processes and jobs:
+- `^$JOB` structured system variable.
+- `%SYSTEM.Process`, `%SYSTEM.SYS`, `%SYSTEM.Util` — process info and manipulation.
+- `%SYS.ProcessQuery` — display + manipulate processes. Properties include ClientExecutableName, CurrentDevice, JobType, LastGlobalReference, Priority, Routine, UserName.
+- `SYS.Process` (extends ProcessQuery) — `ProcessTableSize`, `ReleaseAllLocks`, `Resume`, `Suspend`, `Terminate`. %SYS only.
+
+DICOM:
+- DICOM virtual documents in productions via `EnsLib.DICOM.*`. No DICOM viewer ships — IRIS does not provide image viewing.
+
+EDIFACT, X12, ASTM:
+- `EnsLib.EDI.EDIFACT.*`, `EnsLib.EDI.X12.*`, `EnsLib.EDI.ASTM.*` — virtual documents in productions.
+
+HL7 v2:
+- `EnsLib.HL7.*` — full message routing pipeline. Uses virtual document model.
+
+FHIR:
+- `HS.FHIRServer.*` (server, interop service/operation), `HS.FHIR.DTL.SDA3.*` and `HS.FHIR.DTL.vR4.SDA3.*` (DTL packages for conversions).
+
+SDA Documents:
+- `HS.SDA3.Container`, `HS.SDA3.Patient`, `HS.SDA3.Encounter`, etc. Available in namespaces with HS package access. Built-in transformations: SDA ↔ FHIR, SDA ↔ HL7 v2, SDA ↔ CDA/C-CDA via `HS.Gateway.*`.
+
+Security:
+- `%SYSTEM.Security` — `AddRoles`, `Audit`, `ChangePassword`, `Check`, `GetGlobalPermission`, `Login`, `ValidatePassword`.
+- `Security.*` package — define/manipulate resources, roles, applications, services, users, events.
+
+Email + MIME:
+- `%Net.MailMessage`, `%Net.MIMEPart` — IRIS classes for SMTP send + POP3 receive + MIME message construction.
+- `EnsLib.EMail.InboundAdapter` / `OutboundAdapter` — production adapters built on `%Net`.
+
+External messaging:
+- `%Net.MQSend` (and other `%Net` MQ classes) + `MQSeries` adapters — IBM WebSphere MQ.
+- `EnsLib.JMS.*`, `EnsLib.Kafka.*`, `EnsLib.RabbitMQ.*`, `EnsLib.MQTT.*` — JMS / Kafka / RabbitMQ / MQTT adapters.
+- `EnsLib.Amazon.SNS.*`, `EnsLib.Amazon.CloudWatch.*` — AWS messaging + monitoring.
+- Cloud Storage — AWS S3, Azure Blob, GCP Cloud Storage adapters in `EnsLib.CloudStorage.*`.
+
+Files / FTP / Pipe:
+- `EnsLib.File.*`, `EnsLib.FTP.*`, `EnsLib.Pipe.InboundAdapter` / `OutboundAdapter`.
+
+HTTP / SOAP / REST:
+- `EnsLib.HTTP.*` adapters; `EnsLib.SOAP.*` services + operations; `EnsLib.REST.*` (subclass `EnsLib.REST.Operation`, or pass-through `EnsLib.REST.GenericService`).
+
+LDAP / SAP / Siebel / Telnet:
+- `EnsLib.LDAP.OutboundAdapter`; `EnsLib.SAP.*` (SAP Java Connector); `EnsLib.Siebel.HTTPOutboundAdapter`; `EnsLib.Telnet.OutboundAdapter`.
+
+MFT (Box / Dropbox / Kiteworks):
+- `EnsLib.MFT.Service.Passthrough` / `Operation.Passthrough`.
+- `%SYS.MFT.Connection.{Box,Dropbox,Kiteworks}` (connection management) + `%MFT.{Box,Dropbox,Kiteworks}` (operations: UploadFile, DownloadFile, DeleteFile, ListFolder, CreateFolder, GetUserInfo).
+
+SQL:
+- `%SYS.SQL` package; `%SYSTEM.SQL` (and `%SYSTEM.SQL.Functions`); `%SYSTEM.SQL.Schema` for DDL import.
+- SQL Gateway — `%SYS.SQLConnection` and related for ODBC/JDBC out-of-IRIS access.
+
+Tasks / scheduling:
+- `%SYS.Task` package — scheduled tasks. `Ens.Util.Tasks.Purge` is the purge-management task type.
+
+Memory / config:
+- `%SYSTEM.Config` — `ModifyZFSize`, `ModifyZFString`, `Modifybbsiz`, `Modifynetjob`, `ModifyConsoleFile`.
+- `%SYSTEM.Config.SharedMemoryHeap` — `FreeCount`, `GetUsageSummary`.
+
+Logging:
+- `%SYS.System.WriteToConsoleLog()` — write to messages.log.
+- `^LOGDMN` routine and `SYS.LogDmn` class — structured logging for monitoring tools.
+
+OS / files / encryption:
+- `%File`, `%SYSTEM.OS`, `%SYSTEM.Util` for OS-level interactions.
+- `%SYSTEM.Encryption` — AES, base64, hashing, MAC.
+- TLS via the IRIS TLS Configuration objects.
+
+Locks:
+- `%SYS.LockQuery`, `SYS.Lock`. Best practice: terminate the holding process rather than removing locks directly.
+
+The full Detailed API Index has ~80 topics. The chatbot can call `search_api_index(query)` to find a topic's authoritative entry points.
+
 ### Additional INSTRUCTIONS appendix for skill.productions [BATCH 4]
 
 ```markdown
