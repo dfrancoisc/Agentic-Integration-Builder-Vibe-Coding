@@ -737,3 +737,66 @@ These extend the Production toolset with batch 4 specifics. They live alongside 
 - Input schema (get structure): `{ category: { type: "string", required: true, description: "e.g. 2.5 or MyApp:2.5" }, docType: { type: "string", required: true, description: "e.g. ADT_A01" }, format: { type: "string", enum: ["hl7","x12","edifact","astm","xml"], default: "hl7" } }`.
 - Input schema (import): `{ schemaXml: { type: "string", required: true }, format: { type: "string", required: true } }`.
 - Timeout: 5–30 seconds. RequiresConfirmation: TRUE for import.
+
+---
+
+## ToolSet.Reference  [BATCH 5 — error / CPF / API discovery]
+
+Reference utilities sourced from Configuration_Parameter_File_Reference.pdf, Detailed_API_Index.pdf, InterSystems_Error_Reference.pdf, InterSystems_Glossary_of_Terms.pdf. These are exposed at the main agent level (cross-cutting), not behind a Skill, because every Skill benefits from them.
+
+### lookup_error_code
+
+- Description: Look up an InterSystems error code (`<Ens>ErrXxx`, `<%SYS>YyyError`, numeric system codes 5000-5999, etc.) and return its catalog entry: code, domain, formal description, and the substitution placeholders. Use whenever the chatbot has an opaque `%Status` and the user asks "what does this mean?".
+- Implementation: SQL against `AgenticInterop_Catalog.ErrorReference` (a vector table seeded by Catalog.HsBuilder from InterSystems_Error_Reference.pdf). Falls back to `$system.Status.GetErrorCodes()` + `$system.Status.GetOneStatusText()` for runtime status objects.
+- Input schema: `{ errorCode: { type: "string", required: true, description: "e.g. <Ens>ErrFailureTimeout, ErrProductionAlreadyRunning, 5002, %Status XML serialization" }, includeSimilar: { type: "boolean", default: false, description: "Return up to 5 similar error codes by name fuzzy match" } }`.
+- Output schema: `{ code, domain, description, placeholders: [ "%1", "%2" ], examplesOfPlaceholders: { "%1": "Production name", ... }, category: "Production lifecycle | Connections | DTL | BPL | EDI | HL7 | X12 | Workflow | XPath | System", commonCauses: [...], remediation: [...], similarErrors: [...] }`.
+- Timeout: 5 seconds. RequiresConfirmation: false.
+
+### explain_status
+
+- Description: Decode a serialized `%Status` (the XML-shaped string IRIS returns from any failed call). Returns the chain of error codes + their descriptions + a suggested next action. Better than lookup_error_code when the user pastes a raw status — handles nested errors.
+- Implementation: ObjectScript via `$system.Status.GetErrorCodes()`, `$system.Status.GetErrorTexts()`, `$system.Status.DisplayError()` then enrichment from the local error catalog.
+- Input schema: `{ statusXml: { type: "string", required: true } }`.
+- Output schema: `{ codes: [ "code1", "code2" ], texts: [ "...", "..." ], rootCauseSuggestion: "...", relatedSkills: [ "skill.productions", "skill.dtl" ] }`.
+- Timeout: 5 seconds. RequiresConfirmation: false.
+
+### get_cpf_parameter
+
+- Description: Read a CPF parameter from the running IRIS instance. Read-only; safe. Use for "what's the EnsembleAutoStart setting?" or "what namespaces are interop-enabled?".
+- Implementation: ObjectScript via the `Config.*` API package — `Config.Startup.Get()`, `Config.Namespaces.Get()`, `Config.Map.Get()`, etc., or directly `^%SYS("CONFIG", section, key)`.
+- Input schema: `{ section: { type: "string", required: true, description: "[Startup], [Namespaces], [config], [Map], [Journal], [Logging], [SQL], [Monitor], etc." }, key: { type: "string", description: "Parameter name; omit to list all keys in the section" } }`.
+- Output schema: `{ section, key, value, defaultValue, description, validRange }`.
+- Timeout: 5 seconds. RequiresConfirmation: false.
+
+### list_cpf_sections
+
+- Description: List all CPF sections in the current iris.cpf with their key counts. Useful for navigation when the user doesn't know which section a parameter lives in.
+- Implementation: ObjectScript via `Config.*` discovery.
+- Input schema: `{}`.
+- Output schema: `{ sections: [ { name, keyCount, description } ] }`.
+- Timeout: 3 seconds. RequiresConfirmation: false.
+
+### set_cpf_parameter
+
+- Description: WRITE a CPF parameter. Almost all CPF changes require IRIS restart, and many affect more than just interoperability. The chatbot REFUSES this without explicit user confirmation including "yes I understand a restart may be required".
+- Implementation: ObjectScript via the `Config.*` API package's `Modify()` methods. Triggers `^%SYS("CONFIG"...)` updates and writes back to iris.cpf.
+- Input schema: `{ section: { type: "string", required: true }, key: { type: "string", required: true }, value: { type: "string", required: true }, restartConfirmed: { type: "boolean", required: true, description: "User must confirm awareness that IRIS may need restart" } }`.
+- Output schema: `{ ok, oldValue, newValue, restartRequired, restartReason }`.
+- Required permissions: `%Admin_Manage:USE`, `%Admin_Operate:USE`.
+- Timeout: 15 seconds. RequiresConfirmation: TRUE (always).
+
+### search_api_index
+
+- Description: Search the curated InterSystems API Index (Tools/APIs by topic). Returns matching topics with their available tools, classes, and pointers to the relevant skill section. Better than raw `describe_class` when the user asks "how do I work with X" — surfaces the conceptual entry point.
+- Implementation: SQL against `AgenticInterop_Catalog.ApiIndex` (vector table seeded from Detailed_API_Index.pdf). Topics include: HL7 Messages, FHIR Resources, SDA Documents, X12, EDIFACT, ASTM, DICOM, MFT, JSON, JMS, Kafka, RabbitMQ, MQTT, MQ, Cloud Storage, Email, FTP, HTTP, LDAP, SAP, Siebel, SOAP, SQL, TCP/IP, Telnet, Pipe, CDA Documents, Healthcare Data, IHE, Productions, Tasks, Auditing, Encryption, TLS, X.509 Certificates, Security Items, Web Gateway, Namespaces, Globals, Routines, Classes, Files, Directories, Locks, Memory, Processes, CPUs, Servers, Versions, Locales, Date/Time, Macros, Includes, Regular Expressions, GUIDs, IP Addresses, URLs, MIME, Python, OS Commands, etc.
+- Input schema: `{ query: { type: "string", required: true }, limit: { type: "integer", default: 5 } }`.
+- Output schema: `{ hits: [ { topic, description, availableTools: [...], availableClasses: [...], relevantSkill, score } ] }`.
+- Timeout: 10 seconds. RequiresConfirmation: false.
+
+### lookup_glossary_term
+
+- Description: Look up an InterSystems-specific term from the official Glossary. Use when the user mentions a term and the chatbot wants to confirm precise meaning before answering. Authoritative for terms like CPF, OREF, OID, Row ID, primary persistent superclass, principal device, KDC, etc.
+- Implementation: SQL against `AgenticInterop_Catalog.Glossary` (vector table seeded from InterSystems_Glossary_of_Terms.pdf).
+- Input schema: `{ term: { type: "string", required: true }, fuzzyMatch: { type: "boolean", default: true, description: "Allow approximate matching" } }`.
+- Output schema: `{ term, category: "Objects | InterSystems SQL | System | ObjectScript | UNIX | Java | Network | etc.", definition, relatedTerms: [...] }`.
+- Timeout: 5 seconds. RequiresConfirmation: false.

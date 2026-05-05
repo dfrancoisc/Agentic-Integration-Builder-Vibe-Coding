@@ -120,8 +120,13 @@ Both web apps created with `UseSession="0"` (CSP iframe deadlock workaround docu
 |---|---|---|---|---|
 | AgenticInterop_Catalog.Ens | id, text, vector, metadata, source, plus promoted fields: package, type, abstract | 384 (FastEmbed AllMiniLML6V2) | Catalog.EnsBuilder.Build() | 5 |
 | AgenticInterop_Catalog.Hs | same shape | 384 | Catalog.HsBuilder.Build() | 5 |
+| AgenticInterop_Catalog.ErrorReference | id, text, vector, metadata (errorCode, domain, category, placeholders) | 384 | Catalog.ReferenceBuilder.BuildErrors() | 5 |
+| AgenticInterop_Catalog.Glossary | id, text, vector, metadata (term, category, relatedTerms) | 384 | Catalog.ReferenceBuilder.BuildGlossary() | 5 |
+| AgenticInterop_Catalog.ApiIndex | id, text, vector, metadata (topic, availableTools, availableClasses, relevantSkill) | 384 | Catalog.ReferenceBuilder.BuildApiIndex() | 5 |
 
 Tables created in install namespace.
+
+`Catalog.ReferenceBuilder` (added in Phase 5 alongside EnsBuilder/HsBuilder) ingests the four reference PDFs (Configuration_Parameter_File_Reference, Detailed_API_Index, InterSystems_Error_Reference, InterSystems_Glossary_of_Terms) into these vector tables. Same FastEmbed embedder, same `%AI.RAG.KnowledgeBase` pattern, exposed as `search_errors`, `search_glossary`, `search_api_index` tools. Wired into ToolSet.Reference.
 
 ## Frontend (not %AI Framework, but part of the IPM ship)
 

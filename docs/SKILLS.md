@@ -1467,6 +1467,119 @@ If you don't have a business process driving the operation, test it from Interop
 
 The following content extends skill.productions's INSTRUCTIONS body. The user narrowed the skill list in batch 1 — DICOM, MFT, and Virtual Documents do NOT get standalone Skill classes; their content lives inside skill.productions.
 
+### Reference appendix added in BATCH 5 — CPF interop parameters + common error codes
+
+Goes at the end of skill.productions's INSTRUCTIONS body. Sourced from `Configuration_Parameter_File_Reference.pdf` and `InterSystems_Error_Reference.pdf` (Messages Related to Productions chapter — sections 5.1 Production Errors, 5.2 Workflow Errors, 5.3 XPATH Transformation Errors, 5.4 EDI Errors, 5.5 HL7 v2 Routing Errors, 5.6/5.7 X12 Errors).
+
+```markdown
+## CPF parameters that affect interoperability
+
+The IRIS Configuration Parameter File (`iris.cpf`) controls instance-wide behavior. A handful of `[Startup]`, `[Namespaces]`, `[config]`, and `[Actions]` keys directly affect interoperability:
+
+- `[Startup] EnsembleAutoStart=1|0` — master switch. When enabled, the production marked auto-start in each interoperability-enabled namespace starts at IRIS startup. Per-namespace auto-start is set via Interoperability > Manage > Auto-Start Production. Override globally via System Administration > Configuration > Additional Settings > Startup, OR programmatically via the `Config.Startup` class.
+- `[Actions] CreateNamespace:Name=X,Globals=Y,Routines=Z,Interop=1` — creates a namespace with interoperability enabled. `Interop=1` triggers automatic mapping of Ens.* / EnsLib.* globals/routines/packages and creation of the password (XXXSECONDARY) and temp (XXXENSTEMP) databases for IRIS classic. (For IRIS for Health / HealthShare, use `%Library.EnsembleMgr.CreateNewDBForSecondary()` and `createNewDBForEnsTemp()` separately.)
+- `[Actions] ModifyNamespace:Interop=1` — promotes an existing non-interop namespace to interoperability-enabled.
+- `[Namespaces]` section — global flags per namespace; mainly informational since interop status is also derivable from mappings.
+
+For most agentic_interop work, the CPF is read-only — the chatbot exposes `get_cpf_parameter` (read), and `set_cpf_parameter` requires explicit user confirmation since CPF changes typically need IRIS restart and may affect other applications on the instance.
+
+## Common production error codes (`<Ens>` domain)
+
+When troubleshooting, recognise these `Ens` error codes — they indicate well-known failure modes:
+
+Production lifecycle:
+- `<Ens>ErrProductionAlreadyRunning` — only one production runs per namespace; stop the current one first.
+- `<Ens>ErrProductionNetworkedMismatch` — same production name on a different machine; cannot start a different name from this node.
+- `<Ens>ErrProductionNotRegistered` — production class doesn't exist or doesn't compile.
+- `<Ens>ErrProductionNotRunning` — operation requires a running production.
+- `<Ens>ErrProductionNotShutdownCleanly` — Troubled state; recover via `Ens.Director.RecoverProduction()`.
+- `<Ens>ErrProductionSuspendedMismatch` — Suspended state for a different production; cannot start a new name without resolving the suspended one.
+- `<Ens>ErrProductionNotQuiescent` / `<Ens>ErrProductionQuiescent` — instance state mismatch.
+- `<Ens>ErrTerminate` — instance termination requested.
+
+Connections & adapters:
+- `<Ens>ErrAdapterAlreadyConnected` — second connection attempt on a single-connection adapter.
+- `<Ens>ErrInConnectionLost` / `<Ens>ErrOutConnectionLost` — network disconnect.
+- `<Ens>ErrOutConnectFailed` / `<Ens>ErrOutConnectExpired` / `<Ens>ErrOutConnectException` / `<Ens>ErrOutNotConnected` — outbound connection problems.
+- `<Ens>ErrTCPListen` / `<Ens>ErrTCPReadBlockSize` / `<Ens>ErrTCPReadTimeoutExpired` / `<Ens>ErrTCPTerminatedReadTimeoutExpired` — TCP-specific.
+- `<Ens>ErrFTPConnectFailed` / `<Ens>ErrFTPGetFailed` / `<Ens>ErrFTPPutFailed` / `<Ens>ErrFTPListFailed` / `<Ens>ErrFTPDeleteFailed` / `<Ens>ErrFTPDirectoryChangeFailed` / `<Ens>ErrFTPLogoutFailed` / `<Ens>ErrFTPModeChangeFailed` / `<Ens>ErrFTPNameListFailed` / `<Ens>ErrFTPRenameFailed` — FTP/SFTP-specific.
+- `<Ens>ErrTelnetConnectFailed` / `<Ens>ErrTelnetFindFailed` / `<Ens>ErrTelnetLoginFailed` — Telnet-specific.
+
+Retries and timeouts:
+- `<Ens>ErrFailureTimeout` — `FailureTimeout` setting exceeded after N seconds. Increase or set to -1 for indefinite retry.
+- `<Ens>ErrRetryable` — the framework will retry.
+- `<Ens>ErrNotRetryable` — the framework will NOT retry; investigate root cause.
+
+Configuration & registration:
+- `<Ens>ErrConfigDisabled` — the host is disabled; enable via the production configuration.
+- `<Ens>ErrCredentialsAlreadyExists` / `<Ens>ErrNoCredentials` / `<Ens>ErrNoCredentialsSystemName` / `<Ens>ErrNoCallerCredentials` — credentials lookup problems.
+- `<Ens>ErrBusinessDispatchNameNotRegistered` — target host name doesn't exist in the production.
+- `<Ens>ErrClassNotConcrete` / `<Ens>ErrClassNotDefined` / `<Ens>ErrClassNotDerived` — class loading errors during host setup.
+- `<Ens>ErrParameterInvocationInvalid` — `INVOCATION` parameter not `Queue` or `InProc`.
+
+Messages and routing:
+- `<Ens>ErrNoMsgBody` — message header references a missing body; usually means the body was purged but the header wasn't.
+- `<Ens>ErrNoResponseClass` — request class doesn't declare its response type.
+- `<Ens>ErrRequestNotHandled` — operation has no handler for the message type.
+- `<Ens>ErrUnsupportedRequestType` — request class not in the operation's signature.
+- `<Ens>ErrRulesetLoadFailed` / `<Ens>ErrRulesetNotFound` — rule definition missing or invalid.
+- `<Ens>ErrSuspending` — message suspended by handler.
+
+DTL/BPL specific:
+- `<Ens>ErrDTLCannotBeCompiled` — DTL has compile errors; check the editor for red markers.
+- `<Ens>ErrInvalidDTL` / `<Ens>ErrInvalidBPL` / `<Ens>ErrInvalidBPLDiagram` / `<Ens>ErrInvalidProduction` — class structure is malformed.
+- `<Ens>ErrBPLInvalidContextSuperclass` — context superclass must extend `Ens.BP.Context`.
+- `<Ens>ErrBPLInvalidLoopContext` — `<break>`/`<continue>` outside a loop.
+- `<Ens>ErrBPLLabelNameNotUnique` / `<Ens>ErrBPLLabelNotInScope` — `<label>` issues.
+- `<Ens>ErrBPLNodeMissing` / `<Ens>ErrBPLNodeValidation` / `<Ens>ErrBPLEnumeration` — element validation.
+- `<Ens>ErrBPLBadExpressionValue` — indirection (`@`) couldn't resolve.
+- `<Ens>ErrBPLThrownFault` — `<throw>` fault uncaught (or message text from the throw expression).
+- `<Ens>ErrBPLASyncTimeoutMustBeOnSync` — async call timeout was set on `<call>` instead of `<sync>`.
+- `<Ens>ErrBPCancelled` — BPL was cancelled.
+- `<Ens>ErrBPCanNotOpen` — BPL instance lookup failed.
+- `<Ens>ErrBPTerminated` — BPL terminated due to error (chained with the underlying error).
+- `<Ens>ErrDTLEnumeration` / `<Ens>ErrDTLNodeValidation` — DTL element validation.
+- `<Ens>ErrDTSSignature` / `<Ens>ErrDTSMultiSignature` — data transformation signature mismatch.
+- `<Ens>ErrInvalidAssign` — `<assign>` action invalid for the target property type.
+- `<Ens>ErrKeyWithAppend` / `<Ens>ErrKeyWithClear` / `<Ens>ErrKeyWithInsert` / `<Ens>ErrKeyWithRemove` — `key` attribute usage rules.
+- `<Ens>ErrValueWithClear` / `<Ens>ErrValueWithRemove` — `value` attribute usage rules.
+- `<Ens>ErrXDataBlockNotDefined` — referenced XData block missing.
+- `<Ens>ErrInvalidDateTimeFormat` / `<Ens>ErrInvalidDurationFormat` — date/duration parse errors.
+
+XPATH:
+- `<Ens>XPathDOMResult` — DOM result returned when single value expected.
+- `<Ens>XPathMultipleResults` — multiple results returned when one expected.
+- `<Ens>XPathNOResult` — no results.
+
+EDI / virtual documents:
+- `<Ens>ErrMapBuild1` / `<Ens>ErrMapBuilds` — BuildMap parsing errors. Check `BuildMapStatus`.
+- `<Ens>ErrMapDocType` — DocType not found in schema.
+- `<Ens>ErrMapRequired` / `<Ens>ErrMapRequiredUnion` — mandatory field missing.
+- `<Ens>ErrMapSeg` / `<Ens>ErrMapSegCount` / `<Ens>ErrMapSegUnrecog` / `<Ens>ErrMapWildSegUnrecog` — segment recognition failures.
+- `<Ens>InvalidCategoryName` / `<Ens>UnknownCategoryName` / `<Ens>InvalidDocType` / `<Ens>UnknownDocumentTypeName` / `<Ens>InvalidSegmentTypeName` / `<Ens>UnknownSegmentTypeName` — schema lookups.
+
+HL7 v2 routing:
+- `<Ens>ErrAckSeqNum` — ACKing to MSH sequence number query.
+- `<Ens>ErrEndBlock` / `<Ens>ErrStartBlock` — MLLP framing mismatch (wrong VT/FS/CR).
+
+X12:
+- `<Ens>BadBINLength` / `<Ens>BinaryLeftover` — BIN segment integrity.
+- `<Ens>CannotDetermineSchema` / `<Ens>SchemaUnresolved` — schema couldn't be matched from ISA.
+- `<Ens>ConstraintViolation` / `<Ens>ControlSegmentNameMandatory` / `<Ens>ControlVersionUnsupported` — constraint failures.
+- `<Ens>DuplicateControlNumber` / `<Ens>DuplicateTSControlNumber` — control number reuse.
+- `<Ens>ExpectedDelimiter` / `<Ens>ExpectedSegment` — parser positional error.
+- `<Ens>FatalInterchangeError` — interchange-level abort.
+- `<Ens>GroupControlNumberMismatch` / `<Ens>InterchangeControlNumberMismatch` — counter mismatch.
+- `<Ens>IncorrectFunctionalGroupCount` / `<Ens>IncorrectSegmentCount` / `<Ens>IncorrectTransactionCount` — counter mismatch.
+- `<Ens>ISATruncated` — ISA segment must be 106 chars.
+- `<Ens>InvalidCode` / `<Ens>InvalidComponentReference` / `<Ens>InvalidComponentSeparator` / `<Ens>InvalidCompositeElement` / `<Ens>InvalidDataSeparator` / `<Ens>InvalidExponent` / `<Ens>InvalidHSC` / `<Ens>InvalidIndex` / `<Ens>InvalidItemName` / `<Ens>InvalidItemReference` / `<Ens>InvalidNumericValue` / `<Ens>InvalidPropertyPath` / `<Ens>InvalidRepetitionSeparator` / `<Ens>InvalidSegmentItem` / `<Ens>InvalidSegmentName` / `<Ens>InvalidSegmentRef` / `<Ens>InvalidSegmentTerminator` / `<Ens>InvalidSegmentType` / `<Ens>InvalidType` — element/segment-level errors.
+- `<Ens>SegmentImmutable` / `<Ens>SegmentDoesNotExist` / `<Ens>SegmentRuleViolated` — segment ops.
+
+Workflow:
+- `<Ens>ErrNoRoleSet` / `<Ens>ErrNoUserSet` / `<Ens>ErrRoleUndefined` / `<Ens>ErrUserUndefined` / `<Ens>ErrTaskAlreadyAssigned` / `<Ens>ErrTaskAssignedToOther` / `<Ens>ErrTaskCreateFailure` / `<Ens>ErrTaskWrongType` / `<Ens>ErrNoUsersFound` — workflow failures.
+
+When a tool returns one of these codes in the standard envelope, surface it to the user with the human-readable description (the chatbot can call `lookup_error_code` to retrieve it). For DTL/BPL compile errors, follow up with the line/column from `compile_dtl` or `compile_bpl` output.
+
 ### Additional INSTRUCTIONS appendix for skill.productions [BATCH 4]
 
 ```markdown
