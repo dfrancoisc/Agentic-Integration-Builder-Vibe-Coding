@@ -387,7 +387,7 @@ These extend the Production toolset with tools learned from Best_Practices, Mana
 
 ---
 
-## ToolSet.Transform  [BATCH 2 PARTIAL — extends in batch 3 with BPL]
+## ToolSet.Transform  [BATCH 2 + BATCH 3 — DTL + BPL + Business/Routing Rules]
 
 DTL CRUD plus dry-run testing. Source PDF: Developing_DTL_Transformations.
 
@@ -472,6 +472,121 @@ DTL CRUD plus dry-run testing. Source PDF: Developing_DTL_Transformations.
 - Input schema (import): `{ filePath: { type: "string", required: true }, replaceExisting: { type: "boolean", default: false } }`.
 - Input schema (export): `{ tableName: { type: "string", required: true }, filePath: { type: "string", required: true } }`.
 - Timeout: 30 seconds. RequiresConfirmation: TRUE for import.
+
+### list_bpl_processes / get_bpl
+
+- Description (list): All `Ens.BusinessProcessBPL` subclasses in the namespace. Distinguishes regular BPLs from Component BPLs (`Component=true` on `<process>`).
+- Description (get): Full BPL XData block + parsed activity tree + `<context>` properties + `<process>` request/response classes.
+- Implementation: SQL against `%Dictionary.ClassDefinition` filtered on `Super = 'Ens.BusinessProcessBPL'` + ObjectScript for XData parsing.
+- Input schema (list): `{ packagePrefix: { type: "string" } }`. (get): `{ name: { type: "string", required: true } }`.
+- Output schema (get): `{ name, requestClass, responseClass, contextSuperClass, isComponent, language, contextProperties: [ { name, type, initialExpression } ], xdataXml, activities: [ { type, name, attributes, children } ], compileErrors: [...] }`.
+- Timeout: 5 seconds. RequiresConfirmation: false.
+
+### create_bpl
+
+- Description: Scaffold a new BPL class extending `Ens.BusinessProcessBPL` with empty `<process>` containing `<sequence>`. Optionally pre-populates `<context>` properties.
+- Implementation: ObjectScript class generation + `$system.OBJ.Compile()`.
+- Input schema: `{ packageName: { type: "string", required: true }, name: { type: "string", required: true }, requestClass: { type: "string", required: true }, responseClass: { type: "string", required: true }, contextSuperClass: { type: "string", description: "Optional shared context base" }, contextProperties: { type: "array", items: { type: "object", properties: { name: { type: "string" }, type: { type: "string" }, initialExpression: { type: "string" } } } }, language: { type: "string", enum: ["objectscript","python"], default: "objectscript" }, isComponent: { type: "boolean", default: false } }`.
+- Timeout: 30 seconds. RequiresConfirmation: TRUE.
+
+### update_bpl_body
+
+- Description: Replace the XData BPL block with new validated XML. Validates that root element is `<process>`, that all activities are documented elements, that indirection (`@`) appears only on the four allowed attribute slots (call name, call target, sync calls, transform class), and that fault strings inside `<throw>` are properly nested-quoted.
+- Implementation: ObjectScript edit + recompile.
+- Input schema: `{ name: { type: "string", required: true }, processXml: { type: "string", required: true }, autoCompile: { type: "boolean", default: true } }`.
+- Output schema: `{ updated, compileErrors: [...] }`.
+- Timeout: 30 seconds. RequiresConfirmation: TRUE.
+
+### delete_bpl / compile_bpl / validate_bpl
+
+- Description (delete): Delete a BPL class. Checks references first (Interface References pattern).
+- Description (compile): Compile + return errors.
+- Description (validate): Static analysis. Checks: undeclared `context` property references, unmatched `<call>` names in `<sync calls=...>`, missing `<faulthandlers>` for likely-faulting `<call>` chains, locks/transactions opened in `<code>` without release in same block, `Pool Size = 0` BPL on a critical path (FIFO trap), `<throw>` fault expression not double-quoted.
+- Implementation: ObjectScript via `$system.OBJ.Delete()`, `$system.OBJ.Compile()`, custom static analyzer.
+- Input schema: `{ name: { type: "string", required: true }, force: { type: "boolean", default: false } }`.
+- Timeout: 15–30 seconds. RequiresConfirmation: TRUE for delete.
+
+### list_business_rules / get_business_rule
+
+- Description: List `Ens.Rule.Definition` subclasses + their context, production binding, rule sets count, last modified. Get returns the full `<ruleDefinition>` XData.
+- Implementation: SQL + XData parsing.
+- Input schema (list): `{ packagePrefix: { type: "string" }, contextClass: { type: "string", description: "Filter by ruleDefinition context" } }`.
+- Output schema (get): `{ name, alias, contextClass, production, ruleSets: [ { name, effectiveBegin, effectiveEnd, rules: [ { name, disabled, constraints: [...], whens: [ { condition, actions: [...] } ], otherwise: [...] } ] } ] }`.
+- Timeout: 5 seconds. RequiresConfirmation: false.
+
+### create_routing_rule / create_general_rule
+
+- Description: Scaffold a new `Ens.Rule.Definition` class. Routing rule uses context `EnsLib.MsgRouter.RoutingEngine` (or `EnsLib.MsgRouter.VDocRoutingEngine` for HL7/X12/etc.). General rule uses the BPL's `.Context` companion class. Both create one empty `<ruleSet>` with one empty `<rule>`.
+- Implementation: ObjectScript class generation + `$system.OBJ.Compile()`.
+- Input schema (routing): `{ packageName: { type: "string", required: true }, name: { type: "string", required: true }, alias: { type: "string" }, routerType: { type: "string", enum: ["EnsLib.MsgRouter.RoutingEngine","EnsLib.MsgRouter.VDocRoutingEngine","EnsLib.HL7.MsgRouter.RoutingEngine","EnsLib.EDI.X12.MsgRouter.RoutingEngine","EnsLib.EDI.EDIFACT.MsgRouter.RoutingEngine"], default: "EnsLib.MsgRouter.RoutingEngine" }, productionName: { type: "string" }, ruleAssistClass: { type: "string", description: "Defaults to EnsLib.MsgRouter.RuleAssist" } }`.
+- Input schema (general): `{ packageName: { type: "string", required: true }, name: { type: "string", required: true }, contextClass: { type: "string", required: true } }`.
+- Timeout: 30 seconds. RequiresConfirmation: TRUE.
+
+### update_rule_body / delete_rule / compile_rule
+
+- Description: Same shape as DTL/BPL — replace XData, delete (with reference check), compile + return errors.
+- Implementation: ObjectScript class edit / `$system.OBJ.Delete` / Compile.
+- Input schema (update): `{ name: { type: "string", required: true }, ruleDefinitionXml: { type: "string", required: true }, autoCompile: { type: "boolean", default: true } }`.
+- Timeout: 15–30 seconds. RequiresConfirmation: TRUE for update/delete.
+
+### evaluate_rule
+
+- Description: Dry-run a routing or general rule against a sample message. Returns which constraint matched, which `<when>`/`<otherwise>` fired, and what the rule would have done. Equivalent to the Test button in the Rule Editor — does NOT actually send messages.
+- Implementation: ObjectScript via `Ens.Rule.Definition.Evaluate()` with the `Test` flag.
+- Input schema: `{ ruleName: { type: "string", required: true }, sampleSource: { type: "string", description: "Config name for the source constraint" }, messageInput: { type: "string", description: "Raw HL7/X12 text or JSON for object messages" }, messageInputKind: { type: "string", enum: ["raw","object","headerId","bodyId"], default: "raw" }, contextOverrides: { type: "object", description: "Override context properties for the test" } }`.
+- Output schema: `{ ruleSetName, ruleName, constraintMatched, branchFired: "when_n" | "otherwise" | "none", reason, returnValue, sendActions: [ { transform, target } ], traces: [...] }`.
+- Required permissions: `%Ens_RuleLog:USE`, `%Ens_TestingService:USE`, SQL SELECT on `Ens_Rule.log` and `Ens_Rule.DebugLog`.
+- Timeout: 15 seconds. RequiresConfirmation: false.
+
+### enable_rule / disable_rule
+
+- Description: Toggle the `disabled` attribute on a specific `<rule>` inside a rule definition. Use during incident response to silence a misbehaving rule without removing it.
+- Implementation: ObjectScript edit of the XData + recompile.
+- Input schema: `{ ruleDefinitionName: { type: "string", required: true }, ruleName: { type: "string", required: true } }`.
+- Timeout: 10 seconds. RequiresConfirmation: TRUE.
+
+### list_rule_assist_classes
+
+- Description: Return available `Ens.Rule.Assist` subclasses for the routerType selection. Some message routers ship their own assist class (e.g. `EnsLib.HL7.MsgRouter.RuleAssist`) that adds HL7-specific helpers in the editor.
+- Implementation: SQL against `%Dictionary.ClassDefinition` for subclasses of `Ens.Rule.Assist`.
+- Input schema: `{}`.
+- Timeout: 3 seconds. RequiresConfirmation: false.
+
+---
+
+## ToolSet.ESB  [BATCH 3 — service registry]
+
+Tools for the ESB pattern (Public + External Service Registry). Source PDF: Using_a_Production_as_an_ESB. Routes through ToolSet.Production at the agent level.
+
+### list_registered_services / get_registered_service
+
+- Description: Query the Public Service Registry — services the ESB exposes to clients. Returns name, alias, endpoint, protocol, message format, schema, status, version, namespace, owner, contact, description, attached files. Identical shape to the public REST API at `GET /v1/services`.
+- Implementation: ObjectScript via `EnsLib.ServiceRegistry.Public.API`-equivalent calls (or SQL against the registry table).
+- Input schema (list): `{ selector: { type: "object", description: "name, protocol, status, namespace filters" }, limit: { type: "integer", default: 50 } }`. (get): `{ id: { type: "string", required: true } }`.
+- Timeout: 5 seconds. RequiresConfirmation: false.
+
+### register_service / update_service / unregister_service
+
+- Description: CRUD on the Public Service Registry. Registering a service exposes it to clients via the public REST API.
+- Implementation: ObjectScript via `EnsLib.ServiceRegistry.Public.*` API.
+- Input schema (register): `{ name: { type: "string", required: true }, alias: { type: "string" }, endpoint: { type: "string", required: true }, protocol: { type: "string", enum: ["REST","SOAP","HTTP","HL7","FHIR","TCP","File","FTP"] }, messageFormat: { type: "string" }, schema: { type: "string" }, version: { type: "string" }, namespace: { type: "string" }, owner: { type: "string" }, contact: { type: "string" }, description: { type: "string" }, files: { type: "array", items: "string", description: "Paths to WSDLs/schemas to attach" }, status: { type: "string", enum: ["Active","Inactive"], default: "Active" }, customFields: { type: "object" } }`.
+- Required permission: `%Ens_ESB_Administrator:USE` (or `%EnsRole_ESBAdministrator` role).
+- Timeout: 15 seconds. RequiresConfirmation: TRUE.
+
+### list_external_services / get_external_service / register_external_service
+
+- Description: External Service Registry — services the ESB CONSUMES on behalf of clients. Same shape as Public Service Registry, used by ESB hosts at runtime to resolve "logical service alias → actual endpoint".
+- Implementation: ObjectScript via `EnsLib.ServiceRegistry.External.*` API.
+- Input schema: same as Public Registry.
+- Timeout: 5–15 seconds. RequiresConfirmation: TRUE for register.
+
+### lookup_service_by_alias
+
+- Description: Runtime lookup — given a logical alias from the External Service Registry, return the current endpoint + protocol + auth config. Used by ESB hosts (and tools) to avoid hardcoding target host names.
+- Implementation: ObjectScript via `EnsLib.ServiceRegistry.External.Resolve(alias)`.
+- Input schema: `{ alias: { type: "string", required: true } }`.
+- Output schema: `{ alias, endpoint, protocol, version, status }`.
+- Timeout: 3 seconds. RequiresConfirmation: false.
 
 ---
 
