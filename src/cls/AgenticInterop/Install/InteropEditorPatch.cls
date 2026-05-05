@@ -20,8 +20,40 @@ Parameter SCRIPTTAG = "<script src=""/agentic/inject.js"" defer></script>";
 
 Parameter MARKER = "agentic/inject.js";
 
+/// Sub-step: widen /ui/interop's CookiePath to "/" so its session
+/// cookie is sent to /api/agentic (which lives at a different path).
+/// Without this the inject script's /api/agentic/whoami call returns
+/// 401 even for an authenticated Interop-Editor user, the launchers
+/// never render, and the customer-facing experience looks broken.
+///
+/// We do not change AutheEnabled or NameSpace — only the cookie scope.
+/// Idempotent.
+ClassMethod WidenInteropCookiePath() As %Status
+{
+    Set tSC = $$$OK
+    Try {
+        New $namespace
+        Set $namespace = "%SYS"
+        If '##class(Security.Applications).Exists("/ui/interop") { Quit }
+        Do ##class(Security.Applications).Get("/ui/interop", .props)
+        If $get(props("CookiePath")) = "/" {
+            Write !,"  WidenInteropCookiePath: already /",!
+            Quit
+        }
+        Set props("CookiePath") = "/"
+        Set tSC = ##class(Security.Applications).Modify("/ui/interop", .props)
+        If 'tSC { Quit }
+        Write !,"  WidenInteropCookiePath: /ui/interop CookiePath -> /",!
+    } Catch ex {
+        Set tSC = ex.AsStatus()
+    }
+    Quit tSC
+}
+
 ClassMethod Apply() As %Status
 {
+    Set tSC = ..WidenInteropCookiePath()
+    If 'tSC { Quit tSC }
     Set tSC = $$$OK
     Try {
         Set path = ..#EDITORHTML

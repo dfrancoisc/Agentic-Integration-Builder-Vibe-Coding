@@ -28,7 +28,8 @@
     UseCookies="1"
     AutoCompile="0"
     DefaultTimeout="900"
-    CookiePath="/agentic/"
+    CookiePath="/"
+    GroupById="%ISCMgtPortal"
     UseSessionCookie="0"
     Description="agentic_interop static UI bundle (chat + admin) — authenticated"
 />
@@ -45,6 +46,8 @@
     UseSessionCookie="0"
     UseCookies="1"
     AutoCompile="0"
+    CookiePath="/"
+    GroupById="%ISCMgtPortal"
     Description="agentic_interop REST API — authenticated + audited"
 />
 
