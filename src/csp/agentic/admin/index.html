@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="cache-control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="pragma" content="no-cache">
+<meta http-equiv="expires" content="0">
+<title>agentic_interop · Admin</title>
+<link rel="stylesheet" href="admin.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">agentic_interop <span class="muted">· Admin</span></div>
+  <div class="ns" id="ns-indicator">namespace: …</div>
+</header>
+
+<nav class="tabs" id="tabs">
+  <button data-tab="agents"   class="active">Agents</button>
+  <button data-tab="mcps">MCPs</button>
+  <button data-tab="toolsets">ToolSets</button>
+  <button data-tab="tools">Tools</button>
+  <button data-tab="skills">Skills</button>
+</nav>
+
+<main id="main">
+  <section class="panel" id="list-panel">
+    <div class="panel-head">
+      <h2 id="list-title">Agents</h2>
+      <button id="btn-new" class="primary">+ New</button>
+    </div>
+    <div class="list" id="list"></div>
+  </section>
+
+  <section class="panel" id="detail-panel" hidden>
+    <div class="panel-head">
+      <h2 id="detail-title">Detail</h2>
+      <div class="actions">
+        <button id="btn-cancel">Cancel</button>
+        <button id="btn-save"   class="primary">Save</button>
+        <button id="btn-delete" class="danger">Delete</button>
+      </div>
+    </div>
+    <div class="form" id="form"></div>
+    <div id="detail-msg" class="msg"></div>
+  </section>
+</main>
+
+<div id="toast" class="toast" hidden></div>
+
+<script src="admin.js"></script>
+</body>
+</html>
