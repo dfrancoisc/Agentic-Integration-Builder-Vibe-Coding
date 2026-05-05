@@ -176,11 +176,13 @@ Each ToolSet extends `%AI.ToolSet` directly (no middle base — see BUG.md for w
 | Class name | class identifier | on create only |
 | Name | `Parameter NAME` | yes |
 | Description | class `Description` | yes |
-| Tools | `XData Definition` (JSON) | yes (table editor; one row per tool) |
+| Tools | `XData ToolManifest` (JSON; sibling of framework's XML `Definition`) | yes (table editor; one row per tool) |
 
 ### Tool
 
-A Tool is one entry inside its parent ToolSet's `XData Definition` JSON. There is no separate class per Tool. The UI edits the JSON object in-place.
+A Tool is one entry inside its parent ToolSet's `XData ToolManifest` JSON. There is no separate class per Tool. The UI edits the JSON object in-place.
+
+Why a separate XData (`ToolManifest`) instead of putting tools in the framework's `Definition` XData: `%AI.ToolSet.Definition` is XML and parsed at compile time by a generator on `%AI.ToolSet`. Stuffing JSON into Definition breaks compilation (SAX error). Storing the editor's tool list in a sibling `ToolManifest` XData keeps the framework happy and gives us a shape the UI can render directly. Phase 4 translates `ToolManifest` entries into the framework's `Definition` (XML) plus generated class methods or Rust refs, at which point the tools become actually invokable. Until Phase 4 lands, `ToolManifest` is metadata only — round-trips with the UI but is not seen by the agent.
 
 | UI field | Storage | Editable |
 |---|---|---|
