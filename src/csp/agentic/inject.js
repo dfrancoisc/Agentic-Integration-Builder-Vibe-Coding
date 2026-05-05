@@ -1,76 +1,61 @@
-/* agentic_interop — install AI Configuration + AI Chatbot launchers
- * INSIDE the IRIS Interop Editor's Angular UI, AFTER the user has
- * authenticated. Per kickoff restriction #3, NO part of agentic_interop
- * appears on the login screen.
+/* agentic_interop — AI launchers inside the IRIS Interop Editor.
  *
- * Auth model:
- *   - The Interop Editor SPA (2026.2 modern UI) authenticates via an
- *     IRIS-issued JWT it sends as `Authorization: Bearer <jwt>` on
- *     every API call. The token lives in JS memory, not in any cookie.
- *   - This script intercepts window.fetch and XMLHttpRequest at the
- *     earliest possible moment (before the SPA bundle runs) and
- *     captures the Bearer the SPA uses on its own /api/interop-editors
- *     calls.
- *   - The captured Bearer is held in a closure-scoped variable. When
- *     the user clicks a launcher, the iframe is opened with a
- *     postMessage handshake — the iframe asks "what's my auth?" and
- *     this script answers with the Bearer. The iframe then attaches
- *     it to every /api/agentic call.
- *   - /api/agentic has JWTAuthEnabled=1 and shares
- *     GroupById=%ISCMgtPortal with /api/interop-editors so the IRIS
- *     gateway validates the same Bearer there. No second login,
- *     server-side $username is the real user, audit log captures it.
+ * Two entry points, matching the established new-interoperability-health
+ * pattern (which the customer pointed to as the reference):
+ *
+ *   1. "AI Hub" tab — appended to .dashboard alongside Production
+ *      Configuration / Rule Editor / Data Transformation Editor / etc.
+ *      Star icon, indigo accent, opens the admin (configuration) in a
+ *      full-screen overlay. Configuration is cross-namespace by design.
+ *
+ *   2. Chat icon — inserted into mat-toolbar-row (top header) right
+ *      BEFORE the namespace dropdown. Chat-bubble glyph + green dot.
+ *      Opens the chat in a right-side SLIDE-IN panel (~min(840, 65vw),
+ *      full height) with a dimmed editor backdrop. The user keeps the
+ *      Interop Editor visible while the agent answers.
+ *
+ * Both inject custom DOM only; we never modify shipped Angular nodes
+ * inline. A debounced MutationObserver re-injects after Angular
+ * re-renders. Hidden during the login screen via a body class.
+ *
+ * Auth bridge is preserved from the previous design: window.fetch and
+ * XMLHttpRequest.setRequestHeader are intercepted at script load to
+ * capture the SPA's IRIS-issued JWT, which is then handed to the
+ * iframes via postMessage so they authenticate against /api/agentic
+ * (JWTAuthEnabled=1, GroupById=%ISCMgtPortal) without a second login.
+ *
+ * Namespace from window.location.search?$NAMESPACE is forwarded both
+ * via URL param and postMessage so the chat can scope itself to the
+ * user's active namespace before the user types anything.
  */
 (function () {
     'use strict';
 
-    var STATE = { injected: false, observer: null, container: null, bearer: '' };
+    if (window.__agenticInject) return;
+    window.__agenticInject = true;
 
-    /* Read the active IRIS namespace from the Interop Editor URL.
-     * The SPA sets it as ?$NAMESPACE=<ns> (URL-encoded as %24NAMESPACE)
-     * and switches the SPA's session into that namespace. We forward
-     * it to BOTH iframes so:
-     *   - admin: configuration is cross-namespace by design but we
-     *     surface the active namespace for awareness.
-     *   - chat: namespace is load-bearing — it bounds the data and
-     *     restrictions the chatbot must respect, and is the FIRST
-     *     thing the chat UI needs to know on open. */
-    function currentNamespace() {
-        try {
-            var params = new URLSearchParams(window.location.search);
-            return params.get('$NAMESPACE') || params.get('%24NAMESPACE') || '';
-        } catch { return ''; }
-    }
+    var TAB_MARK = 'agentic-tab';        // .dashboard tab marker
+    var HDR_MARK = 'agentic-hdr-chat';   // mat-toolbar-row chat icon marker
+    var CONFIG_OVERLAY_ID = 'agentic-config-overlay';
+    var CHAT_OVERLAY_ID = 'agentic-chat-overlay';
 
-    function tabUrl(base) {
-        var ns = currentNamespace();
-        var sep = base.indexOf('?') >= 0 ? '&' : '?';
-        var u = base + sep + 'via=interop';
-        if (ns) u += '&namespace=' + encodeURIComponent(ns);
-        return u;
-    }
+    var STATE = { bearer: '' };
 
-    var TABS = [
-        { id: 'agentic-config', label: 'AI Configuration', base: '/agentic/admin/index.html', color: '#3b82f6', icon: '⚙' },
-        { id: 'agentic-chat',   label: 'AI Chatbot',       base: '/agentic/chat/index.html',  color: '#22c55e', icon: '💬' }
-    ];
-
-    /* ---------------- Bearer capture ---------------- */
+    /* ---------------- Bearer + namespace capture ---------------- */
 
     function captureFromHeaders(headers) {
         try {
             var auth;
             if (headers instanceof Headers) {
                 auth = headers.get('Authorization') || headers.get('authorization');
-            } else if (headers && typeof headers === 'object') {
-                auth = headers.Authorization || headers.authorization;
-                if (Array.isArray(headers)) {
-                    for (var i = 0; i < headers.length; i++) {
-                        if (Array.isArray(headers[i]) && /^authorization$/i.test(headers[i][0])) {
-                            auth = headers[i][1]; break;
-                        }
+            } else if (Array.isArray(headers)) {
+                for (var i = 0; i < headers.length; i++) {
+                    if (Array.isArray(headers[i]) && /^authorization$/i.test(headers[i][0])) {
+                        auth = headers[i][1]; break;
                     }
                 }
+            } else if (headers && typeof headers === 'object') {
+                auth = headers.Authorization || headers.authorization;
             }
             if (typeof auth === 'string' && auth.indexOf('Bearer ') === 0) {
                 STATE.bearer = auth;
@@ -78,40 +63,35 @@
         } catch {}
     }
 
-    function installInterceptors() {
-        // fetch
-        var origFetch = window.fetch;
-        window.fetch = function (input, init) {
-            try {
-                if (input instanceof Request) captureFromHeaders(input.headers);
-                if (init && init.headers) captureFromHeaders(init.headers);
-            } catch {}
-            return origFetch.apply(this, arguments);
-        };
-        // XMLHttpRequest.setRequestHeader
-        var origSet = XMLHttpRequest.prototype.setRequestHeader;
-        XMLHttpRequest.prototype.setRequestHeader = function (name, value) {
-            try {
-                if (/^authorization$/i.test(name) && typeof value === 'string' && value.indexOf('Bearer ') === 0) {
-                    STATE.bearer = value;
-                }
-            } catch {}
-            return origSet.apply(this, arguments);
-        };
+    var origFetch = window.fetch;
+    window.fetch = function (input, init) {
+        try {
+            if (input instanceof Request) captureFromHeaders(input.headers);
+            if (init && init.headers) captureFromHeaders(init.headers);
+        } catch {}
+        return origFetch.apply(this, arguments);
+    };
+
+    var origSet = XMLHttpRequest.prototype.setRequestHeader;
+    XMLHttpRequest.prototype.setRequestHeader = function (name, value) {
+        try {
+            if (/^authorization$/i.test(name) && typeof value === 'string' && value.indexOf('Bearer ') === 0) {
+                STATE.bearer = value;
+            }
+        } catch {}
+        return origSet.apply(this, arguments);
+    };
+
+    function currentNamespace() {
+        try {
+            var p = new URLSearchParams(window.location.search);
+            return p.get('$NAMESPACE') || p.get('%24NAMESPACE') || '';
+        } catch { return ''; }
     }
 
-    installInterceptors();
-
-    /* ---------------- postMessage bridge ---------------- */
-
     window.addEventListener('message', function (e) {
-        var data = e.data || {};
-        if (data && data.type === 'agentic:auth:request') {
-            // Reply to the iframe with the captured Bearer + active
-            // namespace. If we haven't seen a Bearer yet (rare —
-            // happens when the user clicks a button before the SPA
-            // has issued any API call), the iframe falls back to the
-            // inline login overlay.
+        var d = e.data || {};
+        if (d && d.type === 'agentic:auth:request') {
             try {
                 if (e.source && e.source.postMessage) {
                     e.source.postMessage({
@@ -122,163 +102,278 @@
                 }
             } catch {}
         }
+        if (d && d.type === 'agentic:close-chat') closeChat();
+        if (d && d.type === 'agentic:close-config') closeConfig();
     });
 
-    /* ---------------- modal ---------------- */
+    /* ---------------- styles ---------------- */
 
-    function ensureModal() {
-        var existing = document.getElementById('agentic-modal');
-        if (existing) return existing;
-        var shell = document.createElement('div');
-        shell.id = 'agentic-modal';
-        shell.style.cssText =
-            'position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:2147483646;' +
-            'display:none;align-items:center;justify-content:center;';
-        var box = document.createElement('div');
-        box.style.cssText =
-            'background:#fff;width:92%;max-width:1280px;height:86%;max-height:880px;' +
-            'border-radius:6px;overflow:hidden;display:flex;flex-direction:column;' +
-            'box-shadow:0 16px 48px rgba(0,0,0,0.45);';
-        var bar = document.createElement('div');
-        bar.style.cssText =
-            'display:flex;align-items:center;justify-content:space-between;' +
-            'padding:8px 14px;background:#1c2129;color:#e6e8eb;' +
-            'font:600 13px/1.2 system-ui, sans-serif;border-bottom:1px solid #2a313c;';
-        var title = document.createElement('span');
-        title.id = 'agentic-modal-title';
-        bar.appendChild(title);
-        var actions = document.createElement('span');
-        var openTab = document.createElement('button');
-        openTab.textContent = 'Open in new tab';
-        openTab.style.cssText = 'background:transparent;color:#8b95a6;border:1px solid #2a313c;padding:4px 10px;border-radius:3px;cursor:pointer;font:inherit;margin-right:8px;';
-        openTab.addEventListener('click', function () { window.open(shell.dataset.url, '_blank'); });
-        var close = document.createElement('button');
-        close.textContent = 'Close';
-        close.style.cssText = 'background:transparent;color:#8b95a6;border:1px solid #2a313c;padding:4px 10px;border-radius:3px;cursor:pointer;font:inherit;';
-        close.addEventListener('click', function () { shell.style.display = 'none'; });
-        actions.appendChild(openTab);
-        actions.appendChild(close);
-        bar.appendChild(actions);
-        box.appendChild(bar);
-        var iframe = document.createElement('iframe');
-        iframe.id = 'agentic-modal-iframe';
-        iframe.style.cssText = 'border:0;flex:1;width:100%;background:#0f1115;';
-        iframe.setAttribute('referrerpolicy', 'no-referrer-when-downgrade');
-        box.appendChild(iframe);
-        shell.appendChild(box);
-        shell.addEventListener('click', function (e) { if (e.target === shell) shell.style.display = 'none'; });
-        document.body.appendChild(shell);
-        return shell;
+    function injectStyles() {
+        if (document.getElementById('agentic-inject-styles')) return;
+        var s = document.createElement('style');
+        s.id = 'agentic-inject-styles';
+        s.textContent = [
+            // .dashboard "AI Hub" tab (matches the existing tab look)
+            '.dashboard .navbuttons.' + TAB_MARK + ' {',
+            '  display:flex; flex:0 1 auto;',
+            '  margin:5px; height:32px; box-sizing:border-box;',
+            '  border:1px solid #cbcbcb; background:#fff;',
+            '  cursor:pointer; transition:background .15s, border-color .15s;',
+            '}',
+            '.dashboard .navbuttons.' + TAB_MARK + ':hover {',
+            '  background:rgba(79,70,229,.08); border-color:#4f46e5;',
+            '}',
+            '.dashboard .navbuttons.' + TAB_MARK + ' .agentic-tab-inner {',
+            '  display:flex; align-items:center; gap:6px; padding:0 10px;',
+            '  font-family:-apple-system,"Noto Sans",system-ui,sans-serif;',
+            '  font-size:13px; font-weight:600; color:#4f46e5;',
+            '}',
+            '.dashboard .navbuttons.' + TAB_MARK + ' .agentic-tab-inner svg { width:18px; height:18px; }',
+            '.dashboard .navbuttons.' + TAB_MARK + '.is-active {',
+            '  background:#4f46e5; border-color:#4f46e5;',
+            '}',
+            '.dashboard .navbuttons.' + TAB_MARK + '.is-active .agentic-tab-inner { color:#fff; }',
+            '.dashboard .navbuttons.' + TAB_MARK + '.is-active .agentic-tab-inner svg path { fill:#fff !important; }',
+
+            // Top mat-toolbar chat icon
+            'mat-toolbar-row .dropdown.' + HDR_MARK + ' { display:flex; align-items:center; }',
+            'mat-toolbar-row .dropdown.' + HDR_MARK + ' button {',
+            '  background:transparent; border:0; cursor:pointer;',
+            '  padding:6px 10px; display:inline-flex; align-items:center;',
+            '  color:#4f46e5; position:relative;',
+            '}',
+            'mat-toolbar-row .dropdown.' + HDR_MARK + ' button:hover { background:rgba(79,70,229,.08); border-radius:6px; }',
+            'mat-toolbar-row .dropdown.' + HDR_MARK + ' svg { width:22px; height:22px; }',
+            'mat-toolbar-row .dropdown.' + HDR_MARK + ' .dot {',
+            '  position:absolute; top:6px; right:8px;',
+            '  width:8px; height:8px; border-radius:50%;',
+            '  background:#10b981; border:1.5px solid white;',
+            '}',
+
+            // Login-mode hide
+            'body.agentic-login-mode .' + TAB_MARK + ',',
+            'body.agentic-login-mode .' + HDR_MARK + ',',
+            'body.agentic-login-mode #' + CONFIG_OVERLAY_ID + ',',
+            'body.agentic-login-mode #' + CHAT_OVERLAY_ID + ' { display:none !important; }',
+
+            // Chat right-slide panel
+            '#' + CHAT_OVERLAY_ID + ' {',
+            '  position:fixed; inset:0; z-index:99999;',
+            '  background:rgba(15,23,42,0.32); display:none;',
+            '}',
+            '#' + CHAT_OVERLAY_ID + '.open { display:block; }',
+            '#' + CHAT_OVERLAY_ID + ' .panel {',
+            '  position:absolute; top:0; right:0; bottom:0;',
+            '  width:min(840px, 65vw);',
+            '  background:#0f1115;',
+            '  box-shadow:-12px 0 48px rgba(0,0,0,0.5);',
+            '  display:flex; flex-direction:column;',
+            '  transform:translateX(100%); transition:transform 220ms ease-out;',
+            '}',
+            '#' + CHAT_OVERLAY_ID + '.open .panel { transform:translateX(0); }',
+            '#' + CHAT_OVERLAY_ID + ' .bar {',
+            '  flex:0 0 auto; height:42px; background:#1c2129;',
+            '  display:flex; align-items:center; justify-content:space-between;',
+            '  padding:0 14px; color:#e6e8eb; border-bottom:1px solid #2a313c;',
+            '  font:600 13px/1 system-ui,sans-serif;',
+            '}',
+            '#' + CHAT_OVERLAY_ID + ' .bar .close {',
+            '  background:transparent; color:#8b95a6; border:1px solid #2a313c;',
+            '  width:26px; height:26px; border-radius:4px; cursor:pointer; font-size:13px;',
+            '}',
+            '#' + CHAT_OVERLAY_ID + ' .bar .close:hover { background:rgba(255,255,255,0.06); color:#e6e8eb; }',
+            '#' + CHAT_OVERLAY_ID + ' iframe { flex:1; width:100%; border:0; background:#0f1115; }',
+
+            // Config full-screen overlay
+            '#' + CONFIG_OVERLAY_ID + ' {',
+            '  position:fixed; inset:0; z-index:99999;',
+            '  background:#fff; display:none;',
+            '}',
+            '#' + CONFIG_OVERLAY_ID + '.open { display:flex; flex-direction:column; }',
+            '#' + CONFIG_OVERLAY_ID + ' .bar {',
+            '  flex:0 0 auto; height:44px; background:#4f46e5;',
+            '  display:flex; align-items:center; justify-content:space-between;',
+            '  padding:0 18px; color:white;',
+            '  font:600 14px/1 -apple-system,"Noto Sans",system-ui,sans-serif;',
+            '}',
+            '#' + CONFIG_OVERLAY_ID + ' .bar .title { display:flex; align-items:center; gap:8px; }',
+            '#' + CONFIG_OVERLAY_ID + ' .bar .close {',
+            '  background:transparent; color:white; border:1px solid rgba(255,255,255,0.3);',
+            '  width:28px; height:28px; border-radius:4px; cursor:pointer; font-size:14px;',
+            '}',
+            '#' + CONFIG_OVERLAY_ID + ' .bar .close:hover { background:rgba(255,255,255,0.12); }',
+            '#' + CONFIG_OVERLAY_ID + ' iframe { flex:1; width:100%; border:0; background:white; }'
+        ].join('\n');
+        document.head.appendChild(s);
     }
 
-    function openModal(label, url) {
-        var shell = ensureModal();
-        document.getElementById('agentic-modal-title').textContent = label;
-        document.getElementById('agentic-modal-iframe').src = url;
-        shell.dataset.url = url;
-        shell.style.display = 'flex';
+    /* ---------------- chat overlay (right-slide) ---------------- */
+
+    function buildChatOverlay() {
+        if (document.getElementById(CHAT_OVERLAY_ID)) return;
+        var overlay = document.createElement('div');
+        overlay.id = CHAT_OVERLAY_ID;
+        overlay.innerHTML =
+            '<div class="panel">' +
+              '<div class="bar">' +
+                '<span>AI Chatbot</span>' +
+                '<button class="close" type="button" title="Close">✕</button>' +
+              '</div>' +
+              '<iframe src="about:blank" title="AI Chatbot"></iframe>' +
+            '</div>';
+        document.body.appendChild(overlay);
+        overlay.querySelector('.close').addEventListener('click', closeChat);
+        overlay.addEventListener('click', function (e) { if (e.target === overlay) closeChat(); });
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape' && overlay.classList.contains('open')) closeChat();
+        });
     }
 
-    /* ---------------- buttons ---------------- */
-
-    function buildButton(tab) {
-        var btn = document.createElement('button');
-        btn.id = tab.id;
-        btn.type = 'button';
-        btn.setAttribute('data-agentic-button', tab.id);
-        btn.title = tab.label;
-        btn.style.cssText =
-            'display:inline-flex;align-items:center;gap:6px;padding:5px 12px;' +
-            'border:1px solid ' + tab.color + ';border-radius:4px;background:' + tab.color + ';' +
-            'color:#fff;font:600 12px/1 system-ui, sans-serif;cursor:pointer;margin-right:8px;' +
-            'box-shadow:0 1px 0 rgba(0,0,0,0.05);';
-        btn.innerHTML =
-            '<span style="font-size:13px;line-height:1;">' + tab.icon + '</span>' +
-            '<span>' + tab.label + '</span>';
-        btn.addEventListener('click', function () { openModal(tab.label, tabUrl(tab.base)); });
-        btn.addEventListener('mouseover', function () { btn.style.filter = 'brightness(1.08)'; });
-        btn.addEventListener('mouseout',  function () { btn.style.filter = ''; });
-        return btn;
+    function openChat() {
+        buildChatOverlay();
+        var overlay = document.getElementById(CHAT_OVERLAY_ID);
+        var iframe = overlay.querySelector('iframe');
+        var ns = currentNamespace();
+        var url = '/agentic/chat/index.html?via=interop&t=' + Date.now() + (ns ? '&namespace=' + encodeURIComponent(ns) : '');
+        iframe.src = url;
+        overlay.classList.add('open');
     }
 
-    /* ---------------- DOM detection ---------------- */
-
-    function isLoginScreen() {
-        return !!document.querySelector('input[type="password"]');
+    function closeChat() {
+        var overlay = document.getElementById(CHAT_OVERLAY_ID);
+        if (!overlay) return;
+        overlay.classList.remove('open');
+        var iframe = overlay.querySelector('iframe');
+        if (iframe) iframe.src = 'about:blank';
     }
 
-    function findAnchor() {
-        var spans = document.querySelectorAll('button span, fr-button button span');
-        for (var i = 0; i < spans.length; i++) {
-            if ((spans[i].textContent || '').trim() === 'Back to standard UI') {
-                var btn = spans[i].closest('button');
-                if (btn) return btn.closest('fr-button') || btn;
-            }
-        }
-        return null;
+    /* ---------------- config overlay (full-screen) ---------------- */
+
+    function buildConfigOverlay() {
+        if (document.getElementById(CONFIG_OVERLAY_ID)) return;
+        var overlay = document.createElement('div');
+        overlay.id = CONFIG_OVERLAY_ID;
+        overlay.innerHTML =
+            '<div class="bar">' +
+              '<div class="title">' +
+                '<svg viewBox="0 0 20 20" width="16" height="16"><path d="M10 1l2.2 5 5.3.4-4 3.6 1.2 5.2L10 12.6 5.3 15.2l1.2-5.2-4-3.6L7.8 6 10 1z" fill="#fde047"/></svg>' +
+                '<span>AI Hub</span>' +
+              '</div>' +
+              '<button class="close" type="button" title="Close">✕</button>' +
+            '</div>' +
+            '<iframe src="about:blank" title="AI Hub"></iframe>';
+        document.body.appendChild(overlay);
+        overlay.querySelector('.close').addEventListener('click', closeConfig);
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape' && overlay.classList.contains('open')) closeConfig();
+        });
     }
 
-    /* ---------------- mount / teardown ---------------- */
-
-    function mount(anchor) {
-        if (STATE.injected) return;
-        if (!anchor || !anchor.parentNode) return;
-        var c = document.createElement('span');
-        c.id = 'agentic-launchers';
-        c.setAttribute('data-agentic-host', '1');
-        c.style.cssText = 'display:inline-flex;align-items:center;margin-right:12px;';
-        TABS.forEach(function (t) { c.appendChild(buildButton(t)); });
-        anchor.parentNode.insertBefore(c, anchor);
-        STATE.container = c;
-        STATE.injected = true;
-        if (STATE.observer) { STATE.observer.disconnect(); STATE.observer = null; }
+    function openConfig() {
+        buildConfigOverlay();
+        var overlay = document.getElementById(CONFIG_OVERLAY_ID);
+        var iframe = overlay.querySelector('iframe');
+        var ns = currentNamespace();
+        var url = '/agentic/admin/index.html?via=interop&t=' + Date.now() + (ns ? '&namespace=' + encodeURIComponent(ns) : '');
+        iframe.src = url;
+        overlay.classList.add('open');
+        setTabActive(true);
     }
 
-    function teardown() {
-        if (STATE.container && STATE.container.parentNode) {
-            STATE.container.parentNode.removeChild(STATE.container);
-        }
-        STATE.container = null;
-        STATE.injected = false;
+    function closeConfig() {
+        var overlay = document.getElementById(CONFIG_OVERLAY_ID);
+        if (!overlay) return;
+        overlay.classList.remove('open');
+        var iframe = overlay.querySelector('iframe');
+        if (iframe) iframe.src = 'about:blank';
+        setTabActive(false);
     }
 
-    /* ---------------- main loop ---------------- */
+    function setTabActive(yes) {
+        var tab = document.querySelector('.' + TAB_MARK);
+        if (tab) tab.classList.toggle('is-active', !!yes);
+    }
 
-    function tryMount() {
-        if (STATE.injected) return true;
-        if (isLoginScreen()) return false;
-        var a = findAnchor();
-        if (!a) return false;
-        mount(a);
+    /* ---------------- inject AI Hub tab into .dashboard ---------------- */
+
+    function ensureTab() {
+        var dash = document.querySelector('.dashboard');
+        if (!dash) return false;
+        if (dash.querySelector('.' + TAB_MARK)) return true;
+        injectStyles();
+        var tab = document.createElement('div');
+        tab.className = 'navbuttons ' + TAB_MARK;
+        tab.innerHTML =
+            '<div class="agentic-tab-inner">' +
+              '<svg viewBox="0 0 20 20"><path d="M10 1l2.2 5 5.3.4-4 3.6 1.2 5.2L10 12.6 5.3 15.2l1.2-5.2-4-3.6L7.8 6 10 1z" fill="#4f46e5"/></svg>' +
+              '<span>AI Hub</span>' +
+            '</div>';
+        tab.addEventListener('click', function (e) {
+            e.preventDefault(); e.stopPropagation();
+            openConfig();
+        });
+        dash.appendChild(tab);
         return true;
     }
 
-    function watch() {
-        if (STATE.observer) return;
-        STATE.observer = new MutationObserver(function () {
-            if (STATE.injected) {
-                STATE.observer.disconnect();
-                STATE.observer = null;
-                return;
-            }
-            tryMount();
+    /* ---------------- inject chat icon into mat-toolbar-row ---------------- */
+
+    function ensureHeaderChat() {
+        var row = document.querySelector('mat-toolbar mat-toolbar-row');
+        if (!row) return false;
+        for (var i = 0; i < row.children.length; i++) {
+            if (row.children[i].classList.contains(HDR_MARK)) return true;
+        }
+        injectStyles();
+        var wrap = document.createElement('div');
+        wrap.className = 'dropdown ' + HDR_MARK;
+        wrap.innerHTML =
+            '<button type="button" aria-label="Open AI Chatbot" title="Chat with the IRIS for Health Copilot">' +
+              '<svg viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-2 12H6v-2h12v2zm0-3H6V9h12v2zm0-3H6V6h12v2z" fill="currentColor"/></svg>' +
+              '<span class="dot" aria-hidden="true"></span>' +
+            '</button>';
+        wrap.querySelector('button').addEventListener('click', function (e) {
+            e.preventDefault(); e.stopPropagation();
+            openChat();
         });
-        STATE.observer.observe(document.body, { childList: true, subtree: true });
+        // Insert before the FIRST direct-child .dropdown (the namespace pill).
+        var firstDirectDrop = null;
+        for (var j = 0; j < row.children.length; j++) {
+            if (row.children[j].classList.contains('dropdown')) {
+                firstDirectDrop = row.children[j]; break;
+            }
+        }
+        if (firstDirectDrop) row.insertBefore(wrap, firstDirectDrop);
+        else row.appendChild(wrap);
+        return true;
+    }
+
+    /* ---------------- login-mode hide ---------------- */
+
+    function refreshLoginMode() {
+        var onLogin =
+            !document.querySelector('.dashboard') ||
+            !!document.querySelector('input[type="password"]:not([hidden])');
+        document.body.classList.toggle('agentic-login-mode', onLogin);
+    }
+
+    /* ---------------- watch + tick ---------------- */
+
+    var pending = null;
+    function schedule() {
+        if (pending) return;
+        pending = setTimeout(function () { pending = null; tick(); }, 150);
+    }
+    function tick() {
+        ensureTab();
+        ensureHeaderChat();
+        refreshLoginMode();
     }
 
     function start() {
-        if (!tryMount()) watch();
-        setInterval(function () {
-            if (isLoginScreen()) { teardown(); return; }
-            if (STATE.injected) {
-                if (!STATE.container || !STATE.container.parentNode) {
-                    STATE.injected = false;
-                    STATE.container = null;
-                }
-                return;
-            }
-            tryMount();
-        }, 2000);
+        tick();
+        new MutationObserver(schedule).observe(document.body, { childList: true, subtree: true });
+        setInterval(refreshLoginMode, 800);
     }
 
     if (document.readyState === 'loading') {
