@@ -93,28 +93,121 @@ These are user-set rules captured at kickoff. Any deviation must be documented i
 ```
 
 Binding rules enforced by the data model:
-- Agent (1) → MCP groupings (N)
-- MCP grouping (1) → Toolsets (N)
-- Toolset (1) → Tools (N)
+- Agent (1) → MCPs (N)
+- MCP (1) → ToolSets (N)
+- ToolSet (1) → Tools (N)
 - Skill (N) ↔ Agent (N)
 - Provider (1) → Agent (N)
 
-The MCP layer is a logical grouping for admin UX; runtime calls go straight from `%AI.ToolMgr` to the bound `%AI.ToolSet` classes (decided in this conversation — see ai-hub-mcp skill rationale).
+MCP class strategy — REVISED 2026-05-05:
+- MCPs are real `%AI.MCP.Service` subclasses. The framework already has the right abstraction; inventing a parallel "logical MCP only" concept duplicated state and lost the wire-protocol exit.
+- For in-process use, transport is opt-in. `%AI.MCP.Service.LoadToolSetsToManager(toolMgr, spec)` populates a ToolMgr from a CSV of ToolSet class names without binding anything to a CSP URL. No HTTP loopback.
+- A thin `AgenticInterop.MCP.Base [ Abstract ]` extends `%AI.MCP.Service` and adds `Parameter NAME`, `Parameter DESCRIPTION`, `Parameter TOOLSETS`, and a `RegisterToAgent(agent)` classmethod. Each concrete MCP is a Base subclass.
+- If a customer later wants to expose a specific MCP to external agents, the work is mechanical: add one CSP route mapping. No code changes inside the MCP class.
 
-## Data model
+## Data model — class as data
 
-All persistent classes extend `%Persistent` and `%JSON.Adaptor`. Stored in the install namespace. See docs/MIGRATION.md for the class-by-class file map.
+The four primary configuration entities (Agent, MCP, ToolSet, Tool) are NOT %Persistent rows. They are class definitions, manipulated via the IRIS `%Dictionary.*` write APIs. This was the explicit user requirement: "the class will be updated based on the configuration".
+
+This means the source of truth for an Agent / MCP / ToolSet / Tool is its compiled class. The admin UI reads via SQL queries against `%Dictionary.Compiled*` and writes via `%Dictionary.*Definition.%Save()` followed by `$system.OBJ.Compile()`. Runtime instantiation uses the class system directly — no extra serialization layer.
+
+Read/write API summary (verified against IRIS for Health 2026.2 AI 162.0):
+
+| Concept | Read (UI list/show) | Write (UI save) |
+|---|---|---|
+| Class itself | `SELECT … FROM %Dictionary.CompiledClass` | `%Dictionary.ClassDefinition.%New(name)` → set `Super`/`Description` → `%Save()` → `$system.OBJ.Compile(name,"ck-d")` |
+| Parameter (e.g. TOOLSETS) | `SELECT … FROM %Dictionary.CompiledParameter WHERE parent = ?` and/or `$parameter(class, name)` | `%Dictionary.ParameterDefinition.%OpenId(class\|\|name)` → set `Default` → `%Save()` → recompile |
+| XData (e.g. Definition, INSTRUCTIONS) | `SELECT … FROM %Dictionary.CompiledXData` then read the `Data` stream | `%Dictionary.XDataDefinition.%OpenId(class\|\|name)` → write to `Data` stream → `%Save()` → recompile |
+
+Caveat: after a `%Save()` + recompile, `%Dictionary.CompiledParameter.%OpenId()` returns the previous (cached) value in the same process. The runtime `$parameter()` macro and SQL queries against `%Dictionary.Compiled*` see the new value immediately. The editor services therefore use SQL on read paths, never `%OpenId` for verification. (See memory note: "OpenId hits process-local OREF cache".)
+
+The remaining classes do still use %Persistent (chat sessions, audit, providers — these have row-level lifecycle, not class-level shape):
 
 | Class | Purpose |
 |---|---|
 | AgenticInterop.Data.Provider | LLM provider config + Wallet ref + semaphore status |
-| AgenticInterop.Data.Agent | Agent config, system prompt, model, temperature, ref to Provider, list of MCPServer refs, and Skills as a string-list of %AI.Agent.Skill subclass names |
-| AgenticInterop.Data.MCPServer | Logical MCP grouping (UI label only, no HTTP) |
-| AgenticInterop.Data.Toolset | Maps to a runtime %AI.ToolSet class |
-| AgenticInterop.Data.Tool | Tool definition: name, description, schema, implementation kind, body, timeout, requires-confirmation |
 | AgenticInterop.Data.Conversation | Chat session header |
 | AgenticInterop.Data.Message | Chat message rows |
 | AgenticInterop.Data.ToolInvocation | Audit trail per tool call |
+
+Shipped vs user-authored namespace separation:
+- `AgenticInterop.MCP.*` / `AgenticInterop.ToolSet.*` — shipped via IPM, version-controlled. UI shows these read-only with a "Clone & Edit" action.
+- `AgenticInterop.User.MCP.*` / `AgenticInterop.User.ToolSet.*` — user-authored at runtime, persisted only inside IRIS.DAT, exportable via UI button. Full CRUD here.
+
+## Admin UI — per-entity field specs
+
+The admin UI reaches each class via the editor REST API (`AgenticInterop.Editor.*` services, mounted under `/api/agentic/editor/`). One page per entity type. Field spec for each:
+
+### Agent
+
+Each Agent class extends `%AI.Agent`. The shipped instance is `AgenticInterop.Agent.HealthInterop`. Users may clone it under `AgenticInterop.User.Agent.<Name>`.
+
+| UI field | Storage | Editable |
+|---|---|---|
+| Class name | class identifier | on create only |
+| Display name | `Parameter NAME` | yes |
+| Description | class `Description` | yes |
+| System prompt | `XData INSTRUCTIONS` (markdown) | yes |
+| Provider | `Parameter PROVIDER` (CSV-of-class is wrong here — single class) | yes (dropdown of registered Provider rows) |
+| Temperature | `Parameter TEMPERATURE` | yes |
+| MaxIterations | `Parameter MAXITERATIONS` | yes |
+| MCPs | `Parameter MCPS` (CSV of MCP class names) | yes (multi-select from registered MCPs) |
+| Skills | `Parameter SKILLS` (CSV of Skill class names) | yes (multi-select from registered Skills) |
+| Test action | runs `Manager.Diagnose(provider)` and shows the result | n/a |
+
+### MCP
+
+Each MCP extends `AgenticInterop.MCP.Base` (which itself extends `%AI.MCP.Service`).
+
+| UI field | Storage | Editable |
+|---|---|---|
+| Class name | class identifier | on create only |
+| Name | `Parameter NAME` | yes |
+| Description | `Parameter DESCRIPTION` | yes |
+| ToolSets | `Parameter TOOLSETS` (CSV of ToolSet class names) | yes (multi-select from registered ToolSets) |
+| Tool list (read-only) | flattened from each member ToolSet's XData Definition | computed |
+
+### ToolSet
+
+Each ToolSet extends `%AI.ToolSet` directly (no middle base — see BUG.md for why MCP needs a Base but ToolSet does not).
+
+| UI field | Storage | Editable |
+|---|---|---|
+| Class name | class identifier | on create only |
+| Name | `Parameter NAME` | yes |
+| Description | class `Description` | yes |
+| Tools | `XData Definition` (JSON) | yes (table editor; one row per tool) |
+
+### Tool
+
+A Tool is one entry inside its parent ToolSet's `XData Definition` JSON. There is no separate class per Tool. The UI edits the JSON object in-place.
+
+| UI field | Storage | Editable |
+|---|---|---|
+| Name | `tools[i].name` | yes |
+| Description | `tools[i].description` | yes |
+| Input schema | `tools[i].inputSchema` (JSON Schema object) | yes |
+| Implementation kind | `tools[i].implementation.kind` (one of: `sql`, `objectscript`, `python`, `rest`) | yes |
+| Body | `tools[i].implementation.body` (string) | yes (kind-aware editor) |
+| Timeout (ms) | `tools[i].timeoutMs` | yes |
+| Requires confirmation | `tools[i].requiresConfirmation` (boolean) | yes |
+| Dry-run action | calls `Editor.ToolService.DryRun(toolSet, toolName, args)` and shows result | n/a |
+
+### Skill
+
+Each Skill extends `AgenticInterop.Skill.Base` (the `%OnNew` workaround).
+
+| UI field | Storage | Editable |
+|---|---|---|
+| Class name | class identifier | on create only |
+| Name | `XData SUMMARY` `name` field | yes |
+| Description | `XData SUMMARY` `description` field | yes |
+| Instructions | `XData INSTRUCTIONS` (markdown) | yes |
+| ToolSets | `Parameter TOOLS` (CSV of ToolSet class names) | yes (multi-select from registered ToolSets) |
+
+### Provider
+
+Provider rows are %Persistent (see Phase 1). Field spec captured there.
 
 ## Skills
 
@@ -246,6 +339,8 @@ This applies across phases. The phase column below indicates when each chatbot c
 
 ## Notes for a developer reading this for the first time
 
-- The "MCP" terminology in the data model and admin UI is a logical grouping only. There is no MCP HTTP/SSE between the agent and its tools. The decision and rationale live in `.claude/skills/ai-hub-mcp/SKILL.md` ("Internal chatbot + internal tools = skip the MCP layer").
+- MCPs are real `%AI.MCP.Service` subclasses (revised 2026-05-05 — see "MCP class strategy" above). Transport is opt-in: in-process consumers call `LoadToolSetsToManager` directly, no HTTP loopback. The earlier "logical-only" model was dropped because it duplicated framework state and forfeited the wire-protocol exit.
 - The agent never has hardcoded provider credentials. Always resolved through the Wallet via `@{wallet.AgenticInteropSecrets.<KeyName>}` placeholders at runtime.
+- The four primary configuration entities (Agent, MCP, ToolSet, Tool) are class definitions, not %Persistent rows. Source of truth is the compiled class. Read via SQL on `%Dictionary.Compiled*`; write via `%Dictionary.*Definition.%Save()` + `$system.OBJ.Compile()`. Read-after-write must use SQL or `$parameter()`, not `%OpenId` (process-local OREF cache).
 - All multi-class refactors must update docs/MIGRATION.md before the code change, not after.
+- `AgenticInterop.Skill.Base` is a workaround for an `%AI.Agent.Skill.%OnNew` framework bug — see docs/BUG.md. It can be deleted when the upstream fix lands.

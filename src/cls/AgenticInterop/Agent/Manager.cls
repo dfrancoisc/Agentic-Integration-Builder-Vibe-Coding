@@ -1,45 +1,50 @@
 /// Builds a fully-configured AgenticInterop.Agent.HealthInterop instance
 /// at request time: instantiates the agent class, attaches the LLM
-/// provider, attaches all four ToolSets directly to the ToolManager so
-/// cross-cutting tools resolve, then loads the nine specialist Skills via
-/// SkillLoader. Returns the configured agent.
+/// provider, registers each MCP listed in the Agent's Parameter MCPS,
+/// then loads the Skills listed in Parameter SKILLS via SkillLoader.
+/// Returns the configured agent.
 ///
-/// Phase 1 wires the real Provider lookup (Data.Provider rows + the
-/// IRIS Secured Wallet via @{wallet.X.Y} resolution). For now Provider
-/// is passed in by the caller so this class can compile and be smoke-
-/// tested before Phase 1 lands.
+/// All agent → MCP and agent → Skill bindings are CSV parameters on the
+/// Agent class itself, edited by the admin UI via the Editor REST API
+/// (see docs/PLAN.md, "Admin UI — per-entity field specs"). No CSV is
+/// hardcoded in Manager.
 ///
 /// Per restriction #2, the LLM provider used here is the chatbot's
 /// runtime Provider — separate from any dev provider used by Claude Code.
 Class AgenticInterop.Agent.Manager Extends %RegisteredObject
 {
 
-/// Build a HealthInterop agent ready to run. Returns OREF in pAgent.
-ClassMethod Build(pProvider As %AI.Provider, Output pAgent As AgenticInterop.Agent.HealthInterop) As %Status
+/// Build a HealthInterop agent ready to run. Agent class defaults to
+/// AgenticInterop.Agent.HealthInterop; pass another class name to build
+/// a different agent (multi-agent support per data model).
+ClassMethod Build(pProvider As %AI.Provider, Output pAgent As %AI.Agent, pAgentClass As %String = "AgenticInterop.Agent.HealthInterop") As %Status
 {
     Set tSC = $$$OK
     Try {
         // 1. Instantiate the declarative agent class.
-        Set pAgent = ##class(AgenticInterop.Agent.HealthInterop).%New(pProvider)
+        Set pAgent = $classmethod(pAgentClass, "%New", pProvider)
         Set tSC = pAgent.%Init()
-        Quit:$$$ISERR(tSC)
+        If 'tSC { Quit }
 
-        // 2. Attach all four ToolSets directly so cross-cutting tools
-        // (search_ens, search_hs, get_user_namespace, ...) are resolvable
-        // by name inside Skill sub-agents that reference the same toolsets
-        // via Parameter TOOLS.
-        For tToolSet = "AgenticInterop.ToolSet.Production",
-                       "AgenticInterop.ToolSet.Transform",
-                       "AgenticInterop.ToolSet.Testing",
-                       "AgenticInterop.ToolSet.Catalog" {
-            Set tSC = pAgent.UseToolSet(tToolSet)
-            Quit:$$$ISERR(tSC)
+        // 2. Register each MCP listed in Parameter MCPS. Each MCP delegates
+        //    to %AI.MCP.Service.LoadToolSetsToManager via its own
+        //    RegisterToAgent classmethod (see AgenticInterop.MCP.Base).
+        Set mcps = $parameter(pAgentClass, "MCPS")
+        If mcps '= "" {
+            For i=1:1:$LENGTH(mcps, ",") {
+                Set cls = $ZSTRIP($PIECE(mcps, ",", i), "<>W")
+                If cls = "" { Continue }
+                Set tSC = $classmethod(cls, "RegisterToAgent", pAgent)
+                If 'tSC { Quit }
+            }
+            If 'tSC { Quit }
         }
-        Quit:$$$ISERR(tSC)
 
-        // 3. Register the nine specialist Skills as sub-agent tools.
-        Set tSC = ##class(AgenticInterop.Agent.SkillLoader).LoadSkills(pAgent)
-        Quit:$$$ISERR(tSC)
+        // 3. Register Skills as sub-agent tools. SkillLoader honors the
+        //    Agent's Parameter SKILLS first; falls back to its own
+        //    DEFAULTSKILLS list if the parameter is empty.
+        Set tSC = ##class(AgenticInterop.Agent.SkillLoader).LoadSkills(pAgent, $parameter(pAgentClass, "SKILLS"))
+        If 'tSC { Quit }
     } Catch ex {
         Set tSC = ex.AsStatus()
         Set pAgent = $$$NULLOREF
@@ -47,14 +52,13 @@ ClassMethod Build(pProvider As %AI.Provider, Output pAgent As AgenticInterop.Age
     Quit tSC
 }
 
-/// Diagnostic: build the agent and dump its registered tools (skills +
-/// any direct toolset entries). Useful to confirm scaffolding works
-/// before wiring the REST chat endpoint in Phase 2-3.
-ClassMethod Diagnose(pProvider As %AI.Provider, Output pInfo As %DynamicObject) As %Status
+/// Diagnostic: build the agent and dump its registered tools and skill
+/// list. Returns a %DynamicObject suitable for the admin UI's Test panel.
+ClassMethod Diagnose(pProvider As %AI.Provider, Output pInfo As %DynamicObject, pAgentClass As %String = "AgenticInterop.Agent.HealthInterop") As %Status
 {
     Set pInfo = {}
-    Set tSC = ..Build(pProvider, .agent)
-    If $$$ISERR(tSC) {
+    Set tSC = ..Build(pProvider, .agent, pAgentClass)
+    If 'tSC {
         Set pInfo.ok = 0
         Set pInfo.error = $system.Status.GetErrorText(tSC)
         Quit tSC
@@ -62,9 +66,18 @@ ClassMethod Diagnose(pProvider As %AI.Provider, Output pInfo As %DynamicObject) 
     Set pInfo.ok = 1
     Set pInfo.agentClass = $classname(agent)
     Set pInfo.namespace = $namespace
-    Set pInfo.skills = ##class(AgenticInterop.Agent.SkillLoader).ListDefaultSkills()
-    // ToolManager.Discover would list every tool the LLM sees; for the
-    // smoke test we just confirm the manager exists.
+    Set pInfo.mcps = []
+    Set mcps = $parameter(pAgentClass, "MCPS")
+    For i=1:1:$LENGTH(mcps, ",") {
+        Set cls = $ZSTRIP($PIECE(mcps, ",", i), "<>W")
+        If cls '= "" { Do pInfo.mcps.%Push(cls) }
+    }
+    Set pInfo.skills = []
+    Set skills = $parameter(pAgentClass, "SKILLS")
+    For i=1:1:$LENGTH(skills, ",") {
+        Set cls = $ZSTRIP($PIECE(skills, ",", i), "<>W")
+        If cls '= "" { Do pInfo.skills.%Push(cls) }
+    }
     If $isobject(agent.ToolManager) {
         Set pInfo.toolManagerToken = agent.ToolManager."%token"
     }

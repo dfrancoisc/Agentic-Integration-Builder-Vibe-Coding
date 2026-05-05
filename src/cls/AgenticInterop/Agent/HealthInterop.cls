@@ -12,6 +12,16 @@ Parameter MAXITERATIONS = 10;
 
 Parameter TEMPERATURE = 0.3;
 
+/// CSV of MCP class names (AgenticInterop.MCP.Base subclasses) that this
+/// agent registers. UI-editable via the admin Editor service. Manager.Build
+/// reads this parameter and calls RegisterToAgent on each MCP.
+Parameter MCPS = "AgenticInterop.MCP.Production,AgenticInterop.MCP.Transform,AgenticInterop.MCP.Testing,AgenticInterop.MCP.Catalog";
+
+/// CSV of Skill class names (AgenticInterop.Skill.Base subclasses) that
+/// this agent attaches as sub-agent tools. UI-editable. SkillLoader reads
+/// this parameter (falls back to its own DEFAULTSKILLS for compatibility).
+Parameter SKILLS = "AgenticInterop.Skill.Productions,AgenticInterop.Skill.DTL,AgenticInterop.Skill.BPL,AgenticInterop.Skill.RoutingRules,AgenticInterop.Skill.HL7v2,AgenticInterop.Skill.FHIRR4,AgenticInterop.Skill.SDA,AgenticInterop.Skill.RestInProductions,AgenticInterop.Skill.ESBPattern";
+
 XData INSTRUCTIONS [ MimeType = "text/markdown" ]
 {
 You are Health Interop, an AI assistant for InterSystems IRIS for Health interoperability. You help developers and integration engineers design productions, author DTL transformations and BPL business processes, build routing rules, and test HL7 v2 / FHIR / SDA / DICOM / X12 / EDIFACT messages.
