@@ -45,9 +45,24 @@ These are user-set rules captured at kickoff. Any deviation must be documented i
 │                                                                  │
 │  ┌────────────────────────────────────────────────────────────┐  │
 │  │  AgenticInterop.Agent.HealthInterop (extends %AI.Agent)    │  │
-│  │  • System prompt: includes Skills + active $namespace      │  │
-│  │  • Provider: %AI.Provider, configured per Provider row     │  │
-│  │  • ToolManager: %AI.ToolMgr                                │  │
+│  │  Router agent: slim system prompt + namespace context.     │  │
+│  │  Tool catalog = 9 Skill classes (as sub-agent tools) plus  │  │
+│  │  cross-cutting tools (get_user_namespace, search_ens,      │  │
+│  │  search_hs).                                               │  │
+│  └────────────────────────────────────────────────────────────┘  │
+│                                ▼                                 │
+│  ┌────────────────────────────────────────────────────────────┐  │
+│  │  Skills (each one a %AI.Agent.Skill subclass — declarative │  │
+│  │  sub-agent with PDF-grounded INSTRUCTIONS):                │  │
+│  │   • Skill.Productions     → ToolSet.Production             │  │
+│  │   • Skill.DTL             → ToolSet.Transform              │  │
+│  │   • Skill.BPL             → ToolSet.Transform              │  │
+│  │   • Skill.RoutingRules    → ToolSet.Production             │  │
+│  │   • Skill.HL7v2           → ToolSet.Testing                │  │
+│  │   • Skill.FHIRR4          → ToolSet.Testing                │  │
+│  │   • Skill.SDA             → ToolSet.Testing                │  │
+│  │   • Skill.RestInProductions → ToolSet.Production           │  │
+│  │   • Skill.ESBPattern      → ToolSet.Production + Transform │  │
 │  └────────────────────────────────────────────────────────────┘  │
 │                                ▼                                 │
 │  ┌────────────────────────────────────────────────────────────┐  │
@@ -93,14 +108,37 @@ All persistent classes extend `%Persistent` and `%JSON.Adaptor`. Stored in the i
 | Class | Purpose |
 |---|---|
 | AgenticInterop.Data.Provider | LLM provider config + Wallet ref + semaphore status |
-| AgenticInterop.Data.Agent | Agent config, system prompt, model, temperature, references to MCPs and Skills |
+| AgenticInterop.Data.Agent | Agent config, system prompt, model, temperature, ref to Provider, list of MCPServer refs, and Skills as a string-list of %AI.Agent.Skill subclass names |
 | AgenticInterop.Data.MCPServer | Logical MCP grouping (UI label only, no HTTP) |
 | AgenticInterop.Data.Toolset | Maps to a runtime %AI.ToolSet class |
 | AgenticInterop.Data.Tool | Tool definition: name, description, schema, implementation kind, body, timeout, requires-confirmation |
-| AgenticInterop.Data.Skill | Markdown injected into agent system prompt |
 | AgenticInterop.Data.Conversation | Chat session header |
 | AgenticInterop.Data.Message | Chat message rows |
 | AgenticInterop.Data.ToolInvocation | Audit trail per tool call |
+
+## Skills
+
+Skills are %AI.Agent.Skill SUBCLASSES — declarative sub-agents shipped with the IPM module as code. They are NOT user-editable markdown rows. The router agent registers them as tools via its ToolManager; the parent LLM decides when to invoke each one based on the description in each Skill's XData SUMMARY.
+
+This satisfies restriction #1 (always use the %AI Framework) — Skill is the framework's first-class concept for declarative sub-agent specialists.
+
+The nine v1 skill classes (in src/cls/AgenticInterop/Skill/):
+
+| Skill class | Sub-agent toolset access | Source PDFs |
+|---|---|---|
+| Productions | ToolSet.Production | Introducing + Preparing + Configuring + Developing + Best_Practices + Managing + Monitoring + DICOM + MFT + Virtual_Documents |
+| DTL | ToolSet.Transform | Developing_DTL_Transformations + DTL chapters of Business_Process_and_DTL_Reference |
+| BPL | ToolSet.Transform | Developing_BPL_Processes + BPL chapters of Business_Process_and_DTL_Reference |
+| RoutingRules | ToolSet.Production | Developing_Business_Rules |
+| HL7v2 | ToolSet.Testing | (curated from existing iris-hl7-v2 skill + HL7 sections of attached PDFs) |
+| FHIRR4 | ToolSet.Testing | (curated from existing iris-fhir skill) |
+| SDA | ToolSet.Testing | (curated from existing iris-sda skill) |
+| RestInProductions | ToolSet.Production | Using_REST_Services_and_Operations_in_Productions |
+| ESBPattern | ToolSet.Production + ToolSet.Transform | Using_a_Production_as_an_ESB |
+
+Each Skill's INSTRUCTIONS XData is distilled strictly from the source PDFs and existing curated skills — no hallucinated APIs, no invented class names. Source citations live in docs/SKILLS.md alongside each skill's content.
+
+Latency note (per ai-hub-skills): each skill invocation is an additional LLM round-trip, sub-agents run sequentially. For our domain this is the right trade — focused expertise per domain beats one giant system prompt.
 
 ## Provider strategy
 
@@ -148,12 +186,14 @@ Each phase ends with a working slice and a commit + push to dfrancoisc/agentic_i
 - React admin page for Providers with semaphore (green/red/unknown)
 - Definition of done: configure Anthropic provider through UI, click Save and test, see green semaphore.
 
-### Phase 2 — Single ToolSet + non-streaming chat
+### Phase 2 — Single ToolSet + Skill scaffolding + non-streaming chat
 - AgenticInterop.ToolSet.Catalog with a stub `search_ens(query)` returning fake data
-- AgenticInterop.Agent.HealthInterop wired to the Anthropic provider
-- AgenticInterop.Agent.Manager + Runtime + Monitor (iteration deadline, token budget, no streaming yet)
+- AgenticInterop.Agent.HealthInterop wired to the Anthropic provider, slim system prompt (router pattern)
+- AgenticInterop.Agent.Manager + Runtime + Monitor + SkillLoader (iteration deadline, token budget, no streaming yet)
+- All nine `AgenticInterop.Skill.*` classes scaffolded — XData SUMMARY (yaml metadata) and Parameter TOOLS set, XData INSTRUCTIONS body grows as PDF batches are read
+- One Skill (Productions) loaded into the router agent for the smoke test
 - ChatAPI returning full response (non-SSE)
-- Definition of done: ask the chatbot a question, see it call `search_ens`, see the answer.
+- Definition of done: ask "show me running productions", router invokes Productions skill, sub-agent invokes `search_ens`, response returned.
 
 ### Phase 3 — Streaming + tool-call telemetry + namespace-in-UI
 - SSE chat endpoint with token + tool-lifecycle events
