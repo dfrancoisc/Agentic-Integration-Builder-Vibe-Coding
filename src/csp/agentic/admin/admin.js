@@ -453,7 +453,9 @@ function renderAgentDetail() {
             <label>Skills</label>
             <div class="checkbox-list" id="f-skills">${renderCheckboxList(state.registry.skills, a.skills, 'class', isUser)}</div>
         </div>
+        ${a.class && !a._isNew ? sourcePanelHtml(a.class) : ''}
     `;
+    bindSourcePanel($('form'));
     if (isUser && state.registry.mcps.length === 0) loadRegistries(true).then(() => renderAgentDetail());
 }
 
@@ -487,7 +489,9 @@ function renderMCPDetail() {
             <label>ToolSets bound to this MCP</label>
             <div class="checkbox-list" id="f-toolsets">${renderCheckboxList(state.registry.toolsets, m.toolsets, 'class', isUser)}</div>
         </div>
+        ${m.class && !m._isNew ? sourcePanelHtml(m.class) : ''}
     `;
+    bindSourcePanel($('form'));
     if (isUser && state.registry.toolsets.length === 0) loadRegistries(true).then(() => renderMCPDetail());
 }
 
@@ -540,7 +544,9 @@ function renderToolSetDetail() {
             <textarea id="f-definitionRaw" class="tall" ${ro}>${escapeHtml(t.definitionRaw || '')}</textarea>
             <div class="hint">Edited by the framework's compile-time generator. Leave alone unless you know what you're doing.</div>
         </div>
+        ${t.class && !t._isNew ? sourcePanelHtml(t.class) : ''}
     `;
+    bindSourcePanel($('form'));
 }
 
 function renderToolDetail() {
@@ -591,7 +597,9 @@ function renderToolDetail() {
             <textarea id="f-implBody" class="tall" ${ro}>${escapeHtml((t.implementation && t.implementation.body) || '')}</textarea>
             <div class="hint">For SQL: a single statement or a parameterized query. For ObjectScript: code that sets %result. For Python: a function body. For REST: an endpoint URL or template.</div>
         </div>
+        ${t._toolset ? sourcePanelHtml(t._toolset) : ''}
     `;
+    bindSourcePanel($('form'));
 }
 
 // -------- save / delete --------
@@ -802,6 +810,87 @@ function showError(e) {
     setTimeout(() => { m.className = 'msg'; }, 8000);
     toast('Error: ' + e.message, 'error');
 }
+
+// Returns the HTML for the collapsible "Class Source" panel.
+// On click of the toggle, lazy-loads the source from /api/agentic/source/:class.
+function sourcePanelHtml(className) {
+    return `
+        <div class="source-panel">
+            <div class="source-toggle" data-source-toggle="${escapeAttr(className)}">
+                <span class="chev">▶</span>
+                <span>Class Source</span>
+                <code style="color: var(--muted); font-size: 11px;">${escapeHtml(className)}</code>
+                <span class="meta" data-source-meta>Click to expand</span>
+            </div>
+            <div class="source-body">
+                <div class="source-actions">
+                    <button data-source-copy="${escapeAttr(className)}">Copy</button>
+                    <button data-source-reload="${escapeAttr(className)}">Reload</button>
+                </div>
+                <pre data-source-pre="${escapeAttr(className)}"><span class="empty">Click to load.</span></pre>
+            </div>
+        </div>
+    `;
+}
+
+// Wire up toggle / copy / reload listeners after a detail is rendered.
+function bindSourcePanel(formEl) {
+    if (!formEl) return;
+    formEl.querySelectorAll('[data-source-toggle]').forEach(toggle => {
+        toggle.addEventListener('click', async () => {
+            const cls = toggle.dataset.sourceToggle;
+            const open = toggle.classList.toggle('open');
+            toggle.querySelector('.chev').textContent = open ? '▼' : '▶';
+            if (!open) return;
+            const pre = formEl.querySelector(`[data-source-pre="${cssEscape(cls)}"]`);
+            const meta = toggle.querySelector('[data-source-meta]');
+            if (pre.dataset.loaded === '1') return;
+            pre.innerHTML = '<span class="empty">Loading…</span>';
+            try {
+                const r = await api('/source/' + encodeURIComponent(cls));
+                pre.textContent = r.source || '';
+                pre.dataset.loaded = '1';
+                if (meta) meta.textContent = r.lines + ' lines · ' + r.bytes + ' bytes';
+            } catch (e) {
+                pre.innerHTML = '<span class="err">' + escapeHtml('Load failed: ' + e.message) + '</span>';
+            }
+        });
+    });
+    formEl.querySelectorAll('[data-source-copy]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const cls = btn.dataset.sourceCopy;
+            const pre = formEl.querySelector(`[data-source-pre="${cssEscape(cls)}"]`);
+            if (pre && pre.textContent) {
+                navigator.clipboard.writeText(pre.textContent).then(
+                    () => toast('Source copied.', 'success'),
+                    () => toast('Copy failed.', 'error')
+                );
+            }
+        });
+    });
+    formEl.querySelectorAll('[data-source-reload]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const cls = btn.dataset.sourceReload;
+            const pre = formEl.querySelector(`[data-source-pre="${cssEscape(cls)}"]`);
+            const toggle = formEl.querySelector(`[data-source-toggle="${cssEscape(cls)}"]`);
+            const meta = toggle?.querySelector('[data-source-meta]');
+            pre.innerHTML = '<span class="empty">Reloading…</span>';
+            pre.dataset.loaded = '';
+            try {
+                const r = await api('/source/' + encodeURIComponent(cls));
+                pre.textContent = r.source || '';
+                pre.dataset.loaded = '1';
+                if (meta) meta.textContent = r.lines + ' lines · ' + r.bytes + ' bytes';
+                toast('Source reloaded.', 'success');
+            } catch (e) {
+                pre.innerHTML = '<span class="err">' + escapeHtml('Reload failed: ' + e.message) + '</span>';
+            }
+        });
+    });
+}
+
+// Minimal CSS.escape polyfill for class-name attribute selectors.
+function cssEscape(s) { return String(s).replace(/[^a-zA-Z0-9_\-]/g, c => '\\' + c); }
 
 function shortName(cls) { return cls.split('.').slice(-1)[0]; }
 function firstLine(s) { if (!s) return ''; return s.split(/\r?\n/)[0]; }

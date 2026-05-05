@@ -257,11 +257,11 @@
             '<div class="bar">' +
               '<div class="title">' +
                 '<svg viewBox="0 0 20 20" width="16" height="16"><path d="M10 1l2.2 5 5.3.4-4 3.6 1.2 5.2L10 12.6 5.3 15.2l1.2-5.2-4-3.6L7.8 6 10 1z" fill="#fde047"/></svg>' +
-                '<span>AI Hub</span>' +
+                '<span>AI Settings</span>' +
               '</div>' +
               '<button class="close" type="button" title="Close">✕</button>' +
             '</div>' +
-            '<iframe src="about:blank" title="AI Hub"></iframe>';
+            '<iframe src="about:blank" title="AI Settings"></iframe>';
         document.body.appendChild(overlay);
         overlay.querySelector('.close').addEventListener('click', closeConfig);
         document.addEventListener('keydown', function (e) {
@@ -306,7 +306,7 @@
         tab.innerHTML =
             '<div class="agentic-tab-inner">' +
               '<svg viewBox="0 0 20 20"><path d="M10 1l2.2 5 5.3.4-4 3.6 1.2 5.2L10 12.6 5.3 15.2l1.2-5.2-4-3.6L7.8 6 10 1z" fill="#4f46e5"/></svg>' +
-              '<span>AI Hub</span>' +
+              '<span>AI Settings</span>' +
             '</div>';
         tab.addEventListener('click', function (e) {
             e.preventDefault(); e.stopPropagation();

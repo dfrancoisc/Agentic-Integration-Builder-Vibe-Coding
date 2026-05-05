@@ -34,7 +34,11 @@ html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); f
 .tabs button:hover { color: var(--text); }
 .tabs button.active { color: var(--text); border-bottom-color: var(--primary); }
 
-#main { display: grid; grid-template-columns: 380px 1fr; gap: 16px; padding: 16px 20px; max-width: 1400px; }
+/* List on the left stays compact (just enough for class name + meta).
+ * The detail panel takes the rest of the available width so source-code
+ * + form fields have room. No max-width on #main — the AI Settings
+ * overlay is full-screen, let it use it. */
+#main { display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 16px; padding: 16px 20px; }
 @media (max-width: 900px) { #main { grid-template-columns: 1fr; } }
 
 .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
@@ -75,6 +79,42 @@ html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); f
 .field.readonly input, .field.readonly textarea { color: var(--muted); }
 .field-row { display: flex; gap: 12px; }
 .field-row > .field { flex: 1; }
+
+/* Collapsible "Class Source" panel sits at the bottom of every detail
+ * form. Lets the user inspect the .cls UDL that the editor is producing
+ * behind the scenes — useful both for trust ("am I really editing a
+ * class?") and for power users who want to copy the source out. */
+.source-panel {
+  margin-top: 18px; border-top: 1px solid var(--border); padding-top: 14px;
+}
+.source-toggle {
+  display: flex; align-items: center; gap: 8px; cursor: pointer;
+  color: var(--muted); font-size: 12px; text-transform: uppercase;
+  letter-spacing: 0.04em; user-select: none; padding: 6px 0;
+}
+.source-toggle:hover { color: var(--text); }
+.source-toggle .chev {
+  display: inline-block; transition: transform 120ms ease;
+  width: 10px; text-align: center;
+}
+.source-toggle.open .chev { transform: rotate(90deg); }
+.source-toggle .meta { margin-left: auto; color: var(--muted); font-size: 11px; }
+.source-body { display: none; margin-top: 8px; }
+.source-toggle.open + .source-body { display: block; }
+.source-body pre {
+  background: var(--code); border: 1px solid var(--border); border-radius: 4px;
+  padding: 12px; margin: 0; max-height: 480px; overflow: auto;
+  font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--text); white-space: pre; tab-size: 4;
+}
+.source-body .source-actions {
+  display: flex; gap: 8px; margin-bottom: 8px;
+}
+.source-body .source-actions button {
+  font-size: 11px; padding: 4px 10px;
+}
+.source-body .empty { color: var(--muted); font-size: 12px; padding: 8px; font-style: italic; }
+.source-body .err   { color: var(--danger); font-size: 12px; padding: 8px; }
 
 .checkbox-list {
   background: var(--code); border: 1px solid var(--border); border-radius: 4px;

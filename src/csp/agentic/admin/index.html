@@ -7,7 +7,16 @@
 <meta http-equiv="pragma" content="no-cache">
 <meta http-equiv="expires" content="0">
 <title>agentic_interop · Admin</title>
-<link rel="stylesheet" href="admin.css">
+<script>
+  // Cache-bust the static assets — IRIS Web Gateway sets Expires: +1h on
+  // /agentic/* by default, so without this the browser keeps stale
+  // admin.js / admin.css for an hour after every change.
+  (function () {
+    var v = Date.now();
+    document.write('<link rel="stylesheet" href="admin.css?v=' + v + '">');
+    window.__agenticVer = v;
+  })();
+</script>
 </head>
 <body>
 <header class="topbar">
@@ -48,6 +57,6 @@
 
 <div id="toast" class="toast" hidden></div>
 
-<script src="admin.js"></script>
+<script>document.write('<scr' + 'ipt src="admin.js?v=' + window.__agenticVer + '"></scr' + 'ipt>');</script>
 </body>
 </html>

@@ -23,6 +23,9 @@ XData UrlMap [ XMLNamespace = "http://www.intersystems.com/urlmap" ]
     <Route Url="/debug"              Method="GET"  Call="Debug" />
 
     <!-- Registries (for UI dropdowns) -->
+    <!-- Class source viewer (read-only UDL for the inline panel) -->
+    <Route Url="/source/:class"      Method="GET"  Call="GetSource" />
+
     <Route Url="/registry/agents"    Method="GET"  Call="ListAgents" />
     <Route Url="/registry/mcps"      Method="GET"  Call="ListMCPs" />
     <Route Url="/registry/toolsets"  Method="GET"  Call="ListToolSets" />
@@ -192,6 +195,11 @@ ClassMethod WhoAmI() As %Status
         "sessionId": (sessionId)
     })
     Quit $$$OK
+}
+
+ClassMethod GetSource(pClass As %String) As %Status
+{
+    Quit ##class(AgenticInterop.Editor.SourceService).Get(%response, pClass)
 }
 
 ClassMethod ListAgents() As %Status
