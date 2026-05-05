@@ -20,6 +20,7 @@ XData UrlMap [ XMLNamespace = "http://www.intersystems.com/urlmap" ]
     <Route Url="/health"             Method="GET"  Call="Health" />
     <Route Url="/namespace"          Method="GET"  Call="Namespace" />
     <Route Url="/whoami"             Method="GET"  Call="WhoAmI" />
+    <Route Url="/debug"              Method="GET"  Call="Debug" />
 
     <!-- Registries (for UI dropdowns) -->
     <Route Url="/registry/agents"    Method="GET"  Call="ListAgents" />
@@ -65,6 +66,10 @@ ClassMethod OnPreDispatch(pUrl As %String, pMethod As %String, ByRef pContinue A
     Set %agenticMethod = pMethod
     Set %agenticReqSize = +$get(%request.CgiEnvs("CONTENT_LENGTH"))
 
+    // /debug bypasses auth so we can inspect what the browser actually
+    // sends (cookies, headers, $username) without 401-blocking.
+    If pUrl = "/debug" { Quit $$$OK }
+
     // Reject anonymous. CSP web app is UnauthenticatedEnabled=0 so this
     // should already be blocked at the gateway, but defense in depth —
     // never trust the gateway alone. ($username is a special variable;
@@ -72,6 +77,7 @@ ClassMethod OnPreDispatch(pUrl As %String, pMethod As %String, ByRef pContinue A
     Set user = $username
     If (user = "") || (user = "UnknownUser") {
         Set %response.Status = "401 Unauthorized"
+        Do %response.SetHeader("WWW-Authenticate", "Basic realm=""agentic_interop""")
         Do ..%WriteJSON({"error": "Authentication required"})
         Set pContinue = 0
         Do ..AuditEnd(401, "anonymous request rejected")
@@ -92,6 +98,32 @@ ClassMethod OnPreDispatch(pUrl As %String, pMethod As %String, ByRef pContinue A
         }
     }
 
+    Quit $$$OK
+}
+
+/// Debug endpoint — anonymous-allowed. Dumps what the gateway gave us.
+ClassMethod Debug() As %Status
+{
+    Set info = {}
+    Set info.username = $username
+    Set info.namespace = $namespace
+    Try { Set info.sessionId = %session.SessionId } Catch { Set info.sessionId = "<n/a>" }
+    Set info.cookieRaw = $get(%request.CgiEnvs("HTTP_COOKIE"))
+    Set info.authorization = $get(%request.CgiEnvs("HTTP_AUTHORIZATION"))
+    Set info.userAgent = $get(%request.CgiEnvs("HTTP_USER_AGENT"))
+    Set info.referer = $get(%request.CgiEnvs("HTTP_REFERER"))
+    Set info.origin = $get(%request.CgiEnvs("HTTP_ORIGIN"))
+    Set info.requestUrl = $get(%request.CgiEnvs("REQUEST_URI"))
+    Set info.remoteAddr = $get(%request.CgiEnvs("REMOTE_ADDR"))
+    Set info.cookies = []
+    Set raw = info.cookieRaw
+    If raw '= "" {
+        For i=1:1:$LENGTH(raw, ";") {
+            Set kv = $ZSTRIP($PIECE(raw, ";", i), "<>W")
+            If kv '= "" { Do info.cookies.%Push(kv) }
+        }
+    }
+    Do ..%WriteJSON(info)
     Quit $$$OK
 }
 

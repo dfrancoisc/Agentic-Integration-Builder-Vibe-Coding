@@ -1,7 +1,17 @@
 // agentic_interop admin — vanilla JS SPA against /api/agentic/*
+//
+// Auth model (post-2026-05-05 redesign):
+// The IRIS Interop SPA uses Bearer tokens in JS memory and DOES NOT share
+// a CSP session cookie with /api/agentic, so this admin UI maintains its
+// own auth: on first 401 we show an inline login form, capture IRIS
+// credentials, store the base64-encoded user:pass in sessionStorage under
+// AGENTIC_AUTH (cleared on tab close), and attach Authorization: Basic to
+// every fetch. Server-side audit captures the resulting $username on
+// every request so the trail still attaches to a real IRIS user.
 
 const API = '/api/agentic';
 const TABS = ['agents', 'mcps', 'toolsets', 'tools', 'skills'];
+const AUTH_KEY = 'AGENTIC_AUTH';
 
 const state = {
     tab: 'agents',
@@ -9,24 +19,102 @@ const state = {
     selected: null,    // currently-open detail (object)
     detailKind: null,  // which entity is on the right pane
     registry: { agents: [], mcps: [], toolsets: [], skills: [] },
-    namespace: ''
+    namespace: '',
+    username: ''
 };
 
 const $ = (id) => document.getElementById(id);
 
+// -------- auth helpers --------
+
+function getStoredAuth() {
+    try { return sessionStorage.getItem(AUTH_KEY) || ''; } catch { return ''; }
+}
+function setStoredAuth(basic) {
+    try { sessionStorage.setItem(AUTH_KEY, basic); } catch {}
+}
+function clearStoredAuth() {
+    try { sessionStorage.removeItem(AUTH_KEY); } catch {}
+}
+
+function showLoginOverlay(message) {
+    return new Promise((resolve) => {
+        const existing = document.getElementById('agentic-login-overlay');
+        if (existing) existing.remove();
+        const overlay = document.createElement('div');
+        overlay.id = 'agentic-login-overlay';
+        overlay.style.cssText =
+            'position:fixed;inset:0;background:rgba(15,17,21,0.85);z-index:9999;' +
+            'display:flex;align-items:center;justify-content:center;' +
+            'font:13px system-ui, sans-serif;color:#e6e8eb;';
+        overlay.innerHTML =
+            '<form id="agentic-login-form" style="background:#161a21;border:1px solid #2a313c;border-radius:6px;padding:24px;width:340px;display:flex;flex-direction:column;gap:12px;">' +
+            '<div style="font-weight:600;font-size:14px;">Sign in to AI Tools</div>' +
+            '<div style="color:#8b95a6;font-size:12px;line-height:1.4;">' +
+              (message || 'Enter your IRIS credentials. Required separately from the Interop Editor login because the SPA does not share its session.') +
+            '</div>' +
+            '<label style="color:#8b95a6;font-size:11px;text-transform:uppercase;letter-spacing:0.04em;">Username' +
+              '<input id="agentic-login-user" type="text" autocomplete="username" autofocus style="width:100%;background:#0b0d11;color:#e6e8eb;border:1px solid #2a313c;border-radius:4px;padding:8px;font:inherit;margin-top:4px;">' +
+            '</label>' +
+            '<label style="color:#8b95a6;font-size:11px;text-transform:uppercase;letter-spacing:0.04em;">Password' +
+              '<input id="agentic-login-pass" type="password" autocomplete="current-password" style="width:100%;background:#0b0d11;color:#e6e8eb;border:1px solid #2a313c;border-radius:4px;padding:8px;font:inherit;margin-top:4px;">' +
+            '</label>' +
+            '<div id="agentic-login-err" style="color:#ef4444;font-size:11px;display:none;"></div>' +
+            '<button type="submit" style="background:#3b82f6;border:1px solid #3b82f6;color:#fff;padding:8px;border-radius:4px;cursor:pointer;font:600 13px system-ui;">Sign in</button>' +
+            '</form>';
+        document.body.appendChild(overlay);
+        const form = overlay.querySelector('#agentic-login-form');
+        const err = overlay.querySelector('#agentic-login-err');
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const user = overlay.querySelector('#agentic-login-user').value;
+            const pass = overlay.querySelector('#agentic-login-pass').value;
+            if (!user || !pass) return;
+            const basic = 'Basic ' + btoa(user + ':' + pass);
+            // Verify against /whoami
+            try {
+                const res = await fetch(API + '/whoami', { headers: { Authorization: basic }, cache: 'no-store' });
+                if (!res.ok) {
+                    err.textContent = 'Invalid credentials.';
+                    err.style.display = 'block';
+                    return;
+                }
+                setStoredAuth(basic);
+                overlay.remove();
+                resolve(true);
+            } catch (e2) {
+                err.textContent = 'Network error: ' + e2.message;
+                err.style.display = 'block';
+            }
+        });
+    });
+}
+
 // -------- HTTP helpers --------
 
 async function api(path, opts = {}) {
+    let auth = getStoredAuth();
+    if (!auth) {
+        await showLoginOverlay();
+        auth = getStoredAuth();
+    }
     const res = await fetch(API + path, {
         ...opts,
         headers: {
             'Content-Type': 'application/json',
+            'Authorization': auth,
             ...(opts.headers || {})
         }
     });
     const text = await res.text();
     let json = null;
     try { json = text ? JSON.parse(text) : null; } catch (e) { /* keep null */ }
+    if (res.status === 401) {
+        // Stored creds rejected — clear and re-prompt, then retry once
+        clearStoredAuth();
+        await showLoginOverlay('Session expired or credentials invalid. Sign in again.');
+        return api(path, opts);
+    }
     if (!res.ok) {
         const msg = (json && json.error) ? json.error : `HTTP ${res.status}`;
         const detail = (json && json.detail) ? json.detail : text;
