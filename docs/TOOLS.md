@@ -254,6 +254,225 @@ These tools are exposed on the main agent (router) directly, not behind a Skill,
 
 ---
 
-## ToolSet.Transform  [PENDING — batches 2 + 3]
+## ToolSet.Production extensions  [BATCH 2]
+
+These extend the Production toolset with tools learned from Best_Practices, Managing, and Monitoring PDFs.
+
+### get_auto_start / set_auto_start
+
+- Description (get): Return the auto-start configuration for the current namespace — the production set to auto-start (if any), the Relative Startup Priority, and the cluster-wide override flag (EnsembleAutoStart).
+- Description (set): Configure or disable auto-start for a production. Strongly recommended for live deployments per IRIS best practices.
+- Implementation: ObjectScript via the Auto-Start Production page's underlying APIs (`Ens.Director.SetAutoStart()` family).
+- Input schema (set): `{ productionName: { type: "string" }, relativeStartupPriority: { type: "integer", default: 0 }, disable: { type: "boolean", default: false, description: "Set to true to disable auto-start in this namespace" } }`.
+- Output schema: `{ productionName, relativeStartupPriority, autoStartEnabled, ensembleAutoStartGlobal }`.
+- Timeout: 5 seconds. RequiresConfirmation: TRUE for set.
+
+### list_shutdown_groups / set_shutdown_group
+
+- Description: Manage Production Shutdown Groups (integers, lower number stops first; default 2). Sequenced shutdown adds latency — important to know for time-sensitive failover plans.
+- Implementation: ObjectScript reads/writes `^Ens.Configuration.ShutdownGroups` (or equivalent persisted store).
+- Input schema (set): `{ productionName: { type: "string", required: true }, shutdownGroup: { type: "integer", required: true } }`.
+- Timeout: 5 seconds. RequiresConfirmation: TRUE for set.
+
+### deploy_production
+
+- Description: Apply an XML deployment package to update or install a production. Saves a rollback file, disables affected components, imports + compiles (rolls back on compile error), updates settings, re-enables. Use only with explicit user confirmation since it modifies running production state.
+- Implementation: ObjectScript via `Ens.Deployment.Deploy()`-family methods.
+- Input schema: `{ deploymentXmlPath: { type: "string", required: true }, targetProductionName: { type: "string" }, rollbackFile: { type: "string", required: true }, deploymentLogFile: { type: "string", required: true } }`.
+- Output schema: `{ ok, deploymentId, rollbackFile, log: [...] }`.
+- Timeout: 600 seconds. RequiresConfirmation: TRUE.
+
+### rollback_deployment / get_deployment_history
+
+- Description (rollback): Apply a rollback file from a prior deployment to revert changes.
+- Description (history): List recent deployments with status, timestamp, deploying user, deployment notes.
+- Implementation: ObjectScript via the Deployment Changes pages' underlying APIs.
+- Input schema (rollback): `{ rollbackFile: { type: "string", required: true } }`.
+- Input schema (history): `{ limit: { type: "integer", default: 20 } }`.
+- Timeout: 600 sec rollback / 5 sec history. RequiresConfirmation: TRUE for rollback only.
+
+### purge_production_data
+
+- Description: Run a production data purge. Honors the documented Purge Management Data settings: NumberOfDaysToKeep, BodiesToo, KeepIntegrity, TypesToPurge, optionalMessageLimitToConfigItems, optionalMessageWorkQueueCategory, plus startDateTime / doNotDeleteEndDateTime UTC overrides.
+- Implementation: ObjectScript via `Ens.Util.MessagePurge.Purge()` for messages; `Ens.Util.Tasks.Purge` for the broader purge.
+- Input schema: `{ types: { type: "array", items: "string", description: "Events / Messages / Business Processes / Rule Logs / I/O Logs / Host Monitor Data / Managed Alerts" }, daysToKeep: { type: "integer", default: 7 }, bodiesToo: { type: "boolean", default: false }, keepIntegrity: { type: "boolean", default: true }, limitToConfigItems: { type: "array", items: "string" }, workQueueCategory: { type: "string" }, workQueueBatchSize: { type: "integer", minimum: 10000 }, startDateTimeUtc: { type: "string" }, doNotDeleteEndDateTimeUtc: { type: "string" }, dryRun: { type: "boolean", default: false, description: "Estimate counts without deleting" } }`.
+- Output schema: `{ deletedByType: { Events: N, Messages: N, ... }, durationMs, journalBytesGenerated }`.
+- Timeout: 1800 seconds. RequiresConfirmation: TRUE — purges are irreversible. Default the LLM to dryRun=true unless the user explicitly confirms a destructive purge.
+
+### schedule_purge
+
+- Description: Schedule recurring production data purges via the Task Manager (`Ens.Util.Tasks.Purge`).
+- Implementation: ObjectScript via `%SYS.Task` API.
+- Input schema: same fields as `purge_production_data` plus `{ taskName: { type: "string", required: true }, intervalHours: { type: "integer", required: true }, startTime: { type: "string", description: "ISO time of day to run, e.g. 02:00:00" } }`.
+- Timeout: 5 seconds. RequiresConfirmation: TRUE.
+
+### get_production_states_summary
+
+- Description: System-wide production summary — equivalent to the Production System Monitor page. Useful as a one-call health check.
+- Implementation: ObjectScript aggregating `Ens.Director.GetProductionStatus()` across namespaces, plus throughput counters from `^IRIS.Temp.EnsMetrics`.
+- Input schema: `{}`.
+- Output schema: `{ productionsRunning, productionsSuspendedOrTroubled, incomingMessagesLast30s, outgoingMessagesLast30s, lastIncomingTime, lastOutgoingTime, totalProductionJobs, mostActiveQueues: [...], seriousSystemAlerts, productionAlerts, productionErrors }`.
+- Timeout: 10 seconds. RequiresConfirmation: false.
+
+### get_queue_status / get_active_jobs / get_suspended_messages
+
+- Description: Per-host or per-production queue depths, in-flight jobs, suspended-message details. Mirror Interoperability > Monitor > Queues / Jobs / View > Suspended Messages.
+- Implementation: SQL against `Ens.Queue`-related globals + `Ens_Util.Log` for status.
+- Input schema (queue/jobs): `{ productionName: { type: "string" }, hostName: { type: "string" } }`. (suspended): `{ productionName: { type: "string" }, since: { type: "string" }, limit: { type: "integer", default: 100 } }`.
+- Output schema: standard query envelope.
+- Timeout: 10 seconds. RequiresConfirmation: false.
+
+### get_business_rule_log / get_business_process_instances
+
+- Description: View recent business rule executions with reason, return value, error info; or list active/completed BPL business process instances with primary request, session, status.
+- Implementation: SQL against `Ens.Rule.Log` / `Ens.BusinessProcess`, `Ens.BusinessProcessBPL`.
+- Input schema (rule log): `{ ruleName: { type: "string" }, sessionId: { type: "string" }, errorsOnly: { type: "boolean", default: false }, since: { type: "string" }, limit: { type: "integer", default: 100 } }`. (BP instances): `{ configurationName: { type: "string" }, sessionId: { type: "string" }, primaryRequestId: { type: "string" }, completedFilter: { type: "string", enum: ["all", "completed", "in_progress"] } }`.
+- Output schema: standard query envelope plus link fields.
+- Timeout: 10 seconds. RequiresConfirmation: false.
+
+### get_io_archive
+
+- Description: Read I/O archive for hosts that have `Archive IO` enabled. Useful for diagnosing wire-level adapter issues.
+- Implementation: SQL against `Ens.Util.IOLog` and the four subclass tables (`IOLogFile`, `IOLogObj`, `IOLogStream`, `IOLogXMLObj`).
+- Input schema: `{ hostName: { type: "string" }, since: { type: "string" }, ioType: { type: "string", enum: ["any","File","Obj","Stream","XMLObj"] }, limit: { type: "integer", default: 50 } }`.
+- Timeout: 10 seconds. RequiresConfirmation: false.
+
+### get_interface_maps / find_interface_references
+
+- Description (maps): Returns all unique routes a message can take through the production (Service → Process → Rule → Transformation → Operation), per the Interface Maps utility. Each row is one path. Useful for "which BS calls which BO via which rule".
+- Description (references): Find all places a named component (BPL, business rule, DTL, HL7 schema, lookup table, utility function) is referenced. Search inside business host configs, BPL diagrams, DTLs, business rules.
+- Implementation: ObjectScript via the Interface Maps / Interface References page APIs.
+- Input schema (maps): `{ productionName: { type: "string" }, search: { type: "string" }, componentTypes: { type: "array", items: "string", default: ["service","process","rule","transformation","operation"] }, categoryFilter: { type: "string" }, exportFormat: { type: "string", enum: ["json","csv","xml","html"], default: "json" } }`.
+- Input schema (references): `{ componentName: { type: "string", required: true }, componentType: { type: "string", enum: ["bpl","rule","dtl","hl7_schema","lookup_table","utility_function"], required: true }, resultTypes: { type: "array", items: "string", default: ["business_hosts","bpl","rules","dtls"] } }`.
+- Timeout: 15 seconds. RequiresConfirmation: false.
+
+### list_workflow_roles / list_workflow_users / list_workflow_tasks
+
+- Description: View workflow role definitions, user assignments, and task statuses (Unassigned/Assigned/Completed/Cancelled/Discarded). Status colors per Managing_Productions.
+- Implementation: SQL + ObjectScript via the workflow APIs.
+- Input schema (tasks): `{ status: { type: "string", enum: ["any","unassigned","assigned","completed","cancelled","discarded"] }, role: { type: "string" }, assignedTo: { type: "string" }, since: { type: "string" }, limit: { type: "integer", default: 100 } }`.
+- Output schema: standard query envelope.
+- Timeout: 5 seconds. RequiresConfirmation: false.
+
+### assign_workflow_task / cancel_workflow_task
+
+- Description: Supervisor actions on workflow tasks. Reassign or cancel. Cannot be undone.
+- Implementation: ObjectScript via the workflow Manager APIs.
+- Input schema (assign): `{ taskId: { type: "string", required: true }, assignToUsername: { type: "string", required: true }, priority: { type: "integer" }, subject: { type: "string" } }`.
+- Input schema (cancel): `{ taskId: { type: "string", required: true } }`.
+- Timeout: 5 seconds. RequiresConfirmation: TRUE.
+
+### list_subscribers / create_subscription / delete_subscription
+
+- Description: Manage publish/subscribe routing. Topics use `A.B.C.D` form (max 50 chars per subtopic) with `*` wildcard for full subtopics.
+- Implementation: ObjectScript via `EnsLib.PubSub.Utils`.
+- Input schema (create): `{ subscriberId: { type: "string", required: true }, topic: { type: "string", required: true }, domain: { type: "string" } }`.
+- Timeout: 5 seconds. RequiresConfirmation: TRUE for create/delete.
+
+### get_alert_management_state / acknowledge_managed_alert / escalate_managed_alert
+
+- Description: Managed alert framework operations — view current alert assignments, acknowledge, escalate. Backed by `Ens.Alerting.AlertManager`, `Ens.Alerting.NotificationManager`, `Ens.Alerting.AlertMonitor`.
+- Implementation: ObjectScript via `Ens.Alerting.ManagedAlert` API.
+- Input schema (state): `{ assignedTo: { type: "string" }, status: { type: "string", enum: ["open","ack","escalated","resolved"] }, since: { type: "string" }, limit: { type: "integer", default: 50 } }`.
+- Input schema (ack/escalate): `{ alertId: { type: "string", required: true }, note: { type: "string" }, escalateTo: { type: "string", description: "Required for escalate" } }`.
+- Timeout: 5 seconds. RequiresConfirmation: TRUE for ack and escalate.
+
+### resend_message / discard_message / resubmit_with_edits
+
+- Description: Operator actions on individual messages. Resend creates a new header (new message ID) targeting the original or a different destination. Discard marks a queued/suspended message as Discarded (does not delete). Resubmit re-runs through the original business host with edited body.
+- Implementation: ObjectScript via the Message Viewer's underlying APIs.
+- Input schema: `{ messageId: { type: "string", required: true }, newTarget: { type: "string", description: "For resend; default = original target" }, editedBody: { type: "object", description: "For resubmit_with_edits" } }`.
+- Required permissions: `%Ens_MessageResend:USE` for resend, `%Ens_MessageDiscard:USE` for discard, `%Ens_MessageEditResend:USE` for resubmit.
+- Timeout: 30 seconds. RequiresConfirmation: TRUE for all three.
+
+---
+
+## ToolSet.Transform  [BATCH 2 PARTIAL — extends in batch 3 with BPL]
+
+DTL CRUD plus dry-run testing. Source PDF: Developing_DTL_Transformations.
+
+### list_dtls
+
+- Description: List all DTL transformations in the current namespace, distinguishing DTL transformations (extend `Ens.DataTransformDTL`, editable in DTL Editor) from custom transformations (extend `Ens.DataTransform`, IDE-only).
+- Implementation: SQL against `%Dictionary.ClassDefinition` filtering by `Super = 'Ens.DataTransformDTL'` or `Ens.DataTransform`.
+- Input schema: `{ packagePrefix: { type: "string" } }`.
+- Output schema: `{ dtls: [ { name, kind: "dtl"|"custom", sourceClass, targetClass, sourceDocType, targetDocType, description, lastCompiled, isCompiled } ] }`.
+- Timeout: 5 seconds. RequiresConfirmation: false.
+
+### get_dtl
+
+- Description: Return a DTL class's full XData transform block + transformation settings (Mode, Report Errors, Treat empty repeating fields as null, Allow empty segments in target, Language).
+- Implementation: ObjectScript reading `%Dictionary.XDataDefinition`.
+- Input schema: `{ name: { type: "string", required: true } }`.
+- Output schema: `{ name, sourceClass, targetClass, sourceDocType, targetDocType, mode, reportErrors, treatEmptyRepeatingAsNull, allowEmptySegmentsInTarget, language, pythonImports, xdataXml, actions: [ { type, attributes, comment, language } ] }`.
+- Timeout: 5 seconds. RequiresConfirmation: false.
+
+### create_dtl
+
+- Description: Scaffold a new DTL class extending `Ens.DataTransformDTL` with the specified source and target classes. Refuses to use reserved package names (Demo, Ens, EnsLib, EnsPortal, CSPX). Optionally pre-populates with `<assign>` actions for matching property names.
+- Implementation: ObjectScript class generation + `$system.OBJ.Compile()`.
+- Input schema: `{ packageName: { type: "string", required: true }, name: { type: "string", required: true }, description: { type: "string" }, sourceClass: { type: "string", required: true, description: "Use EnsLib.HL7.Message for HL7, EnsLib.EDI.X12.Document for X12, EnsLib.EDI.ASTM.Document for ASTM, EnsLib.EDI.EDIFACT.Document for EDIFACT, EnsLib.EDI.XML.Document for XML, or any custom message class" }, sourceDocType: { type: "string", description: "Required if sourceClass is a virtual document" }, targetClass: { type: "string", required: true }, targetDocType: { type: "string" }, mode: { type: "string", enum: ["new","copy","existing"], default: "new" }, language: { type: "string", enum: ["objectscript","python"], default: "objectscript" }, autoMapMatchingFields: { type: "boolean", default: false } }`.
+- Output schema: `{ name, created: true, isCompiled }`.
+- Timeout: 30 seconds. RequiresConfirmation: TRUE (creates a class).
+
+### update_dtl_body / update_dtl_settings
+
+- Description (body): Replace the XData transform block with a new validated XML body. Refuses XML that doesn't parse as a `<transform>` element with valid action children. Refuses elements/attributes outside the documented set.
+- Description (settings): Update transformation-level settings (mode, language, reportErrors, etc.) without touching the body.
+- Implementation: ObjectScript editing the class XData via `%Dictionary.XDataDefinition` then recompiling.
+- Input schema (body): `{ name: { type: "string", required: true }, transformXml: { type: "string", required: true }, autoCompile: { type: "boolean", default: true } }`.
+- Output schema: `{ updated: true, compileErrors: [...] }`.
+- Timeout: 30 seconds. RequiresConfirmation: TRUE.
+
+### delete_dtl
+
+- Description: Delete a DTL class. Refuses if the DTL is referenced anywhere — checks via the Interface References pattern.
+- Implementation: ObjectScript via `$system.OBJ.Delete()` after reference check.
+- Input schema: `{ name: { type: "string", required: true }, force: { type: "boolean", default: false, description: "Override the reference check — destructive" } }`.
+- Output schema: `{ deleted: true, references: [...] }`.
+- Timeout: 15 seconds. RequiresConfirmation: TRUE.
+
+### compile_dtl
+
+- Description: Compile the DTL class. Returns errors if any.
+- Implementation: `$system.OBJ.Compile(name, "ck")`.
+- Input schema: `{ name: { type: "string", required: true } }`.
+- Output schema: `{ ok, errors: [ { line, message } ], warnings: [...] }`.
+- Timeout: 30 seconds. RequiresConfirmation: false (compilation is idempotent).
+
+### validate_dtl
+
+- Description: Static analysis of a DTL: checks for missing assignments to required target properties, references to non-existent source/target properties, untranslated TODO comments in `<annotation>`, `<code>` blocks that take locks without releasing them, `<sql>` queries without fully-qualified table names, `<assign action='clear|append|insert'/>` on virtual documents (invalid), missing `BuildMap()` after virtual-document REMOVE actions.
+- Implementation: ObjectScript walking the parsed transform XML against the source/target class metadata.
+- Input schema: `{ name: { type: "string", required: true } }`.
+- Output schema: `{ findings: [ { severity: "error"|"warning"|"info", actionIndex, message, suggestion } ] }`.
+- Timeout: 10 seconds. RequiresConfirmation: false.
+
+### run_dtl
+
+- Description: Dry-run the DTL with a sample source message. Returns the transformed target plus any traces and errors. Equivalent to the Test Transform wizard.
+- Implementation: ObjectScript invoking `Transform()` on the DTL class with the sample message instantiated.
+- Input schema: `{ name: { type: "string", required: true }, sourceMessage: { type: "object", description: "Object form for standard messages, raw text for EDI/virtual documents" }, sourceFormat: { type: "string", enum: ["object","raw"], default: "object" }, aux: { type: "object", description: "aux variable contents (for DTLs that read aux.BusinessRuleName etc.)" } }`.
+- Output schema: `{ ok, target: { object or raw text }, traces: [ "..." ], status, executionTimeMs }`.
+- Timeout: 30 seconds. RequiresConfirmation: false (dry-run, no side effects).
+
+### list_lookup_tables / read_lookup_table / set_lookup_entry / delete_lookup_entry
+
+- Description: Manage lookup tables used by `Lookup()` / `Exists()` utility functions in DTL and business rules. Stored in `^Ens.LookupTable`.
+- Implementation: ObjectScript via `Ens.Util.LookupTable` API.
+- Input schema (read): `{ tableName: { type: "string", required: true }, key: { type: "string", description: "Optional — return single entry instead of full table" } }`.
+- Input schema (set): `{ tableName: { type: "string", required: true }, key: { type: "string", required: true }, value: { type: "string", required: true } }`.
+- Input schema (delete): `{ tableName: { type: "string", required: true }, key: { type: "string", required: true } }`.
+- Timeout: 5 seconds. RequiresConfirmation: TRUE for set/delete.
+
+### import_lookup_table / export_lookup_table
+
+- Description: Import/export lookup tables in the new XML format (with `<Document name="X.LUT">` wrapper). Note legacy format support: legacy files import via `import_lookup_table_legacy` (merges with existing rather than replaces).
+- Implementation: ObjectScript via `$system.OBJ.Load()` / `$system.OBJ.Export()` for the LUT global subscript.
+- Input schema (import): `{ filePath: { type: "string", required: true }, replaceExisting: { type: "boolean", default: false } }`.
+- Input schema (export): `{ tableName: { type: "string", required: true }, filePath: { type: "string", required: true } }`.
+- Timeout: 30 seconds. RequiresConfirmation: TRUE for import.
+
+---
 
 ## ToolSet.Testing  [PENDING — batch 4]
