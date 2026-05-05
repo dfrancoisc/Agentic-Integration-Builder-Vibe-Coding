@@ -18,6 +18,10 @@ const AUTH_KEY = 'AGENTIC_AUTH';
 // during bootstrap before any API call.
 let bridgeBearer = '';
 let bridgeNamespace = '';
+// Once bootstrap validates auth (via /whoami) we set this. Subsequent
+// 401s throw a toast instead of re-prompting — the original repeated
+// re-prompt UX was unacceptable.
+let authValidated = false;
 
 function isViaInterop() {
     try { return new URLSearchParams(window.location.search).get('via') === 'interop'; }
@@ -125,16 +129,42 @@ function showLoginOverlay(message) {
 
 // -------- HTTP helpers --------
 
-async function ensureAuth() {
-    if (bridgeBearer) return bridgeBearer;
+// Probe an Authorization header against /whoami. Returns true on 2xx.
+async function probeAuth(authHeader) {
+    if (!authHeader) return false;
+    try {
+        const r = await fetch(API + '/whoami', {
+            headers: { Authorization: authHeader, Accept: 'application/json' },
+            cache: 'no-store'
+        });
+        return r.ok;
+    } catch { return false; }
+}
+
+// Validate auth once at boot: try the SPA's bridge bearer first, then
+// any stored Basic credentials, finally show the inline overlay. Once
+// any of these succeeds, mark `authValidated = true` so subsequent 401s
+// surface a toast instead of re-prompting on every tab click.
+async function bootstrapAuth() {
+    if (authValidated) return;
+    if (bridgeBearer && await probeAuth(bridgeBearer)) {
+        authValidated = true;
+        return;
+    }
+    bridgeBearer = '';
     const stored = getStoredAuth();
-    if (stored) return stored;
+    if (stored && await probeAuth(stored)) {
+        authValidated = true;
+        return;
+    }
+    if (stored) clearStoredAuth();
     await showLoginOverlay();
-    return getStoredAuth();
+    authValidated = true;
 }
 
 async function api(path, opts = {}) {
-    const auth = await ensureAuth();
+    if (!authValidated) await bootstrapAuth();
+    const auth = bridgeBearer || getStoredAuth();
     const headers = {
         'Content-Type': 'application/json',
         'Authorization': auth,
@@ -151,14 +181,17 @@ async function api(path, opts = {}) {
     let json = null;
     try { json = text ? JSON.parse(text) : null; } catch (e) { /* keep null */ }
     if (res.status === 401) {
-        // Bearer rejected (expired) — clear stored creds, re-prompt,
-        // retry once. We do not auto-retry the bridge bearer because
-        // if it's expired the SPA itself will see 401s and prompt the
-        // user upstream.
-        if (bridgeBearer) { bridgeBearer = ''; }
-        clearStoredAuth();
-        await showLoginOverlay('Session expired. Sign in again.');
-        return api(path, opts);
+        // We were authenticated at bootstrap; mid-session token
+        // expired. DO NOT auto-prompt — that produced the rapid-fire
+        // re-prompt loop the customer flagged. Surface a toast and
+        // throw; the user can manually re-trigger bootstrap by
+        // refreshing the modal (close + reopen the AI Settings tab).
+        authValidated = false;
+        bridgeBearer = '';
+        toast('Session expired — close and reopen AI Settings to sign in again.', 'error');
+        const err = new Error('Authentication expired');
+        err.status = 401;
+        throw err;
     }
     if (!res.ok) {
         const msg = (json && json.error) ? json.error : `HTTP ${res.status}`;
@@ -260,7 +293,7 @@ function renderAgentList() {
                 ${a.abstract ? '<span class="badge abstract">abstract</span>' : ''}
             </div>
             <div class="row2"><code>${escapeHtml(a.class)}</code></div>
-            <div class="row2">${escapeHtml(firstLine(a.description) || '—')}</div>
+            <div class="row2 desc">${escapeHtml((a.description || '').replace(/\s+/g, ' ').trim() || '—')}</div>
         `;
         div.addEventListener('click', () => openAgent(a.class));
         list.appendChild(div);
@@ -281,7 +314,7 @@ function renderMCPList() {
                 <span class="badge ${isUser ? 'user' : 'shipped'}">${isUser ? 'user' : 'shipped'}</span>
             </div>
             <div class="row2"><code>${escapeHtml(m.class)}</code></div>
-            <div class="row2">${escapeHtml(m.shortDescription || firstLine(m.description) || '—')}</div>
+            <div class="row2 desc">${escapeHtml((m.shortDescription || m.description || '').replace(/\s+/g, ' ').trim() || '—')}</div>
             <div class="row2">${m.toolsets.length} toolset(s)</div>
         `;
         div.addEventListener('click', () => openMCP(m.class));
@@ -303,7 +336,7 @@ function renderToolSetList() {
                 <span class="badge ${isUser ? 'user' : 'shipped'}">${isUser ? 'user' : 'shipped'}</span>
             </div>
             <div class="row2"><code>${escapeHtml(t.class)}</code></div>
-            <div class="row2">${escapeHtml(firstLine(t.description) || '—')}</div>
+            <div class="row2 desc">${escapeHtml((t.description || '').replace(/\s+/g, ' ').trim() || '—')}</div>
             <div class="row2">${t.toolCount || 0} tool(s)</div>
         `;
         div.addEventListener('click', () => openToolSet(t.class));
@@ -319,11 +352,12 @@ function renderSkillList() {
         const div = document.createElement('div');
         div.className = 'list-item';
         div.innerHTML = `
-            <div class="row1">${escapeHtml(shortName(s.class))}</div>
+            <div class="row1">${escapeHtml(shortName(s.class))} <span class="badge shipped">shipped</span></div>
             <div class="row2"><code>${escapeHtml(s.class)}</code></div>
-            <div class="row2">${escapeHtml(firstLine(s.description) || '—')}</div>
+            <div class="row2 desc">${escapeHtml((s.description || '').replace(/\s+/g, ' ').trim() || '—')}</div>
             <div class="row2">${s.toolsets.length} toolset(s)</div>
         `;
+        div.addEventListener('click', () => openSkill(s.class));
         list.appendChild(div);
     }
 }
@@ -403,6 +437,18 @@ async function openTool(toolset, name) {
     } catch (e) { toast('Load failed: ' + e.message, 'error'); }
 }
 
+// Skills are shipped, read-only. We show the registry metadata + the
+// Class Source panel (which surfaces XData INSTRUCTIONS + Parameter
+// TOOLS verbatim from the .cls UDL).
+function openSkill(cls) {
+    const s = state.registry.skills.find(x => x.class === cls);
+    if (!s) { toast('Skill not in registry', 'error'); return; }
+    state.selected = s;
+    state.detailKind = 'skill';
+    renderSkillDetail();
+    $('detail-panel').hidden = false;
+}
+
 // -------- detail forms --------
 
 function renderAgentDetail() {
@@ -446,11 +492,13 @@ function renderAgentDetail() {
             <textarea id="f-instructions" class="tall" ${ro}>${escapeHtml(a.instructions || '')}</textarea>
         </div>
         <div class="field">
-            <label>MCPs</label>
+            <label>MCPs bound (${(a.mcps || []).length} of ${state.registry.mcps.length})</label>
+            ${selectedChips(a.mcps)}
             <div class="checkbox-list" id="f-mcps">${renderCheckboxList(state.registry.mcps, a.mcps, 'class', isUser)}</div>
         </div>
         <div class="field">
-            <label>Skills</label>
+            <label>Skills bound (${(a.skills || []).length} of ${state.registry.skills.length})</label>
+            ${selectedChips(a.skills)}
             <div class="checkbox-list" id="f-skills">${renderCheckboxList(state.registry.skills, a.skills, 'class', isUser)}</div>
         </div>
         ${a.class && !a._isNew ? sourcePanelHtml(a.class) : ''}
@@ -485,7 +533,8 @@ function renderMCPDetail() {
             <textarea id="f-description" ${ro}>${escapeHtml(m.description || '')}</textarea>
         </div>
         <div class="field">
-            <label>ToolSets bound to this MCP</label>
+            <label>ToolSets bound (${(m.toolsets || []).length} of ${state.registry.toolsets.length})</label>
+            ${selectedChips(m.toolsets)}
             <div class="checkbox-list" id="f-toolsets">${renderCheckboxList(state.registry.toolsets, m.toolsets, 'class', isUser)}</div>
         </div>
         ${m.class && !m._isNew ? sourcePanelHtml(m.class) : ''}
@@ -544,6 +593,30 @@ function renderToolSetDetail() {
             <div class="hint">Edited by the framework's compile-time generator. Leave alone unless you know what you're doing.</div>
         </div>
         ${t.class && !t._isNew ? sourcePanelHtml(t.class) : ''}
+    `;
+    bindSourcePanel($('form'));
+}
+
+function renderSkillDetail() {
+    const s = state.selected;
+    $('detail-title').textContent = s.class;
+    $('btn-delete').style.display = 'none';
+    $('btn-save').disabled = true;
+    $('form').innerHTML = `
+        <div class="field readonly">
+            <label>Class</label>
+            <input type="text" value="${escapeAttr(s.class)}" readonly>
+        </div>
+        <div class="field readonly">
+            <label>Description (developer comment)</label>
+            <textarea readonly>${escapeHtml(s.description || '')}</textarea>
+        </div>
+        <div class="field">
+            <label>ToolSets bound (Parameter TOOLS)</label>
+            ${selectedChips((s.toolsets || []).map(t => typeof t === 'string' ? t : t.class))}
+            <div class="hint">Skills are shipped, read-only. To change a Skill's tools, clone it under <code>AgenticInterop.User.Skill.*</code> in a future release.</div>
+        </div>
+        ${sourcePanelHtml(s.class)}
     `;
     bindSourcePanel($('form'));
 }
@@ -783,14 +856,36 @@ async function loadRegistries(force = false) {
     }
 }
 
+// Renders a row of green chips for the items currently bound — so the
+// user can see at a glance what's selected without scanning checkboxes.
+function selectedChips(values) {
+    const arr = (values || []).filter(Boolean);
+    if (arr.length === 0) {
+        return '<div class="chip-row empty">No bindings yet.</div>';
+    }
+    return '<div class="chip-row">' +
+        arr.map(v => `<span class="chip">${escapeHtml(typeof v === 'string' ? v : v.class || '')}</span>`).join('') +
+        '</div>';
+}
+
 function renderCheckboxList(items, selected, key, editable) {
     if (!items || items.length === 0) return '<div class="empty">Loading…</div>';
     const set = new Set((selected || []).map(s => typeof s === 'string' ? s : s[key]));
-    return items.map(item => {
+    // Sort selected items to the top so the user sees current bindings
+    // first; alphabetical within each group.
+    const sorted = [...items].sort((a, b) => {
+        const sa = set.has(a[key]) ? 0 : 1;
+        const sb = set.has(b[key]) ? 0 : 1;
+        if (sa !== sb) return sa - sb;
+        return (a[key] || '').localeCompare(b[key] || '');
+    });
+    return sorted.map(item => {
         const v = item[key];
-        const checked = set.has(v) ? 'checked' : '';
+        const isSelected = set.has(v);
+        const checked = isSelected ? 'checked' : '';
         const dis = editable ? '' : 'disabled';
-        return `<label><input type="checkbox" data-value="${escapeAttr(v)}" ${checked} ${dis}> <code>${escapeHtml(v)}</code> ${item.name ? '<span style="color:var(--muted);">' + escapeHtml(item.name) + '</span>' : ''}</label>`;
+        const cls = isSelected ? 'is-selected' : '';
+        return `<label class="${cls}"><input type="checkbox" data-value="${escapeAttr(v)}" ${checked} ${dis}> <code>${escapeHtml(v)}</code> ${item.name ? '<span class="muted">' + escapeHtml(item.name) + '</span>' : ''}</label>`;
     }).join('');
 }
 
@@ -901,13 +996,19 @@ function parseJson(s) { try { return s ? JSON.parse(s) : {}; } catch { return {}
 // -------- bootstrap --------
 
 (async () => {
-    // If opened from inject.js inside the Interop Editor, ask the
-    // parent for the Bearer + namespace BEFORE any API call.
+    // Capture bridge auth + namespace from the parent SPA first.
     if (isViaInterop()) {
         const bridge = await fetchBridgeAuth();
         if (bridge.bearer) bridgeBearer = bridge.bearer;
         if (bridge.namespace) bridgeNamespace = bridge.namespace;
         else if (urlNamespace()) bridgeNamespace = urlNamespace();
+    }
+    // Validate once. After this, no auto-prompts on 401.
+    try {
+        await bootstrapAuth();
+    } catch (e) {
+        showError(e);
+        return;
     }
     try {
         const ns = await get('/namespace');
