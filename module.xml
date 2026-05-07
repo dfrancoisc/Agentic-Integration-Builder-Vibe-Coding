@@ -38,13 +38,13 @@
     AuthenticationMethods="96"
     PasswordAuthEnabled="1"
     UnauthenticatedEnabled="1"
-    UseCookies="1"
+    UseCookies="2"
     AutoCompile="0"
     DefaultTimeout="900"
     CookiePath="/"
     GroupById="%ISCMgtPortal"
     UseSessionCookie="0"
-    Description="agentic_interop static UI bundle (chat + admin) — authenticated"
+    Description="agentic_interop static UI bundle (chat + admin) — authenticated, no session cookies"
 />
 
 <!-- REST API. JWTAuthEnabled=1 + GroupById=%ISCMgtPortal so the IRIS

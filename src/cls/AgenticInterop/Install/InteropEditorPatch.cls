@@ -64,14 +64,28 @@ ClassMethod DisableStaticFileCache() As %Status
         Set $namespace = "%SYS"
         If '##class(Security.Applications).Exists("/agentic") { Quit }
         Do ##class(Security.Applications).Get("/agentic", .props)
-        If $get(props("ServeFilesTimeout")) = 0 {
-            Write !,"  DisableStaticFileCache: already 0",!
+        Set changed = 0
+        If $get(props("ServeFilesTimeout")) '= 0 {
+            Set props("ServeFilesTimeout") = 0
+            Set changed = 1
+            Write !,"  DisableStaticFileCache: ServeFilesTimeout -> 0",!
+        }
+        ; Fix cookie leak: /agentic serves static files and must NOT set
+        ; session cookies. UseCookies=1 with CookiePath=/ caused the
+        ; session cookie to leak to /api/agentic requests, and the CSP
+        ; gateway rejected follow-up chat messages with 401 when the
+        ; leaked session went stale during long SSE streams.
+        If $get(props("UseCookies")) '= 2 {
+            Set props("UseCookies") = 2
+            Set changed = 1
+            Write !,"  DisableStaticFileCache: UseCookies -> 2 (no session cookies)",!
+        }
+        If 'changed {
+            Write !,"  DisableStaticFileCache: already configured",!
             Quit
         }
-        Set props("ServeFilesTimeout") = 0
         Set tSC = ##class(Security.Applications).Modify("/agentic", .props)
         If 'tSC { Quit }
-        Write !,"  DisableStaticFileCache: /agentic ServeFilesTimeout -> 0",!
     } Catch ex {
         Set tSC = ex.AsStatus()
     }

@@ -619,14 +619,29 @@ async function send(message) {
         // clear the queue — they apply to THIS turn only.
         const tokensThisTurn = approvedTokens.slice();
         approvedTokens = [];
-        const res = await fetch(API + '/chat/stream', {
+        let res = await fetch(API + '/chat/stream', {
             method: 'POST',
             headers,
             body: JSON.stringify({ message, history, approvedTokens: tokensThisTurn })
         });
+        // 401 recovery: a stale CSP session cookie (from the /agentic
+        // static-file app or the parent Interop Editor) can cause the
+        // gateway to reject the request even though our Basic auth
+        // header is valid. Re-authenticate and retry once before giving
+        // up. This self-heals the leaked-cookie scenario.
         if (res.status === 401) {
             authValidated = false;
-            throw new Error('Authorization rejected.');
+            await bootstrapAuth();
+            headers['Authorization'] = authHeader();
+            res = await fetch(API + '/chat/stream', {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({ message, history, approvedTokens: tokensThisTurn })
+            });
+        }
+        if (res.status === 401) {
+            authValidated = false;
+            throw new Error('Authorization rejected. Please reload the page and sign in again.');
         }
         if (res.status === 403) {
             const j = await res.json().catch(() => ({}));
