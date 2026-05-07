@@ -332,6 +332,13 @@ function toast(msg, kind = '') {
 // Build an empty assistant message bubble. Returns the DOM nodes the
 // stream loop appends to: text node for tokens, container for tool
 // cards, meta line populated on `done`.
+//
+// Layout:
+//   [role label]
+//   [tool-group — single collapsible "N actions" summary]
+//     [individual tool cards inside, only visible when expanded]
+//   [text — the assistant's response]
+//   [meta — friendly completion line + collapsible technical details]
 function newAssistantBubble() {
     const empty = $('empty-state');
     if (empty) empty.remove();
@@ -341,9 +348,26 @@ function newAssistantBubble() {
     role.className = 'role';
     role.textContent = 'health interop';
     wrap.appendChild(role);
+    // Tool group: a single <details> that wraps all tool cards.
+    // The summary line ("N actions completed") updates as cards arrive.
+    // Individual tool cards are hidden inside until the user clicks.
+    const toolGroup = document.createElement('details');
+    toolGroup.className = 'tool-group';
+    toolGroup.hidden = true;
+    const toolSummary = document.createElement('summary');
+    toolSummary.className = 'tool-group-summary';
+    const toolDot = document.createElement('span');
+    toolDot.className = 'status-dot running';
+    toolSummary.appendChild(toolDot);
+    const toolLabel = document.createElement('span');
+    toolLabel.className = 'tool-group-label';
+    toolLabel.textContent = 'Working...';
+    toolSummary.appendChild(toolLabel);
+    toolGroup.appendChild(toolSummary);
     const tools = document.createElement('div');
     tools.className = 'tool-stack';
-    wrap.appendChild(tools);
+    toolGroup.appendChild(tools);
+    wrap.appendChild(toolGroup);
     const text = document.createElement('div');
     text.className = 'text';
     wrap.appendChild(text);
@@ -356,7 +380,7 @@ function newAssistantBubble() {
     wrap.appendChild(meta);
     $('messages').appendChild(wrap);
     $('messages').scrollTop = $('messages').scrollHeight;
-    return { wrap, tools, text, cursor, meta };
+    return { wrap, toolGroup, toolSummary, toolDot, toolLabel, tools, text, cursor, meta };
 }
 
 function appendUserMessage(content) {
@@ -654,12 +678,20 @@ async function send(message) {
         if (!res.ok) {
             throw new Error('HTTP ' + res.status);
         }
+        let toolCount = 0;
+        let toolErrors = 0;
         for await (const { event, data } of readSSE(res)) {
             if (event === 'token' && data && typeof data.text === 'string') {
                 assistantText += data.text;
                 bubble.cursor.before(document.createTextNode(data.text));
                 $('messages').scrollTop = $('messages').scrollHeight;
             } else if (event === 'tool_start' && data && data.name) {
+                // Show the tool group as soon as the first tool fires
+                bubble.toolGroup.hidden = false;
+                toolCount++;
+                bubble.toolLabel.textContent = toolCount === 1
+                    ? '1 action running...'
+                    : toolCount + ' actions running...';
                 const card = newToolCard(bubble.tools, data.name);
                 if (data.args) {
                     try {
@@ -677,6 +709,7 @@ async function send(message) {
                     }
                 }
             } else if (event === 'tool_error' && data && data.name) {
+                toolErrors++;
                 const card = toolCardsByName.get(data.name);
                 if (card) {
                     setToolStatus(card, 'error');
@@ -684,19 +717,41 @@ async function send(message) {
                     card.card.open = true;
                 }
             } else if (event === 'tool_confirm' && data && data.token) {
-                // Mutating tool was blocked by ConfirmationGate. Render
-                // an Approve / Reject card; user clicks drive the next
-                // turn.
+                bubble.toolGroup.hidden = false;
                 newApprovalCard(bubble.tools, data);
             } else if (event === 'status') {
-                // Reserved for live progress updates. No UI surface yet.
+                // Reserved for live progress updates.
             } else if (event === 'done' && data) {
-                const replayInfo = (data.turnsReplayed > 0) ? ' · replayed ' + data.turnsReplayed + ' prior' : '';
-                const toolInfo = data.toolTrace ? ' · tools: ' + data.toolTrace : '';
-                bubble.meta.textContent =
-                    (data.connection || '') + ' · ' + (data.model || '') +
-                    ' · ' + (data.latencyMs || '?') + 'ms' + toolInfo +
-                    ' · ns:' + (data.namespace || '') + replayInfo;
+                // Finalize the tool group summary
+                if (toolCount > 0) {
+                    bubble.toolDot.className = toolErrors > 0
+                        ? 'status-dot error'
+                        : 'status-dot ok';
+                    const label = toolErrors > 0
+                        ? toolCount + ' actions completed, ' + toolErrors + ' with errors'
+                        : toolCount + (toolCount === 1 ? ' action' : ' actions') + ' completed';
+                    bubble.toolLabel.textContent = label;
+                }
+                // Friendly completion line
+                const secs = data.latencyMs ? (data.latencyMs / 1000).toFixed(1) : '?';
+                const ns = data.namespace || '';
+                let metaHtml = 'Completed in ' + secs + 's';
+                if (ns) metaHtml += ' on ' + ns;
+                // Technical details behind a collapsible toggle
+                const details = [];
+                if (data.connection) details.push(data.connection);
+                if (data.model) {
+                    // Shorten the model name: strip vendor prefix and version hash
+                    const shortModel = (data.model || '').replace(/^global\.anthropic\./, '').replace(/-v\d+:\d+$/, '');
+                    details.push(shortModel);
+                }
+                if (data.toolTrace) details.push(data.toolTrace);
+                if (data.turnsReplayed > 0) details.push('replayed ' + data.turnsReplayed + ' prior turns');
+                if (details.length > 0) {
+                    metaHtml += ' <span class="meta-toggle" onclick="this.parentElement.querySelector(\'.meta-details\').hidden=!this.parentElement.querySelector(\'.meta-details\').hidden">(details)</span>';
+                    metaHtml += '<span class="meta-details" hidden>' + details.join(' · ') + '</span>';
+                }
+                bubble.meta.innerHTML = metaHtml;
                 bubble.meta.hidden = false;
                 if (data.connection) updateConnectionPill(data.connection);
             } else if (event === 'error' && data) {
