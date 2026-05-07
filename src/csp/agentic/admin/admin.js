@@ -1041,7 +1041,6 @@ async function renderToolSetDetail() {
     $('btn-save').disabled = false;
     t._overlayKind = 'toolset';
 
-    // Fetch available tool providers for the selector
     if (!state._toolProviders) {
         try { state._toolProviders = (await get('/editor/tool-providers')).providers || []; }
         catch { state._toolProviders = []; }
@@ -1050,34 +1049,10 @@ async function renderToolSetDetail() {
     const tools = t.tools || [];
     const includedClass = t.includedClass || '';
 
-    // Tool provider dropdown — for new ToolSets the user picks a provider;
-    // for existing ones it shows the current provider (editable).
     const providerOptions = providers.map(p => {
         const sel = p.class === includedClass ? ' selected' : '';
         return `<option value="${escapeAttr(p.class)}"${sel}>${escapeHtml(p.class)} (${p.methodCount} tools)</option>`;
     }).join('');
-
-    // Tool selector: checkboxes for each tool from the included class.
-    // If the ToolSet has <Include> (Pattern 5), tools come with enabled flags.
-    // If no Include yet (new ToolSet), show tools from the first selected provider.
-    const toolCheckboxes = tools.length > 0
-        ? tools.map(tool => {
-            const checked = tool.enabled !== 0 ? 'checked' : '';
-            const isMut = /^(Start|Stop|Delete|Remove|Create|Add|Update|Send|Compile|Validate)[A-Z]/.test(tool.name);
-            const badge = isMut ? '<span class="badge mut">mutating</span>' : '<span class="badge ro">read-only</span>';
-            const descSnippet = (tool.description || '').replace(/\r?\n/g, ' ').trim();
-            const shortDesc = descSnippet.length > 120 ? descSnippet.substring(0, 117) + '...' : descSnippet;
-            return `<label class="tool-select-row ${checked ? 'is-selected' : ''}">
-                <input type="checkbox" name="tool-select" value="${escapeAttr(tool.name)}" ${checked}>
-                <span class="tool-select-name">${escapeHtml(tool.name)}</span>
-                ${badge}
-                <span class="tool-select-desc">${escapeHtml(shortDesc || '')}</span>
-            </label>`;
-        }).join('')
-        : '<div class="empty">Select a tool provider above to see available tools.</div>';
-
-    const enabledCount = tools.filter(tl => tl.enabled !== 0).length;
-    const totalCount = tools.length;
 
     const classFieldHtml = t._isNew
         ? `<div class="field"><label>Class</label><input id="f-class" type="text" value="${escapeAttr(t.class)}" placeholder="AgenticInterop.User.ToolSet.MyToolSet" autocomplete="off"><div class="hint">Must start with <code>AgenticInterop.User.ToolSet.</code></div></div>`
@@ -1085,43 +1060,54 @@ async function renderToolSetDetail() {
     $('form').innerHTML = `
         ${customizedBannerHtml(t)}
         ${classFieldHtml}
-        <div class="field">
-            <label>Name (Parameter NAME)</label>
-            <input id="f-name" type="text" value="${escapeAttr(t.name || '')}" ${ro}>
+        <div class="field-row">
+            <div class="field">
+                <label>Name</label>
+                <input id="f-name" type="text" value="${escapeAttr(t.name || '')}" ${ro}>
+            </div>
+            <div class="field">
+                <label>Tool Provider</label>
+                <select id="f-includedClass">
+                    <option value="">-- Select a provider --</option>
+                    ${providerOptions}
+                </select>
+            </div>
         </div>
         <div class="field">
-            <label>Class description</label>
+            <label>Description</label>
             <textarea id="f-description" class="short" ${ro}>${escapeHtml(reflowProse(t.description))}</textarea>
         </div>
-        <div class="field">
-            <label>Tool Provider (%AI.Tool class)</label>
-            <select id="f-includedClass">
-                <option value="">-- Select a tool provider --</option>
-                ${providerOptions}
-            </select>
-            <div class="hint">Each tool provider is a <code>%AI.Tool</code> subclass whose public ClassMethods become tools. Changing the provider replaces the tool list below.</div>
-        </div>
-        <div class="field">
-            <div class="tool-select-head">
-                <label style="margin:0;">Tools <span class="tool-select-count" id="f-tool-count">${enabledCount} of ${totalCount} enabled</span></label>
-                <div class="tool-select-actions">
-                    <button type="button" class="link-btn" id="btn-select-all">Select all</button>
-                    <button type="button" class="link-btn" id="btn-deselect-all">Deselect all</button>
+
+        <div class="ts-dual-panel">
+            <div class="ts-panel ts-included">
+                <div class="ts-panel-head">
+                    <span class="ts-panel-title">Included tools</span>
+                    <span class="ts-panel-count" id="f-inc-count">0</span>
+                    <button type="button" class="link-btn" id="btn-remove-all">Remove all</button>
+                </div>
+                <div class="ts-panel-body" id="f-included">
+                    <div class="ts-empty">No tools included yet. Add tools from the Available list below.</div>
                 </div>
             </div>
-            <div class="tool-select-list" id="f-tools">
-                ${toolCheckboxes}
+            <div class="ts-panel ts-available">
+                <div class="ts-panel-head">
+                    <span class="ts-panel-title ts-avail-title">Available tools</span>
+                    <span class="ts-panel-count" id="f-avail-count">0</span>
+                    <button type="button" class="link-btn" id="btn-add-all">Add all</button>
+                </div>
+                <div class="ts-panel-body" id="f-available">
+                    <div class="ts-empty">Select a tool provider above.</div>
+                </div>
             </div>
-            <div class="hint">Check the tools you want this ToolSet to expose to the agent. Unchecked tools are excluded from the XData Definition. On Save, the class source is updated and recompiled.</div>
         </div>
-        <div class="field">
+
+        <div class="field" style="margin-top:14px;">
             <div class="source-toggle" data-toggle-def>
                 <span class="chev">&#9654;</span>
-                <span>Framework Definition XData (XML, advanced)</span>
+                <span>Framework Definition XData (XML)</span>
             </div>
             <div class="def-body" style="display:none;">
                 <textarea id="f-definitionRaw" class="tall" ${ro}>${escapeHtml(t.definitionRaw || '')}</textarea>
-                <div class="hint">Auto-generated from the tool selection above. Edit manually only if you know the framework's XData schema.</div>
             </div>
         </div>
         ${t.class && !t._isNew ? sourcePanelHtml(t.class) : ''}
@@ -1131,59 +1117,31 @@ async function renderToolSetDetail() {
     const tResetBtn = $('f-reset-override');
     if (tResetBtn) tResetBtn.addEventListener('click', () => resetOverride('toolset', t.class, renderToolSetDetail));
 
-    // Wire up provider-change handler
+    // Populate the dual panels from current tool data
+    populateToolPanels(tools);
+
+    // Provider change  replace both panels
     const providerSelect = $('f-includedClass');
-    if (providerSelect) {
-        providerSelect.addEventListener('change', () => {
-            const cls = providerSelect.value;
-            if (!cls) return;
-            const prov = providers.find(p => p.class === cls);
-            if (!prov) return;
-            // Replace tool checkboxes with the new provider's methods — all checked
-            const container = $('f-tools');
-            container.innerHTML = prov.methods.map(m => {
-                const isMut = /^(Start|Stop|Delete|Remove|Create|Add|Update|Send|Compile|Validate)[A-Z]/.test(m.name);
-                const badge = isMut ? '<span class="badge mut">mutating</span>' : '<span class="badge ro">read-only</span>';
-                const descSnippet = (m.description || '').replace(/\r?\n/g, ' ').trim();
-                const shortDesc = descSnippet.length > 120 ? descSnippet.substring(0, 117) + '...' : descSnippet;
-                return `<label class="tool-select-row is-selected">
-                    <input type="checkbox" name="tool-select" value="${escapeAttr(m.name)}" checked>
-                    <span class="tool-select-name">${escapeHtml(m.name)}</span>
-                    ${badge}
-                    <span class="tool-select-desc">${escapeHtml(shortDesc || '')}</span>
-                </label>`;
-            }).join('');
-            updateToolCount();
-        });
-    }
-
-    // Wire up select-all / deselect-all
-    const btnAll = document.getElementById('btn-select-all');
-    const btnNone = document.getElementById('btn-deselect-all');
-    if (btnAll) btnAll.addEventListener('click', () => {
-        document.querySelectorAll('#f-tools input[name="tool-select"]').forEach(cb => {
-            cb.checked = true;
-            cb.closest('.tool-select-row').classList.add('is-selected');
-        });
-        updateToolCount();
-    });
-    if (btnNone) btnNone.addEventListener('click', () => {
-        document.querySelectorAll('#f-tools input[name="tool-select"]').forEach(cb => {
-            cb.checked = false;
-            cb.closest('.tool-select-row').classList.remove('is-selected');
-        });
-        updateToolCount();
+    if (providerSelect) providerSelect.addEventListener('change', () => {
+        const cls = providerSelect.value;
+        if (!cls) return;
+        const prov = providers.find(p => p.class === cls);
+        if (!prov) return;
+        const synth = prov.methods.map(m => ({ name: m.name, description: m.description || '', enabled: 1 }));
+        populateToolPanels(synth);
     });
 
-    // Toggle highlight on individual checkbox change
-    const toolContainer = $('f-tools');
-    if (toolContainer) toolContainer.addEventListener('change', (e) => {
-        if (e.target.name !== 'tool-select') return;
-        e.target.closest('.tool-select-row').classList.toggle('is-selected', e.target.checked);
-        updateToolCount();
+    // Add all / Remove all
+    $('btn-add-all').addEventListener('click', () => {
+        document.querySelectorAll('#f-available .ts-tool-row').forEach(r => moveToolRow(r, 'include'));
+        refreshToolCounts();
+    });
+    $('btn-remove-all').addEventListener('click', () => {
+        document.querySelectorAll('#f-included .ts-tool-row').forEach(r => moveToolRow(r, 'exclude'));
+        refreshToolCounts();
     });
 
-    // Collapsible Definition XData toggle
+    // Collapsible Definition XData
     const defToggle = $('form').querySelector('[data-toggle-def]');
     if (defToggle) defToggle.addEventListener('click', () => {
         const body = defToggle.nextElementSibling;
@@ -1193,11 +1151,125 @@ async function renderToolSetDetail() {
     });
 }
 
-function updateToolCount() {
-    const all = document.querySelectorAll('#f-tools input[name="tool-select"]');
-    const checked = document.querySelectorAll('#f-tools input[name="tool-select"]:checked');
-    const el = document.getElementById('f-tool-count');
-    if (el) el.textContent = `${checked.length} of ${all.length} enabled`;
+// Build one tool row element (used in both panels).
+function makeToolRow(tool) {
+    const isMut = /^(Start|Stop|Delete|Remove|Create|Add|Update|Send|Compile|Validate)[A-Z]/.test(tool.name);
+    const desc = (tool.description || '').replace(/\r?\n/g, ' ').trim();
+    const short = desc.length > 100 ? desc.substring(0, 97) + '...' : desc;
+    const row = document.createElement('div');
+    row.className = 'ts-tool-row';
+    row.dataset.tool = tool.name;
+    row.innerHTML =
+        `<span class="ts-tool-name">${escapeHtml(tool.name)}</span>` +
+        `<span class="badge ${isMut ? 'mut' : 'ro'}">${isMut ? 'mutating' : 'read-only'}</span>` +
+        (short ? `<span class="ts-tool-desc">${escapeHtml(short)}</span>` : '') +
+        `<button type="button" class="ts-tool-btn" title="Toggle"></button>`;
+    return row;
+}
+
+// Fill both panels from a tools array (each has .name, .description, .enabled).
+function populateToolPanels(tools) {
+    const incEl = $('f-included');
+    const availEl = $('f-available');
+    incEl.innerHTML = '';
+    availEl.innerHTML = '';
+
+    const included = tools.filter(t => t.enabled !== 0);
+    const available = tools.filter(t => t.enabled === 0);
+
+    if (included.length === 0) {
+        incEl.innerHTML = '<div class="ts-empty">No tools included. Add from Available below.</div>';
+    } else {
+        included.forEach(t => {
+            const row = makeToolRow(t);
+            row.querySelector('.ts-tool-btn').textContent = '−';  // minus
+            row.querySelector('.ts-tool-btn').title = 'Remove from ToolSet';
+            row.querySelector('.ts-tool-btn').addEventListener('click', () => {
+                moveToolRow(row, 'exclude');
+                refreshToolCounts();
+            });
+            incEl.appendChild(row);
+        });
+    }
+    if (available.length === 0) {
+        availEl.innerHTML = '<div class="ts-empty">All tools are included.</div>';
+    } else {
+        available.forEach(t => {
+            const row = makeToolRow(t);
+            row.querySelector('.ts-tool-btn').textContent = '+';
+            row.querySelector('.ts-tool-btn').title = 'Add to ToolSet';
+            row.querySelector('.ts-tool-btn').addEventListener('click', () => {
+                moveToolRow(row, 'include');
+                refreshToolCounts();
+            });
+            availEl.appendChild(row);
+        });
+    }
+    refreshToolCounts();
+}
+
+// Move a row between panels. direction = 'include' | 'exclude'.
+function moveToolRow(row, direction) {
+    const incEl = $('f-included');
+    const availEl = $('f-available');
+    row.remove();
+
+    // Clear empty-state placeholders
+    incEl.querySelectorAll('.ts-empty').forEach(e => e.remove());
+    availEl.querySelectorAll('.ts-empty').forEach(e => e.remove());
+
+    const btn = row.querySelector('.ts-tool-btn');
+    // Remove old listener by cloning
+    const newBtn = btn.cloneNode(true);
+    btn.replaceWith(newBtn);
+
+    if (direction === 'include') {
+        newBtn.textContent = '−';
+        newBtn.title = 'Remove from ToolSet';
+        newBtn.addEventListener('click', () => { moveToolRow(row, 'exclude'); refreshToolCounts(); });
+        // Insert sorted by name
+        const name = row.dataset.tool;
+        let inserted = false;
+        for (const child of incEl.children) {
+            if (child.dataset.tool && child.dataset.tool.localeCompare(name) > 0) {
+                incEl.insertBefore(row, child);
+                inserted = true;
+                break;
+            }
+        }
+        if (!inserted) incEl.appendChild(row);
+    } else {
+        newBtn.textContent = '+';
+        newBtn.title = 'Add to ToolSet';
+        newBtn.addEventListener('click', () => { moveToolRow(row, 'include'); refreshToolCounts(); });
+        const name = row.dataset.tool;
+        let inserted = false;
+        for (const child of availEl.children) {
+            if (child.dataset.tool && child.dataset.tool.localeCompare(name) > 0) {
+                availEl.insertBefore(row, child);
+                inserted = true;
+                break;
+            }
+        }
+        if (!inserted) availEl.appendChild(row);
+    }
+
+    // Show empty state if a panel is now empty
+    if (incEl.querySelectorAll('.ts-tool-row').length === 0) {
+        incEl.innerHTML = '<div class="ts-empty">No tools included. Add from Available below.</div>';
+    }
+    if (availEl.querySelectorAll('.ts-tool-row').length === 0) {
+        availEl.innerHTML = '<div class="ts-empty">All tools are included.</div>';
+    }
+}
+
+function refreshToolCounts() {
+    const inc = document.querySelectorAll('#f-included .ts-tool-row').length;
+    const avail = document.querySelectorAll('#f-available .ts-tool-row').length;
+    const incCount = $('f-inc-count');
+    const availCount = $('f-avail-count');
+    if (incCount) incCount.textContent = inc;
+    if (availCount) availCount.textContent = avail;
 }
 
 function renderSkillDetail() {
@@ -1484,28 +1556,28 @@ async function saveToolSet() {
         t.class = cls;
     }
     const includedClass = $('f-includedClass') ? $('f-includedClass').value : '';
-    // Collect selected tools from the checkboxes
+
+    // Collect included tools from the dual-panel UI
     const selectedTools = [];
-    document.querySelectorAll('#f-tools input[name="tool-select"]:checked').forEach(cb => {
-        selectedTools.push(cb.value);
+    document.querySelectorAll('#f-included .ts-tool-row').forEach(r => {
+        selectedTools.push(r.dataset.tool);
     });
-    const allTools = document.querySelectorAll('#f-tools input[name="tool-select"]');
-    // Determine if all tools are selected (no filter needed)
-    const allSelected = selectedTools.length === allTools.length;
+    // Count total available (included + available panels)
+    const totalTools = selectedTools.length +
+        document.querySelectorAll('#f-available .ts-tool-row').length;
+    const allSelected = selectedTools.length === totalTools && totalTools > 0;
 
     const body = {
         name:           $('f-name').value,
         description:    $('f-description').value
     };
 
-    // If we have a provider selected, send structured tool selection
-    // instead of raw definitionRaw — the backend generates the XData.
     if (includedClass) {
         body.includedClass = includedClass;
-        body.selectedTools = allSelected ? [] : selectedTools;  // empty = all
+        // Empty selectedTools = all tools (no filter needed)
+        body.selectedTools = allSelected ? [] : selectedTools;
         body.toolsetDescription = $('f-description').value;
     } else {
-        // Fallback: raw XData editing (no provider selected)
         const defRaw = $('f-definitionRaw');
         if (defRaw) body.definitionRaw = defRaw.value;
     }
@@ -1513,9 +1585,8 @@ async function saveToolSet() {
     const path = '/editor/toolset/' + encodeURIComponent(t.class);
     const r = t._isNew ? await post('/editor/toolset', { class: t.class, ...body }) : await put(path, body);
     state.selected = r;
-    // Clear cached providers so next detail open re-fetches
     state._toolProviders = null;
-    toast('Saved. ToolSet class updated and recompiled.', 'success');
+    toast('Saved. ToolSet recompiled.', 'success');
     renderToolSetDetail();
     if (state.tab === 'toolsets') loadList();
 }
