@@ -121,7 +121,7 @@ ClassMethod Chat(pResponse As %CSP.Response, pBodyStream) As %Status
             // The monitor caps wall-clock + tokens so the known
             // framework toolset-hang can never silently exceed the
             // CSP gateway timeout.
-            Set monitor = ##class(AgenticInterop.Agent.Monitor).%New(60, 50000)
+            Set monitor = ##class(AgenticInterop.Agent.Monitor).%New(180, 100000)
             Set maxIter = ##class(AgenticInterop.Editor.Overlay).GetEffectiveMaxIterations(agentClass)
             If maxIter = "" { Set maxIter = 10 }
             Set response = agent.Run(session, message, maxIter, monitor)
@@ -279,38 +279,63 @@ ClassMethod ChatStream(pResponse As %CSP.Response, pBodyStream) As %Status
         Set session = agent.CreateSession(sessionConfig)
         Set turnsReplayed = ..ReplayHistory(session, history)
         Do ..SSEEvent("status", {"phase":"ready","turnsReplayed":(turnsReplayed)})
-        Set stage = "stream"
-        Set streamer = ##class(AgenticInterop.Editor.ChatStreamer).%New()
-        // StreamChat blocks here until done — the streamer's OnChunk
-        // emits each token via SSEEvent as Bedrock produces it.
-        Set response = agent.StreamChat(session, message, streamer, "OnChunk")
-        // Final text: streamer.Buffer is what actually streamed. The
-        // response object's Content is sometimes empty for long
-        // streams.
-        Set finalText = ""
-        Try { Set finalText = streamer.Buffer } Catch  {}
-        If finalText = "" {
-            Try { Set finalText = response.Content } Catch  {}
+        Set stage = "run"
+        // Custom run loop — mirrors %AI.Agent.Run() but passes
+        // "Continue." instead of "" on iteration 2+. The framework's
+        // Run() uses $SELECT(iteration=1:goal, 1:"") which causes
+        // Bedrock to reject the empty text content block. This custom
+        // loop is otherwise identical: calls Chat() per iteration,
+        // fires Monitor callbacks, checks HasToolCalls() to continue.
+        //
+        // The Monitor emits SSE keepalive comments on every iteration
+        // (prevents CSP gateway timeout during tool execution) plus
+        // real-time tool_start/tool_result events so tool cards appear
+        // progressively in the UI.
+        Set maxIter = +agent.MaxIterations
+        If maxIter < 1 { Set maxIter = 25 }
+        Set monitor = ##class(AgenticInterop.Agent.Monitor).%New(180, 100000)
+        Set monitor.SSEEnabled = 1
+        Set response = ""
+        Set iteration = 0
+        While iteration < maxIter {
+            Set iteration = iteration + 1
+            Do monitor.OnIterationStart(iteration, maxIter, session)
+            Set input = $select(iteration=1:message, 1:"Continue executing tool calls. Do not repeat tools you already called.")
+            Set response = agent.Chat(session, input)
+            Do monitor.OnIterationComplete(iteration, response, session)
+            If '$isobject(response) Quit
+            Try { Set hasCalls = response.HasToolCalls() } Catch { Set hasCalls = 0 }
+            If 'hasCalls Quit
+        }
+        // Emit any remaining tool_result events for the final iteration
+        Do monitor.EmitFinalToolResults(session)
+        Do monitor.CaptureFromSession(session)
+        // Extract final text from the response
+        Set finalText = ..ExtractText(response)
+        // Emit the response text as token events so the frontend renders
+        // it in the message bubble. Run() returns the full text at once
+        // (no real-time token streaming), but the UI accumulates token
+        // events the same way — it just arrives as one chunk.
+        If finalText '= "" {
+            Set tokenEv = {}
+            Set tokenEv.text = finalText
+            Do ..SSEEvent("token", tokenEv)
         }
         Set done = {}
         Set done.latencyMs = $fnumber(($zhorolog - start) * 1000, "", 0)
         Set done.totalLen = $length(finalText)
+        Set done.iterations = monitor.IterationCount
+        Set done.totalTokens = monitor.TotalTokens
         Set done.model = agent.Model
         Set done.connection = effectiveName
         Set done.namespace = $namespace
         Set done.agentClass = agentClass
         Set done.turnsReplayed = turnsReplayed
-        // Emit tool lifecycle events retroactively. StreamChat handles
-        // tool dispatch internally (no lifecycle callbacks exposed), so
-        // we walk the session transcript AFTER the stream completes and
-        // emit tool_start + tool_result for every tool that fired. The
-        // frontend renders these as cards above the response text.
-        Do ..EmitToolEventsFromSession(session)
-        // Capture tool calls from the session transcript so the
-        // streamed `done` event can surface them too. StreamChat
-        // doesn't take a Monitor object; we walk the session
-        // afterward and report whatever tool messages landed.
-        Set done.toolTrace = ..SessionToolTrace(session)
+        // Tool trace from the Monitor (populated during Run via callbacks
+        // + CaptureFromSession belt-and-suspenders). No need for the
+        // post-hoc EmitToolEventsFromSession — the Monitor emits tool
+        // lifecycle events in real-time during the Run() loop.
+        Set done.toolTrace = monitor.ToolCallTrace
         Do ..SSEEvent("done", done)
     } Catch ex {
         Do ..SSEEvent("error", {"error":($extract(ex.DisplayString(),1,1000)),"stage":(stage)})
@@ -442,6 +467,24 @@ ClassMethod EmitToolEventsFromSession(pSession As %AI.Agent.Session)
             }
         }
     } Catch {}
+}
+
+/// Count tool-result messages (role=tool) in the session. Used by the
+/// StreamChat loop to track how many tool calls have fired across passes.
+ClassMethod CountToolMessages(pSession As %AI.Agent.Session) As %Integer
+{
+    Set n = 0
+    If '$isobject(pSession) Quit 0
+    Try {
+        Set count = pSession.MessageCount()
+        For i=0:1:count-1 {
+            Set m = pSession.GetMessage(i)
+            If '$isobject(m) Continue
+            Set role = "" Try { Set role = m.role } Catch {}
+            If role = "tool" Set n = n + 1
+        }
+    } Catch {}
+    Quit n
 }
 
 /// Write one SSE event to the open response. Each event format is:

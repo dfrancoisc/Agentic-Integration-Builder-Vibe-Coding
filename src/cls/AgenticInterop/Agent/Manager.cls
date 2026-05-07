@@ -37,6 +37,15 @@ ClassMethod Build(pProvider As %AI.Provider, Output pAgent As %AI.Agent, pAgentC
         If effTemp '= "" {
             Try { Set pAgent.Temperature = +effTemp } Catch  {}
         }
+        // MaxIterations: the %AI.Agent base class has a PROPERTY
+        // MaxIterations (InitialExpression=10) that StreamChat uses
+        // internally. The class PARAMETER MAXITERATIONS is separate
+        // and not wired to the property. We must explicitly push the
+        // effective value onto the OREF so StreamChat respects it.
+        Set effMaxIter = ##class(AgenticInterop.Editor.Overlay).GetEffectiveMaxIterations(pAgentClass)
+        If effMaxIter '= "" {
+            Try { Set pAgent.MaxIterations = +effMaxIter } Catch  {}
+        }
 
         // 2. Register each MCP listed in Parameter MCPS (overlay-aware).
         Set mcps = ##class(AgenticInterop.Editor.Overlay).GetEffectiveMCPS(pAgentClass)
