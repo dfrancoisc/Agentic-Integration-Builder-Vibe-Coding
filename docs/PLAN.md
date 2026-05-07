@@ -66,13 +66,14 @@ These are user-set rules captured at kickoff. Any deviation must be documented i
 │  └────────────────────────────────────────────────────────────┘  │
 │                                ▼                                 │
 │  ┌────────────────────────────────────────────────────────────┐  │
-│  │  Four logical "MCP groupings" — surfaced to admin UI as    │  │
+│  │  Five logical "MCP groupings" — surfaced to admin UI as    │  │
 │  │  MCP rows; backed at runtime by direct ToolSet calls       │  │
 │  │  (no HTTP loopback). Each grouping is one %AI.ToolSet:     │  │
 │  │   • AgenticInterop.ToolSet.Production                      │  │
 │  │   • AgenticInterop.ToolSet.Transform                       │  │
 │  │   • AgenticInterop.ToolSet.Testing                         │  │
 │  │   • AgenticInterop.ToolSet.Catalog                         │  │
+│  │   • AgenticInterop.ToolSet.Monitoring                      │  │
 │  └────────────────────────────────────────────────────────────┘  │
 │                                ▼                                 │
 │  ┌────────────────────────────────────────────────────────────┐  │
@@ -274,7 +275,7 @@ Each phase ends with a working slice and a commit + push to dfrancoisc/agentic_i
 - README install instructions verified by uninstalling + reinstalling on iris-agentic
 - Definition of done: `zpm "load ."` from a clean IRIS namespace creates the apps; `curl http://localhost:22773/api/agentic/health` returns 200 with namespace info.
 
-### Phase 1 — Connection layer + admin UI (DONE)
+### Phase 1 — Connection layer + admin UI (DONE 2026-05-03)
 - AgenticInterop.Data.Connection (persistent, name-keyed, `LLMConnection` SQL alias)
 - AgenticInterop.Connections facade (List/Get/Create/Update/Delete + SetSecret/HasSecret/ClearSecret + Test + GetProvider). Idempotent wallet bootstrap (Security.Resources + %Wallet.Collection); seeds a `bedrock-default` core row.
 - AgenticInterop.Editor.ConnectionService thin REST wrapper.
@@ -284,7 +285,7 @@ Each phase ends with a working slice and a commit + push to dfrancoisc/agentic_i
 - Admin SPA "Connections" tab with list (status dot, enabled/default/core badges), detail form (name, displayName, description, provider, enabled, isDefault, model, maxTokens, region, baseURL, masked secret), and a live "Test connection" button that posts to `/test` and renders green/red with model + latency or verbatim error.
 - Definition of done: paste a Bedrock bearer through the UI, click Test connection, see green semaphore with model + latency. ✓ verified live (3008ms round-trip to Sonnet 4).
 
-### Phase 2 — Single ToolSet + Skill scaffolding + non-streaming chat
+### Phase 2 — Single ToolSet + Skill scaffolding + non-streaming chat (DONE 2026-05-04)
 - AgenticInterop.ToolSet.Catalog with a stub `search_ens(query)` returning fake data
 - AgenticInterop.Agent.HealthInterop wired to the Anthropic provider, slim system prompt (router pattern)
 - AgenticInterop.Agent.Manager + Runtime + Monitor + SkillLoader (iteration deadline, token budget, no streaming yet)
@@ -293,23 +294,25 @@ Each phase ends with a working slice and a commit + push to dfrancoisc/agentic_i
 - ChatAPI returning full response (non-SSE)
 - Definition of done: ask "show me running productions", router invokes Productions skill, sub-agent invokes `search_ens`, response returned.
 
-### Phase 3 — Streaming + tool-call telemetry + namespace-in-UI
+### Phase 3 — Streaming + tool-call telemetry + namespace-in-UI (DONE 2026-05-04)
 - SSE chat endpoint with token + tool-lifecycle events
 - React chat with tool-call cards
 - Active namespace shown in chatbot header; first message includes the namespace
 - Definition of done: stream chat with tool calls visible in real time; refuse if user lacks namespace access.
 
-### Phase 4 — Remaining MCP groupings + confirmation gate
+### Phase 4 — Remaining MCP groupings + confirmation gate (DONE 2026-05-04)
 - AgenticInterop.ToolSet.Production / Transform / Testing with their initial tools
 - AgenticInterop.Policy.ConfirmationGate (Authorization policy) for tools with RequiresConfirmation = 1
 - React inline Approve / Reject UI
 - Definition of done: a mutating tool pauses with the inline prompt; rejection cancels the iteration cleanly.
 
-### Phase 5 — Catalog builders + real vector search
+### Phase 5 — Catalog builders + real vector search + monitoring tools (DONE 2026-05-06)
 - XLS ingester (Embedded Python via openpyxl) → catalog.ens / catalog.hs vector tables
 - AgenticInterop.Catalog.SearchToolSet exposing search_ens / search_hs
 - Refresh button in admin UI
-- Definition of done: ask a question requiring catalog lookup, agent calls the right catalog tool, returns relevant classes.
+- AgenticInterop.ToolSet.Monitoring + AgenticInterop.Tool.Monitoring (5 read-only SQL query tools: QueryEventLog, TopErrors, QueryMessageStatus, MessageSummary, QueueStatus)
+- Cross-provider tool selection in ToolSet editor (any tool from any %AI.Tool class can be added to any ToolSet)
+- Definition of done: ask a question requiring catalog lookup, agent calls the right catalog tool, returns relevant classes. Monitoring questions answered via SQL queries against Ens.Util.Log and Ens.MessageHeader.
 
 ### Phase 6 — Admin UI completion
 - All entity CRUD pages (Agents, MCPs, Toolsets, Tools, Skills, Providers)

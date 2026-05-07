@@ -32,6 +32,7 @@ Conventions:
 | Transform | src/cls/AgenticInterop/ToolSet/Transform.cls | %AI.ToolSet | DTL/BPL CRUD + lookup tables | 4 |
 | Testing | src/cls/AgenticInterop/ToolSet/Testing.cls | %AI.ToolSet | HL7/FHIR send + validate (against an isolated test production by default) | 4 |
 | Catalog | src/cls/AgenticInterop/ToolSet/Catalog.cls | %AI.ToolSet | search_ens, search_hs (RAG-backed); describe_class | 2 (stub), 5 (real) |
+| Monitoring | src/cls/AgenticInterop/ToolSet/Monitoring.cls | %AI.ToolSet | QueryEventLog, TopErrors, QueryMessageStatus, MessageSummary, QueueStatus (read-only SQL diagnostics) | 5 |
 
 ## Skill classes (%AI.Agent.Skill subclasses — declarative sub-agents registered as tools on the main agent)
 
@@ -76,6 +77,11 @@ The PDFs Routing_DICOM_Documents_in_Productions, Enabling_Productions_to_Use_Man
 | ObjectScriptExecutor | src/cls/AgenticInterop/Tool/ObjectScriptExecutor.cls | %RegisteredObject | Calls a class method by ##class()/$classmethod from the Tool.Body reference | 4 |
 | PythonExecutor | src/cls/AgenticInterop/Tool/PythonExecutor.cls | %RegisteredObject | Imports a Python module/class via %SYS.Python, calls method, marshals JSON | 4 |
 | RestExecutor | src/cls/AgenticInterop/Tool/RestExecutor.cls | %RegisteredObject | Calls an external/internal REST endpoint with the Tool.Body URL template | 4 |
+| Monitoring | src/cls/AgenticInterop/Tool/Monitoring.cls | %AI.Tool | 5 read-only SQL tools (QueryEventLog, TopErrors, QueryMessageStatus, MessageSummary, QueueStatus) querying Ens_Util.Log and Ens.MessageHeader | 5 |
+| Production | src/cls/AgenticInterop/Tool/Production.cls | %AI.Tool | 9 production lifecycle + host CRUD tools (ListProductions, GetProduction, CreateProduction, DeleteProduction, StartProduction, StopProduction, AddBusinessHost, RemoveBusinessHost, UpdateBusinessHostSettings) | 4 |
+| Testing | src/cls/AgenticInterop/Tool/Testing.cls | %AI.Tool | 6 HL7/FHIR validation + send tools (ValidateHL7Structure, ValidateHL7Semantics, ValidateFHIRResource, CompareMessages, SendHL7, SendFHIR) | 4 |
+| Transform | src/cls/AgenticInterop/Tool/Transform.cls | %AI.Tool | 9 DTL/BPL/rule CRUD tools (ListDTLs, ListLookupTables, ListBusinessRules, DryRunDTL, CompileDTL, CreateDTL, UpdateDTL, CreateBPL, ValidateBPL) | 4 |
+| Catalog | src/cls/AgenticInterop/Tool/Catalog.cls | %AI.Tool | 9 introspection + vector search tools (GetUserNamespace, ListUserAccessibleNamespaces, DescribeClass, ExplainStatus, LookupErrorCode, LookupGlossaryTerm, SearchApiIndex, SearchEns, SearchHs) | 2 (stub), 5 (real) |
 
 ## Catalog (RAG)
 

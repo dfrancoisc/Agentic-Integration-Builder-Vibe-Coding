@@ -3,10 +3,10 @@
 /// QueryEventLog, TopErrors, QueryMessageStatus, MessageSummary,
 /// and QueueStatus as callable tools. All tools are read-only
 /// SQL queries against Ens.MessageHeader and Ens.Util.Log.
-Class AgenticInterop.ToolSet.Monitoring Extends %AI.ToolSet
+Class AgenticInterop.ToolSet.Monitoring Extends %AI.ToolSet [ DependsOn = AgenticInterop.Tool.Monitoring ]
 {
 
-XData Definition [ MimeType = "application/xml" ]
+XData Definition [ MimeType = application/xml ]
 {
 <ToolSet Name="Monitoring">
     <Description>Production monitoring and diagnostics tools: event log queries, message header searches, error summaries, queue depths.</Description>
