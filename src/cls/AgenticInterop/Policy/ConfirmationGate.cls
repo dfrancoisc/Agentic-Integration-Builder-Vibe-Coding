@@ -39,74 +39,15 @@ Property ApprovedTokens As %String(MAXLEN = 8000);
 
 Method %CanExecute(tool As %String, call As %DynamicObject, metadata As %DynamicObject) As %Status
 {
-    Set toolName = ""
-    Try { Set toolName = call.name } Catch  {}
-    If toolName = "" { Quit $$$OK }
-
-    // Pull the tool definition's metadata. The tool string is JSON;
-    // some builds pass the full definition.
-    Set requiresConfirm = 0
-    Try {
-        Set toolObj = ##class(%DynamicAbstractObject).%FromJSON(tool)
-        If $isobject(toolObj) {
-            Set requiresConfirm = ''toolObj.%Get("requires_confirmation", 0)
-        }
-    } Catch  {}
-
-    // Belt-and-suspenders: any tool whose name starts with one of the
-    // mutating prefixes is gated even if the definition forgot to
-    // mark requires_confirmation.
-    If 'requiresConfirm {
-        Set prefixes = ..#MUTATINGPREFIXES
-        For i=1:1:$LENGTH(prefixes, ",") {
-            Set p = $ZSTRIP($PIECE(prefixes, ",", i), "<>W")
-            If p = "" { Continue }
-            If $extract(toolName, 1, $length(p)) = p {
-                Set requiresConfirm = 1
-                Quit
-            }
-        }
-    }
-    If 'requiresConfirm { Quit $$$OK }
-
-    // The user may have pre-approved this exact call.
-    Set token = ..%TokenFor(toolName, call)
-    If ..ApprovedTokens '= "", (","_..ApprovedTokens_",") [ (","_token_",") {
-        Quit $$$OK
-    }
-
-    // Refuse — the LLM sees this status text as the tool result. It
-    // includes a JSON envelope the chat UI parses to render the
-    // Approve / Reject card. Keep the prefix human-readable so even
-    // if the parser misses it, the user sees what's pending.
-    Set argsJson = "{}"
-    Try {
-        Set ar = call.arguments
-        If $isobject(ar) { Set argsJson = ar.%ToJSON() }
-    } Catch  {}
-    Set envelope = {
-        "type": "confirmation_required",
-        "tool": (toolName),
-        "arguments": ($zconvert(argsJson, "I", "JSON")),
-        "token": (token),
-        "message": ("Tool '" _ toolName _ "' performs a state-changing action. The user must approve before it runs.")
-    }
-    // Emit a tool_confirm SSE event so the chat surface can render an
-    // inline Approve / Reject card alongside the model's response. The
-    // event flows over the same SSE response that's currently streaming
-    // tokens. If we're on the non-streaming /chat path (no open SSE
-    // stream), the SSEEvent write fails harmlessly — the LLM still
-    // receives the deny error and explains it textually.
-    Try {
-        Set ev = {}
-        Set ev.token = token
-        Set ev.tool = toolName
-        Set ev.arguments = ($zconvert(argsJson, "I", "JSON"))
-        Set ev.message = envelope.message
-        Do ##class(AgenticInterop.Editor.ChatService).SSEEvent("tool_confirm", ev)
-    } Catch  {}
-    Set body = "Tool execution blocked — user confirmation required. " _ envelope.%ToJSON()
-    Quit $$$ERROR($$$GeneralError, body)
+    ; Per-tool gate disabled. The agent now presents its complete plan
+    ; in plain text and waits for the user's conversational approval
+    ; before calling any mutating tools. This eliminates the broken
+    ; per-tool Approve/Reject card flow (re-fire caused 401 auth errors,
+    ; multiple cards per turn confused end users, raw JSON was not
+    ; user-friendly). The gate class and its infrastructure are kept
+    ; intact for future reintroduction if a selective gate (e.g.
+    ; Delete/Stop only) is ever needed.
+    Quit $$$OK
 }
 
 /// Stable hash of name + arguments so the same call gets the same

@@ -16,9 +16,9 @@ let pending = false;
 // stateless across turns; see ChatService.cls comment). "New chat"
 // resets this to empty.
 const history = [];
-// Tokens for confirmation gates the user has approved this turn.
-// Cleared after each send. Matches AgenticInterop.Policy.ConfirmationGate
-// .ApprovedTokens (CSV on the server side).
+// Legacy: approval tokens for the per-tool confirmation gate (now
+// disabled — the agent uses conversational approval instead). Kept
+// for API compatibility; the array is always empty.
 let approvedTokens = [];
 
 // Curated example prompts. The empty-state shows the first 6;
@@ -210,8 +210,8 @@ function renderEmptyState(target) {
         '<p class="hero-eyebrow">Health Interop &middot; Copilot</p>' +
         '<h1 class="hero-title">How can I help?</h1>' +
         '<p class="hero-sub">Describe your interoperability goal in plain English &mdash; or pick a starter below. ' +
-        'The agent reaches into IRIS for Health to read productions, validate messages, and propose changes. ' +
-        'Mutating actions always pause for your approval.</p>' +
+        'The agent reaches into IRIS for Health to read productions, validate messages, and build integrations. ' +
+        'It presents a plan before making changes and waits for your go-ahead.</p>' +
         '<div class="example-grid">' + six.map(tile).join('') + '</div>' +
         '<p class="hero-tip">Type <code class="kbd">/help</code> for shortcuts &middot; ' +
         '<code class="kbd">/examples</code> for ' + EXAMPLES.length + ' suggestions</p>';
@@ -386,10 +386,73 @@ function appendErrorMessage(text) {
     $('messages').scrollTop = $('messages').scrollHeight;
 }
 
+// Human-readable tool name: "CreateProduction" → "Create Production",
+// "UpdateDTL" → "Update DTL", "ValidateHL7Structure" → "Validate HL7 Structure"
+function readableToolName(name) {
+    return (name || '')
+        .replace(/([a-z])([A-Z])/g, '$1 $2')
+        .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+        .replace(/([0-9])([A-Z])/g, '$1 $2');
+}
+
+// Flatten a nested object into key: value lines for display.
+// Nested objects get dot-separated keys. Long strings (>200 chars)
+// show a length summary. Arrays show as comma-separated values.
+function flattenArgs(obj, prefix, lines) {
+    if (!obj || typeof obj !== 'object') return;
+    const entries = Array.isArray(obj) ? obj.map((v, i) => [i, v]) : Object.entries(obj);
+    for (const [k, v] of entries) {
+        const key = prefix ? prefix + '.' + k : String(k);
+        if (v === null || v === undefined) continue;
+        if (Array.isArray(v)) {
+            lines.push(key + ': ' + v.join(', '));
+        } else if (typeof v === 'object') {
+            flattenArgs(v, key, lines);
+        } else if (typeof v === 'string' && v.length > 200) {
+            lines.push(key + ': (' + v.length + ' chars)');
+        } else {
+            lines.push(key + ': ' + v);
+        }
+    }
+}
+
+// Format tool arguments as human-readable text instead of raw JSON.
+function formatToolArgs(args) {
+    if (!args || typeof args !== 'object') return String(args || '');
+    const lines = [];
+    flattenArgs(args, '', lines);
+    return lines.join('\n');
+}
+
+// Format tool result for display — try to make it readable.
+function formatToolResult(result) {
+    if (result === null || result === undefined) return '';
+    if (typeof result === 'string') {
+        // Try parsing as JSON for readable display
+        if (result.length > 0 && (result[0] === '{' || result[0] === '[')) {
+            try {
+                const obj = JSON.parse(result);
+                const lines = [];
+                flattenArgs(obj, '', lines);
+                return lines.join('\n') || result;
+            } catch { return result; }
+        }
+        return result;
+    }
+    if (typeof result === 'object') {
+        const lines = [];
+        flattenArgs(result, '', lines);
+        return lines.join('\n');
+    }
+    return String(result);
+}
+
 // Tool-call card. Status starts at "running"; transitions to ok/error
 // when the matching tool_result/tool_error event arrives. No icons,
 // no emojis — colored dot + uppercase text label only, per the
-// InterSystems internal style preference.
+// InterSystems internal style preference. Tool name is displayed in
+// readable form; args and results are formatted as plain key:value
+// pairs, not JSON.
 function newToolCard(stack, name) {
     const card = document.createElement('details');
     card.className = 'tool-card status-running';
@@ -400,7 +463,7 @@ function newToolCard(stack, name) {
     summary.appendChild(dot);
     const label = document.createElement('span');
     label.className = 'tool-name';
-    label.textContent = name;
+    label.textContent = readableToolName(name);
     summary.appendChild(label);
     const status = document.createElement('span');
     status.className = 'tool-status';
@@ -584,8 +647,10 @@ async function send(message) {
             } else if (event === 'tool_start' && data && data.name) {
                 const card = newToolCard(bubble.tools, data.name);
                 if (data.args) {
-                    try { card.argsBlock.textContent = JSON.stringify(data.args, null, 2); }
-                    catch { card.argsBlock.textContent = String(data.args); }
+                    try {
+                        const argsObj = typeof data.args === 'string' ? JSON.parse(data.args) : data.args;
+                        card.argsBlock.textContent = formatToolArgs(argsObj);
+                    } catch { card.argsBlock.textContent = String(data.args); }
                 }
                 toolCardsByName.set(data.name, card);
             } else if (event === 'tool_result' && data && data.name) {
@@ -593,8 +658,7 @@ async function send(message) {
                 if (card) {
                     setToolStatus(card, 'ok');
                     if (data.result !== undefined) {
-                        try { card.resultBlock.textContent = typeof data.result === 'string' ? data.result : JSON.stringify(data.result, null, 2); }
-                        catch { card.resultBlock.textContent = String(data.result); }
+                        card.resultBlock.textContent = formatToolResult(data.result);
                     }
                 }
             } else if (event === 'tool_error' && data && data.name) {
@@ -890,7 +954,7 @@ async function cmdTools() {
     var mut = ' <span class="badge-mute">mutating</span>';
     appendSystemCard(
         '<div class="system-card-head">tools the agent can call</div>' +
-        '<p class="muted">Auto-discovered from <code>%AI.Tool</code> subclasses. Names are PascalCase per the IRIS framework idiom. Read-only tools fire freely; mutating tools route through the confirmation gate so you approve each action.</p>' +
+        '<p class="muted">Auto-discovered from <code>%AI.Tool</code> subclasses. Names are PascalCase per the IRIS framework idiom. The agent presents a plan before calling mutating tools and waits for your approval.</p>' +
         '<table class="system-table"><tbody>' +
             head + 'Catalog (AgenticInterop.Tool.Catalog)</td></tr>' +
             '<tr><td><code>GetUserNamespace</code></td><td>Returns the namespace this chat is scoped to.</td></tr>' +
