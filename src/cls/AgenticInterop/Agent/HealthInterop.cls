@@ -111,6 +111,7 @@ Transform:
 - ListDTLs / ListLookupTables / ListBusinessRules — inventory
 - DryRunDTL — execute a DTL transformation in-process
 - CompileDTL / CreateDTL / UpdateDTL — DTL authoring
+- CreateRoutingRule — create Ens.Rule.Definition classes for routing engines
 - CreateBPL / ValidateBPL — BPL authoring + compile
 
 Monitoring:
@@ -120,7 +121,31 @@ Monitoring:
 - MessageSummary — counts by status and by host
 - QueueStatus — queue depths for all hosts
 
-Not yet built (say so if asked): SendSDA3, SendDICOM, SendMFTFile, UpdateBPL, EvaluateRule, CrudLookupTable
+Not yet built (say so if asked): SendSDA3, SendDICOM, SendMFTFile, UpdateBPL, UpdateRoutingRule, EvaluateRule, CrudLookupTable
+
+## PRODUCTION BUILD SEQUENCE (follow this exact order)
+
+When building a production with routing, ALWAYS create dependencies first:
+1. DTL classes (CreateDTL + UpdateDTL with field mappings)
+2. Routing rule classes (CreateRoutingRule with send targets matching host config names)
+3. Production shell (CreateProduction)
+4. Business hosts in order: operations first, then routing processes, then services last
+
+Settings have Target levels — "Host" or "Adapter". Wrong target = setting silently ignored.
+Key wiring settings (all are Host-level):
+- TargetConfigNames — on services/processes, comma-separated downstream config names
+- BusinessRuleName — on routing engines, fully-qualified rule class name
+- MessageSchemaCategory — on HL7 hosts, schema version like "2.5"
+
+Key adapter settings:
+- Port — on TCP services/operations (Adapter level)
+- IPAddress — on TCP operations (Adapter level)
+- FilePath — on file services/operations (Adapter level)
+
+Format for AddBusinessHost settings parameter:
+  { "Host": { "TargetConfigNames": "Router" }, "Adapter": { "Port": "5000" } }
+
+See the Productions skill for the complete settings reference per host type.
 
 ## Common IRIS classes you already know (DO NOT search for these)
 

@@ -259,6 +259,171 @@ Debugging: set `Foreground = True` on a business host to run its job in a Termin
 
 `%ETN` logging: enable to capture stack-traces on `<EXCEPTION>` errors. Useful when an operation hits an uncaught error.
 
+## BUILD SEQUENCE — follow this exact order when building a production
+
+Dependencies MUST be created before they are referenced. Follow this sequence:
+
+1. Create DTL classes (CreateDTL + UpdateDTL) — transformations must exist and compile before routing rules reference them.
+2. Create routing rule classes (CreateRoutingRule) — rules must exist and compile before routing engines reference them. The rule XML uses target= attributes that match host config names you will add in step 4.
+3. Create the production (CreateProduction) — empty shell.
+4. Add business hosts (AddBusinessHost) — add in this order within the production:
+   a. Operations first (they are targets — referenced by rules and TargetConfigNames)
+   b. Routing processes next (they reference operations via rules)
+   c. Services last (they reference processes/operations via TargetConfigNames)
+
+The reason: TargetConfigNames and routing rule send targets reference config names within the production. Although IRIS does not enforce reference integrity at save time, building bottom-up avoids confusion and ensures the agent can verify the wiring.
+
+## SETTINGS WIRING REFERENCE — Target levels for AddBusinessHost / UpdateBusinessHostSettings
+
+CRITICAL: Every setting has a Target level — "Host" or "Adapter". Passing a setting at the wrong level silently ignores it. The AddBusinessHost and UpdateBusinessHostSettings tools accept settings as:
+  { "Host": { "SettingName": "value" }, "Adapter": { "SettingName": "value" } }
+
+### EnsLib.HL7.Service.TCPService (HL7 MLLP inbound)
+
+Host settings:
+- TargetConfigNames — comma-separated list of downstream host config names (e.g., "MyRouter")
+- MessageSchemaCategory — HL7 schema version (e.g., "2.5")
+- SearchTableClass — usually "EnsLib.HL7.SearchTable"
+- AckMode — "Application" (default), "Immediate", "Never"
+
+Adapter settings:
+- Port — TCP port number (REQUIRED)
+- JobPerConnection — "1" for one job per connection (default)
+- AllowedIPAddresses — comma-separated IP filter
+- QSize — listen queue size
+
+Example: { "Host": { "TargetConfigNames": "HL7Router", "MessageSchemaCategory": "2.5" }, "Adapter": { "Port": "5000" } }
+
+### EnsLib.HL7.Service.FileService (HL7 file inbound)
+
+Host settings:
+- TargetConfigNames — downstream host config names
+- MessageSchemaCategory — HL7 schema version
+
+Adapter settings:
+- FilePath — directory to watch (REQUIRED)
+- FileSpec — file pattern (e.g., "*.hl7")
+- ArchivePath — directory for processed files
+
+### EnsLib.HL7.MsgRouter.RoutingEngine (HL7 content-based router)
+
+Host settings:
+- BusinessRuleName — fully-qualified rule class name (e.g., "MyApp.Rule.ADTRouting"). REQUIRED — this is how the router knows which rule to evaluate.
+- ResponseFrom — config name of the operation whose response becomes the router's response (blank = no response)
+- BadMessageHandler — config name of a host that receives unparseable messages
+- ActOnTransformError — "Log" (default), "Ignore", "Suspend", "Disable", "BangError"
+- RuleLogging — "a" (all), "e" (errors), "d" (debug), or combo like "aed"
+
+Adapter settings: NONE — routing engines have no adapter.
+
+Example: { "Host": { "BusinessRuleName": "MyApp.Rule.ADTRouting" } }
+
+### EnsLib.MsgRouter.RoutingEngine (generic content-based router)
+
+Same as HL7 variant. Host settings: BusinessRuleName, ResponseFrom, BadMessageHandler.
+
+### EnsLib.HL7.Operation.TCPOperation (HL7 MLLP outbound)
+
+Host settings:
+- SearchTableClass — usually "EnsLib.HL7.SearchTable"
+- ReplyCodeActions — e.g., "E=F" (error=fail). Default handles most cases.
+- NoFailWhileDisconnected — "1" to queue instead of failing when disconnected
+
+Adapter settings:
+- IPAddress — destination host (REQUIRED for outbound)
+- Port — destination port (REQUIRED for outbound)
+- StayConnected — "-1" (forever), "0" (reconnect each message), or seconds
+- ConnectTimeout — seconds to wait for connection (default 5)
+- ResponseTimeout — seconds to wait for ACK (default 15)
+
+Example: { "Host": { "SearchTableClass": "EnsLib.HL7.SearchTable" }, "Adapter": { "IPAddress": "10.0.0.5", "Port": "5001", "StayConnected": "-1" } }
+
+### EnsLib.HL7.Operation.FileOperation (HL7 file outbound)
+
+Host settings:
+- SearchTableClass — usually "EnsLib.HL7.SearchTable"
+
+Adapter settings:
+- FilePath — output directory (REQUIRED)
+- Overwrite — "0" (append/new file) or "1" (overwrite)
+
+Example: { "Host": {}, "Adapter": { "FilePath": "/data/hl7/out" } }
+
+### EnsLib.File.PassthroughService (generic file inbound)
+
+Host settings:
+- TargetConfigNames — downstream host config names
+
+Adapter settings:
+- FilePath — directory to watch (REQUIRED)
+- FileSpec — file pattern (default "*")
+- ArchivePath — processed-files directory
+
+### EnsLib.File.PassthroughOperation (generic file outbound)
+
+Host settings:
+- Filename — output filename pattern (e.g., "%f_%Q.txt")
+
+Adapter settings:
+- FilePath — output directory (REQUIRED)
+- Overwrite — "0" or "1"
+- Charset — character encoding
+
+### EnsLib.REST.Service (REST inbound)
+
+Adapter settings:
+- Port — TCP port (REQUIRED)
+
+### EnsLib.REST.Operation (REST outbound)
+
+Adapter settings:
+- HTTPServer — target host:port
+- URL — base URL path
+- SSLConfig — SSL/TLS configuration name
+- Credentials — credentials name
+
+### HS.FHIRServer.Interop.HTTPOperation (FHIR outbound)
+
+Adapter settings:
+- HTTPServer — FHIR server host:port
+- URL — FHIR base URL (e.g., "/fhir/r4")
+- SSLConfig — SSL/TLS configuration name
+
+## ROUTING ENGINE WIRING — how routing rules connect to DTLs and operations
+
+A routing engine (EnsLib.HL7.MsgRouter.RoutingEngine or EnsLib.MsgRouter.RoutingEngine) uses a rule class to decide where to send messages. The wiring chain:
+
+1. Service sends to Router: Service's TargetConfigNames (Host setting) = router's config name
+2. Router evaluates Rule: Router's BusinessRuleName (Host setting) = rule class name
+3. Rule sends to Operations: Rule XML <send target="OperationConfigName" transform="DTLClassName"/>
+   - target = the config name of a business host IN THE SAME PRODUCTION
+   - transform = fully-qualified DTL class name (optional — omit for no transformation)
+
+The rule's constraint filters control which messages match:
+- source = config name of the host that sent the message to the router
+- msgClass = message body class (e.g., "EnsLib.HL7.Message")
+- docName = message structure name (e.g., "ADT_A01")
+
+Complete HL7 routing production example — wiring summary:
+
+  HL7.Inbound (TCPService)
+    Host.TargetConfigNames = "HL7.Router"
+    Adapter.Port = "5000"
+
+  HL7.Router (MsgRouter.RoutingEngine)
+    Host.BusinessRuleName = "MyApp.Rule.HL7Routing"
+
+  Rule class MyApp.Rule.HL7Routing:
+    <send transform="MyApp.Transform.ADTtoTarget" target="HL7.OutboundA"/>
+    <send transform="" target="HL7.OutboundB"/>
+
+  HL7.OutboundA (TCPOperation)
+    Adapter.IPAddress = "10.0.0.5"
+    Adapter.Port = "5001"
+
+  HL7.OutboundB (FileOperation)
+    Adapter.FilePath = "/data/hl7/archive"
+
 ## Deploying a production
 
 1. Develop on dev, export the production via Interoperability > List > Productions > Export. Choose Deployable Settings to include only the system defaults marked Deployable.
