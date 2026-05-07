@@ -1044,13 +1044,31 @@ async function renderToolSetDetail() {
         catch { state._toolProviders = []; }
     }
     const providers = state._toolProviders;
-    const tools = t.tools || [];
-    const includedClass = t.includedClass || '';
+    const currentTools = t.tools || [];
 
-    const providerOptions = providers.map(p => {
-        const sel = p.class === includedClass ? ' selected' : '';
-        return `<option value="${escapeAttr(p.class)}"${sel}>${escapeHtml(p.class)} (${p.methodCount} tools)</option>`;
-    }).join('');
+    // Build a lookup of currently-included tools: "providerClass|name" -> true
+    const includedLookup = {};
+    currentTools.forEach(ct => {
+        const key = (ct.providerClass || '') + '|' + ct.name;
+        if (ct.enabled !== 0) includedLookup[key] = true;
+    });
+
+    // Merge ALL tools from ALL providers into one pool.
+    // Mark each as enabled if it's in the current ToolSet's included set.
+    const allTools = [];
+    for (const provider of providers) {
+        for (const method of (provider.methods || [])) {
+            const key = provider.class + '|' + method.name;
+            allTools.push({
+                name: method.name,
+                description: method.description || '',
+                providerClass: provider.class,
+                providerShort: provider.shortName,
+                enabled: includedLookup[key] ? 1 : 0
+            });
+        }
+    }
+    const totalToolCount = allTools.length;
 
     const classFieldHtml = t._isNew
         ? `<div class="field"><label>Class</label><input id="f-class" type="text" value="${escapeAttr(t.class)}" placeholder="AgenticInterop.User.ToolSet.MyToolSet" autocomplete="off"><div class="hint">Must start with <code>AgenticInterop.User.ToolSet.</code></div></div>`
@@ -1058,18 +1076,9 @@ async function renderToolSetDetail() {
     $('form').innerHTML = `
         ${customizedBannerHtml(t)}
         ${classFieldHtml}
-        <div class="field-row">
-            <div class="field">
-                <label>Name</label>
-                <input id="f-name" type="text" value="${escapeAttr(t.name || '')}" ${ro}>
-            </div>
-            <div class="field">
-                <label>Tool Provider</label>
-                <select id="f-includedClass">
-                    <option value="">-- Select a provider --</option>
-                    ${providerOptions}
-                </select>
-            </div>
+        <div class="field">
+            <label>Name</label>
+            <input id="f-name" type="text" value="${escapeAttr(t.name || '')}" ${ro}>
         </div>
         <div class="field">
             <label>Description</label>
@@ -1115,19 +1124,8 @@ async function renderToolSetDetail() {
     const tResetBtn = $('f-reset-override');
     if (tResetBtn) tResetBtn.addEventListener('click', () => resetOverride('toolset', t.class, renderToolSetDetail));
 
-    // Populate the dual panels from current tool data
-    populateToolPanels(tools);
-
-    // Provider change  replace both panels
-    const providerSelect = $('f-includedClass');
-    if (providerSelect) providerSelect.addEventListener('change', () => {
-        const cls = providerSelect.value;
-        if (!cls) return;
-        const prov = providers.find(p => p.class === cls);
-        if (!prov) return;
-        const synth = prov.methods.map(m => ({ name: m.name, description: m.description || '', enabled: 1 }));
-        populateToolPanels(synth);
-    });
+    // Populate the dual panels from ALL tools across all providers
+    populateToolPanels(allTools);
 
     // Add all / Remove all
     $('btn-add-all').addEventListener('click', () => {
@@ -1153,11 +1151,14 @@ async function renderToolSetDetail() {
 function makeToolRow(tool) {
     const desc = (tool.description || '').replace(/\r?\n/g, ' ').trim();
     const short = desc.length > 120 ? desc.substring(0, 117) + '...' : desc;
+    const provLabel = tool.providerShort || (tool.providerClass ? tool.providerClass.split('.').pop() : '');
     const row = document.createElement('div');
     row.className = 'ts-tool-row';
     row.dataset.tool = tool.name;
+    row.dataset.provider = tool.providerClass || '';
     row.innerHTML =
         `<span class="ts-tool-name">${escapeHtml(tool.name)}</span>` +
+        (provLabel ? `<span class="ts-tool-prov">${escapeHtml(provLabel)}</span>` : '') +
         (short ? `<span class="ts-tool-desc">${escapeHtml(short)}</span>` : '') +
         `<button type="button" class="ts-tool-btn" title="Toggle"></button>`;
     return row;
@@ -1551,31 +1552,24 @@ async function saveToolSet() {
         if (!cls) return;
         t.class = cls;
     }
-    const includedClass = $('f-includedClass') ? $('f-includedClass').value : '';
 
-    // Collect included tools from the dual-panel UI
+    // Collect included tools with their provider class from the dual-panel UI
     const selectedTools = [];
     document.querySelectorAll('#f-included .ts-tool-row').forEach(r => {
-        selectedTools.push(r.dataset.tool);
+        selectedTools.push({ name: r.dataset.tool, providerClass: r.dataset.provider || '' });
     });
-    // Count total available (included + available panels)
-    const totalTools = selectedTools.length +
-        document.querySelectorAll('#f-available .ts-tool-row').length;
-    const allSelected = selectedTools.length === totalTools && totalTools > 0;
 
     const body = {
-        name:           $('f-name').value,
-        description:    $('f-description').value
+        name:              $('f-name').value,
+        description:       $('f-description').value,
+        toolsetDescription: $('f-description').value,
+        selectedTools:     selectedTools
     };
 
-    if (includedClass) {
-        body.includedClass = includedClass;
-        // Empty selectedTools = all tools (no filter needed)
-        body.selectedTools = allSelected ? [] : selectedTools;
-        body.toolsetDescription = $('f-description').value;
-    } else {
+    // Fallback: if no tools selected via dual-panel, check raw XData
+    if (selectedTools.length === 0) {
         const defRaw = $('f-definitionRaw');
-        if (defRaw) body.definitionRaw = defRaw.value;
+        if (defRaw && defRaw.value) body.definitionRaw = defRaw.value;
     }
 
     const path = '/editor/toolset/' + encodeURIComponent(t.class);

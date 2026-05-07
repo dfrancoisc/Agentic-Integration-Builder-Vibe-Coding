@@ -422,7 +422,7 @@ ClassMethod %ExtractIncludedClass(pXml As %String) As %String [ Internal ]
 /// pSelectedCSV:  comma-separated list of selected tool names, or ""/"*" for all.
 ClassMethod BuildDefinitionXml(pName As %String, pDescription As %String, pIncludedClass As %String, pSelectedCSV As %String = "") As %String [ Internal ]
 {
-    Set descEsc = $replace(pDescription, """", "&quot;")
+    Set descEsc = ..%XmlEscape(pDescription)
     Set xml = "<ToolSet Name="""_pName_""">"_$char(10)
     Set xml = xml _ "    <Description>"_descEsc_"</Description>"_$char(10)
     If pSelectedCSV = "" || (pSelectedCSV = "*") {
@@ -441,6 +441,78 @@ ClassMethod BuildDefinitionXml(pName As %String, pDescription As %String, pInclu
     }
     Set xml = xml _ "</ToolSet>"
     Quit xml
+}
+
+/// Build the ToolSet Definition XData XML from a multi-provider
+/// selection. pSelections is a DynamicArray of {name, providerClass}
+/// objects. Groups tools by provider class and emits one <Include>
+/// per provider (with <Filter> children when only a subset is chosen).
+///
+/// pName:        ToolSet display name.
+/// pDescription: ToolSet description.
+/// pSelections:  DynamicArray of {name, providerClass}.
+ClassMethod BuildDefinitionXmlMulti(pName As %String, pDescription As %String, pSelections As %DynamicArray) As %String [ Internal ]
+{
+    Set descEsc = ..%XmlEscape(pDescription)
+    Set xml = "<ToolSet Name="""_pName_""">"_$char(10)
+    Set xml = xml _ "    <Description>"_descEsc_"</Description>"_$char(10)
+    ; Group selected tools by provider class: grouped(provClass, toolName)=""
+    Set iter = pSelections.%GetIterator()
+    While iter.%GetNext(.key, .val) {
+        Set provCls = val.providerClass
+        Set toolName = val.name
+        If provCls '= "", toolName '= "" {
+            Set grouped(provCls, toolName) = ""
+        }
+    }
+    ; For each provider class, count selected vs total then emit Include
+    Set provCls = ""
+    For {
+        Set provCls = $order(grouped(provCls))
+        If provCls = "" Quit
+        ; Count selected tools for this provider
+        Set selCount = 0, tn = ""
+        For {
+            Set tn = $order(grouped(provCls, tn))
+            If tn = "" Quit
+            Set selCount = selCount + 1
+        }
+        ; Count total discoverable tools for this provider
+        Set totalCount = ..%CountProviderTools(provCls)
+        If selCount = totalCount {
+            ; All tools selected — simple self-closing Include
+            Set xml = xml _ "    <Include Class="""_provCls_"""/>"_$char(10)
+        } Else {
+            ; Subset — Include with Filter children
+            Set xml = xml _ "    <Include Class="""_provCls_""">"_$char(10)
+            Set tn = ""
+            For {
+                Set tn = $order(grouped(provCls, tn))
+                If tn = "" Quit
+                Set xml = xml _ "        <Filter Tool="""_tn_"""/>"_$char(10)
+            }
+            Set xml = xml _ "    </Include>"_$char(10)
+        }
+    }
+    Set xml = xml _ "</ToolSet>"
+    Quit xml
+}
+
+/// Count public, non-internal ClassMethods on a %AI.Tool provider class.
+/// Used by BuildDefinitionXmlMulti to decide Include vs Include+Filter.
+ClassMethod %CountProviderTools(pClass As %String) As %Integer [ Internal ]
+{
+    Set count = 0
+    Set sql = "SELECT Name, Internal FROM %Dictionary.CompiledMethod "
+    Set sql = sql _ "WHERE Parent = ? AND Origin = ? ORDER BY Name"
+    Set rs = ##class(%SQL.Statement).%ExecDirect(, sql, pClass, pClass)
+    While rs.%Next() {
+        Set mName = rs.%Get("Name")
+        If $extract(mName, 1, 1) = "%" { Continue }
+        If +rs.%Get("Internal") { Continue }
+        Set count = count + 1
+    }
+    Quit count
 }
 
 /// GET /api/agentic/editor/tool-providers
@@ -484,6 +556,18 @@ ClassMethod ListProviders(pResponse As %CSP.Response) As %Status
     Quit $classmethod(util, "WriteJSON", pResponse, {"providers": (arr)})
 }
 
+/// Escape a string for safe embedding inside XML element content.
+/// Handles &, <, >, " — the minimum set to avoid SAX parse errors
+/// when descriptions contain angle brackets (e.g. "<Include>").
+ClassMethod %XmlEscape(pText As %String) As %String [ Internal ]
+{
+    Set out = $replace(pText, "&", "&amp;")
+    Set out = $replace(out, "<", "&lt;")
+    Set out = $replace(out, ">", "&gt;")
+    Set out = $replace(out, """", "&quot;")
+    Quit out
+}
+
 /// Pluck `Name="value"` out of a fragment. Empty if not present.
 ClassMethod %XmlAttr(pLine As %String, pAttr As %String) As %String [ Internal ]
 {
@@ -512,19 +596,13 @@ ClassMethod ApplyEdits(pClass As %String, pReq As %DynamicObject) As %Status
         Set tSC = $classmethod(util, "SetParameter", pClass, "NAME", pReq.name)
         If 'tSC Quit tSC
     }
-    ; Tool selection — build Definition XData from includedClass + selectedTools.
+    ; Tool selection — build Definition XData from selectedTools.
+    ; selectedTools can be:
+    ;   (a) Array of {name, providerClass} objects — multi-provider (new format)
+    ;   (b) Array of plain strings + includedClass — single-provider (legacy)
     ; This takes priority over raw definitionRaw because it represents the
     ; structured tool-selector state from the editor UI.
-    If pReq.%IsDefined("includedClass"), pReq.includedClass '= "" {
-        Set incCls = pReq.includedClass
-        ; Collect selected tool names from the DynamicArray
-        Set selCSV = ""
-        If pReq.%IsDefined("selectedTools"), $isobject(pReq.selectedTools) {
-            Set iter = pReq.selectedTools.%GetIterator()
-            While iter.%GetNext(.key, .val) {
-                Set selCSV = selCSV _ $select(selCSV'="":",", 1:"") _ val
-            }
-        }
+    If pReq.%IsDefined("selectedTools"), $isobject(pReq.selectedTools) {
         ; Resolve display name for the XData ToolSet Name attribute
         Set tsName = ""
         If pReq.%IsDefined("name"), pReq.name '= "" {
@@ -539,7 +617,40 @@ ClassMethod ApplyEdits(pClass As %String, pReq As %DynamicObject) As %Status
         } ElseIf pReq.%IsDefined("description") {
             Set tsDesc = pReq.description
         }
-        Set xml = ..BuildDefinitionXml(tsName, tsDesc, incCls, selCSV)
+        ; Detect format: if first element is an object with providerClass, use multi-provider
+        Set isMulti = 0
+        If pReq.selectedTools.%Size() > 0 {
+            Set first = pReq.selectedTools.%Get(0)
+            If $isobject(first), first.%IsDefined("providerClass") {
+                Set isMulti = 1
+            }
+        }
+        If isMulti {
+            Set xml = ..BuildDefinitionXmlMulti(tsName, tsDesc, pReq.selectedTools)
+        } Else {
+            ; Legacy single-provider format (array of strings)
+            Set incCls = ""
+            If pReq.%IsDefined("includedClass") { Set incCls = pReq.includedClass }
+            Set selCSV = ""
+            Set iter = pReq.selectedTools.%GetIterator()
+            While iter.%GetNext(.key, .val) {
+                Set selCSV = selCSV _ $select(selCSV'="":",", 1:"") _ val
+            }
+            If incCls '= "" {
+                Set xml = ..BuildDefinitionXml(tsName, tsDesc, incCls, selCSV)
+            }
+        }
+        If $data(xml), xml '= "" {
+            Set tSC = $classmethod(util, "SetXData", pClass, "Definition", xml, "application/xml")
+            If 'tSC Quit tSC
+        }
+    } ElseIf pReq.%IsDefined("includedClass"), pReq.includedClass '= "" {
+        ; Legacy: includedClass without selectedTools — include all from one provider
+        Set tsName = $select(pReq.%IsDefined("name")&&(pReq.name'=""):pReq.name, 1:$piece(pClass,".",$length(pClass,".")))
+        Set tsDesc = ""
+        If pReq.%IsDefined("toolsetDescription") { Set tsDesc = pReq.toolsetDescription }
+        ElseIf pReq.%IsDefined("description") { Set tsDesc = pReq.description }
+        Set xml = ..BuildDefinitionXml(tsName, tsDesc, pReq.includedClass, "")
         Set tSC = $classmethod(util, "SetXData", pClass, "Definition", xml, "application/xml")
         If 'tSC Quit tSC
     } ElseIf pReq.%IsDefined("definitionRaw") {
