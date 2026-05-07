@@ -372,11 +372,9 @@ function renderToolSetList() {
         div.innerHTML = `
             <div class="row1">
                 ${escapeHtml(t.name || shortName(t.class))}
-                <span class="badge ${isUser ? 'user' : 'shipped'}">${isUser ? 'user' : 'shipped'}</span>
                 ${customizedBadge}
             </div>
             <div class="row2"><code>${escapeHtml(t.class)}</code></div>
-            <div class="row2 desc">${escapeHtml((t.description || '').replace(/\s+/g, ' ').trim() || '—')}</div>
             <div class="row2">${t.toolCount || 0} tool(s)</div>
         `;
         div.addEventListener('click', () => openToolSet(t.class));
@@ -1153,15 +1151,13 @@ async function renderToolSetDetail() {
 
 // Build one tool row element (used in both panels).
 function makeToolRow(tool) {
-    const isMut = /^(Start|Stop|Delete|Remove|Create|Add|Update|Send|Compile|Validate)[A-Z]/.test(tool.name);
     const desc = (tool.description || '').replace(/\r?\n/g, ' ').trim();
-    const short = desc.length > 100 ? desc.substring(0, 97) + '...' : desc;
+    const short = desc.length > 120 ? desc.substring(0, 117) + '...' : desc;
     const row = document.createElement('div');
     row.className = 'ts-tool-row';
     row.dataset.tool = tool.name;
     row.innerHTML =
         `<span class="ts-tool-name">${escapeHtml(tool.name)}</span>` +
-        `<span class="badge ${isMut ? 'mut' : 'ro'}">${isMut ? 'mutating' : 'read-only'}</span>` +
         (short ? `<span class="ts-tool-desc">${escapeHtml(short)}</span>` : '') +
         `<button type="button" class="ts-tool-btn" title="Toggle"></button>`;
     return row;
