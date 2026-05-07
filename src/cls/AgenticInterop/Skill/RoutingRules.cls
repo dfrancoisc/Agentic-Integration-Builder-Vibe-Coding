@@ -36,7 +36,7 @@ A rule definition is a class. Editor: Interoperability > Build > Business Rules.
 Class MyApp.MyRule Extends Ens.Rule.Definition
 {
 
-Parameter RuleAssistClass = "EnsLib.MsgRouter.RuleAssist";
+Parameter RuleAssistClass = "EnsLib.MsgRouter.VDocRuleAssist";
 
 XData RuleDefinition [ XMLNamespace = "http://www.intersystems.com/rule" ]
 {
@@ -56,6 +56,13 @@ XData RuleDefinition [ XMLNamespace = "http://www.intersystems.com/rule" ]
 
 }
 ```
+
+RuleAssistClass values:
+- `EnsLib.MsgRouter.VDocRuleAssist` — for virtual document routing (HL7, X12, EDIFACT, ASTM). USE THIS for HL7 routing rules.
+- `EnsLib.MsgRouter.RuleAssist` — for general (non-virtual-document) routing rules.
+- If omitted, the rule editor cannot provide message-type-aware dropdowns and the rule may not evaluate virtual document paths correctly.
+
+The CreateRoutingRule tool sets VDocRuleAssist by default because most routing rules in health interoperability deal with HL7 virtual documents.
 
 `<ruleDefinition>` attributes:
 - `alias` — short alias for the rule.
