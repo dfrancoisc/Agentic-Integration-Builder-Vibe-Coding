@@ -15,25 +15,18 @@ ClassMethod Get(pResponse As %CSP.Response, pClass As %String) As %Status
     If '$classmethod(util, "ExtendsClass", pClass, "%AI.Agent") {
         Quit $classmethod(util, "WriteError", pResponse, "400 Bad Request", "Class is not an %AI.Agent subclass", pClass)
     }
-    Set body = {
-        "class":         (pClass),
-        "description":   ($classmethod(util, "ClassDescription", pClass)),
-        "name":          ($classmethod(util, "ParamDefault", pClass, "NAME")),
-        "temperature":   ($classmethod(util, "ParamDefault", pClass, "TEMPERATURE")),
-        "maxIterations": ($classmethod(util, "ParamDefault", pClass, "MAXITERATIONS")),
-        "provider":      ($classmethod(util, "ParamDefault", pClass, "PROVIDER")),
-        "instructions":  ($classmethod(util, "XDataBody", pClass, "INSTRUCTIONS")),
-        "mcpsCsv":       ($classmethod(util, "ParamDefault", pClass, "MCPS")),
-        "skillsCsv":     ($classmethod(util, "ParamDefault", pClass, "SKILLS"))
-    }
-    Set body.mcps   = $classmethod(util, "CsvToArray", body.mcpsCsv)
-    Set body.skills = $classmethod(util, "CsvToArray", body.skillsCsv)
+    // Overlay-aware read.
+    Set body = ##class(AgenticInterop.Editor.Overlay).GetEffectiveAgent(pClass)
     Quit $classmethod(util, "WriteJSON", pResponse, body)
 }
 
 /// PUT /api/agentic/editor/agent/:class
 /// Body: { name, description, temperature, maxIterations, provider,
 ///         instructions, mcps:[], skills:[] }
+///
+/// Save routing: User-authored → .cls; shipped → AgentOverride row.
+/// Manager.Build / ChatService read effective values via Overlay so
+/// runtime sees customizations without recompile.
 ClassMethod Save(pResponse As %CSP.Response, pClass As %String, pBodyStream) As %Status
 {
     Set util = "AgenticInterop.Editor.Util"
@@ -44,9 +37,30 @@ ClassMethod Save(pResponse As %CSP.Response, pClass As %String, pBodyStream) As 
     If '##class(%Dictionary.CompiledClass).%ExistsId(pClass) {
         Quit $classmethod(util, "WriteError", pResponse, "404 Not Found", "Agent class does not exist", pClass)
     }
-    Set tSC = ..ApplyEdits(pClass, req)
+    If $classmethod(util, "IsUserAuthored", pClass, "Agent") {
+        Set tSC = ..ApplyEdits(pClass, req)
+    } Else {
+        Set tSC = ##class(AgenticInterop.Editor.Overlay).SaveAgentOverride(pClass, req, $username)
+    }
     If 'tSC {
         Quit $classmethod(util, "WriteError", pResponse, "500 Internal Server Error", "Save failed", $system.Status.GetErrorText(tSC))
+    }
+    Quit ..Get(pResponse, pClass)
+}
+
+/// POST /api/agentic/editor/agent/:class/reset — drops the override.
+ClassMethod Reset(pResponse As %CSP.Response, pClass As %String) As %Status
+{
+    Set util = "AgenticInterop.Editor.Util"
+    If '##class(%Dictionary.CompiledClass).%ExistsId(pClass) {
+        Quit $classmethod(util, "WriteError", pResponse, "404 Not Found", "Agent class does not exist", pClass)
+    }
+    If $classmethod(util, "IsUserAuthored", pClass, "Agent") {
+        Quit $classmethod(util, "WriteError", pResponse, "400 Bad Request", "User-authored agents do not use overrides — edits already write to .cls.", pClass)
+    }
+    Set tSC = ##class(AgenticInterop.Editor.Overlay).ResetAgent(pClass)
+    If 'tSC {
+        Quit $classmethod(util, "WriteError", pResponse, "500 Internal Server Error", "Reset failed", $system.Status.GetErrorText(tSC))
     }
     Quit ..Get(pResponse, pClass)
 }

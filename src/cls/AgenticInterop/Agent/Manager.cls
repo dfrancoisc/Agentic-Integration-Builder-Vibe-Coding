@@ -26,10 +26,20 @@ ClassMethod Build(pProvider As %AI.Provider, Output pAgent As %AI.Agent, pAgentC
         Set tSC = pAgent.%Init()
         If 'tSC { Quit }
 
-        // 2. Register each MCP listed in Parameter MCPS. Each MCP delegates
-        //    to %AI.MCP.Service.LoadToolSetsToManager via its own
-        //    RegisterToAgent classmethod (see AgenticInterop.MCP.Base).
-        Set mcps = $parameter(pAgentClass, "MCPS")
+        // 1a. Apply Agent overlay overrides for runtime fields the
+        //     framework consumes via OREF properties (system prompt,
+        //     temperature). MCPS / SKILLS use Overlay accessors below.
+        //     If no override row exists, the helpers fall through to
+        //     the compiled class defaults.
+        Set effSysPrompt = ##class(AgenticInterop.Editor.Overlay).GetEffectiveSystemPrompt(pAgentClass)
+        If effSysPrompt '= "" { Set pAgent.SystemPrompt = effSysPrompt }
+        Set effTemp = ##class(AgenticInterop.Editor.Overlay).GetEffectiveTemperature(pAgentClass)
+        If effTemp '= "" {
+            Try { Set pAgent.Temperature = +effTemp } Catch  {}
+        }
+
+        // 2. Register each MCP listed in Parameter MCPS (overlay-aware).
+        Set mcps = ##class(AgenticInterop.Editor.Overlay).GetEffectiveMCPS(pAgentClass)
         If mcps '= "" {
             For i=1:1:$LENGTH(mcps, ",") {
                 Set cls = $ZSTRIP($PIECE(mcps, ",", i), "<>W")
@@ -40,11 +50,35 @@ ClassMethod Build(pProvider As %AI.Provider, Output pAgent As %AI.Agent, pAgentC
             If 'tSC { Quit }
         }
 
-        // 3. Register Skills as sub-agent tools. SkillLoader honors the
-        //    Agent's Parameter SKILLS first; falls back to its own
-        //    DEFAULTSKILLS list if the parameter is empty.
-        Set tSC = ##class(AgenticInterop.Agent.SkillLoader).LoadSkills(pAgent, $parameter(pAgentClass, "SKILLS"))
+        // 3. Register Skills (overlay-aware).
+        Set tSC = ##class(AgenticInterop.Agent.SkillLoader).LoadSkills(pAgent, ##class(AgenticInterop.Editor.Overlay).GetEffectiveSKILLS(pAgentClass))
         If 'tSC { Quit }
+
+        // 4. Phase 4 confirmation gate. Every tool call funnels through
+        //    %CanExecute on this policy; mutating tools (start_*,
+        //    delete_*, etc., or definitions with requires_confirmation:
+        //    true) are denied with a structured error the chat surface
+        //    can render as an Approve / Reject prompt. Pre-approved
+        //    tokens (set by ChatService when the user has already
+        //    approved a specific call this turn) bypass the gate.
+        //
+        //    IMPORTANT: use SetAuthPolicy() — the explicit method —
+        //    NOT direct property assignment. The auto-generated
+        //    AuthPolicySet only stores the OREF on the ObjectScript
+        //    side; SetAuthPolicy also registers the policy with the
+        //    Rust-side ToolMgr via %token, which is what actually
+        //    causes %CanExecute to fire on each call. The reference
+        //    repo's comment ("framework bypasses it") was about a
+        //    different orchestrator pattern, not this method.
+        Set policy = ##class(AgenticInterop.Policy.ConfirmationGate).%New()
+        Set policy.ApprovedTokens = $get(%agenticApprovedTokens, "")
+        Do pAgent.ToolManager.SetAuthPolicy(policy)
+
+        // 5. Phase 5 catalog search. Attaches search_ens / search_hs
+        //    KnowledgeBase tools when their underlying tables are
+        //    populated. If the user hasn't built the catalogs yet, no
+        //    tool fires and chat continues without that input.
+        Do ##class(AgenticInterop.Catalog.Attach).ToAgent(pAgent)
     } Catch ex {
         Set tSC = ex.AsStatus()
         Set pAgent = $$$NULLOREF

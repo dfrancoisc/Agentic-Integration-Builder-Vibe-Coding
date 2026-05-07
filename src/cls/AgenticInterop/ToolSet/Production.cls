@@ -1,16 +1,19 @@
-/// Stub. The full Production toolset (~30 tools — production CRUD, lifecycle,
-/// business host management, deployment, purging, monitoring, workflow,
-/// publish/subscribe, alerts, message resend) lands in Phase 2 / 4. Inline
-/// methods will be added here OR pulled in via Include / Tool.Registry-driven
-/// dynamic discovery (see PLAN.md). The stub exists so AgenticInterop.Skill.*
-/// classes can declare Parameter TOOLS = "AgenticInterop.ToolSet.Production"
-/// without referencing an undefined class.
-Class AgenticInterop.ToolSet.Production Extends %AI.ToolSet
+/// %AI.ToolSet wrapper for the Production tool family. Composes the
+/// AgenticInterop.Tool.Production %AI.Tool subclass via <Include> so
+/// the framework's auto-discovery picks up every public ClassMethod
+/// as a tool.
+///
+/// Mutating tool dispatches (Start/Stop/Create/Delete/Add/Remove/
+/// Update*) flow through AgenticInterop.Policy.ConfirmationGate so
+/// the user explicitly approves each action via the inline gate card.
+Class AgenticInterop.ToolSet.Production Extends %AI.ToolSet [ DependsOn = AgenticInterop.Tool.Production ]
 {
 
 XData Definition [ MimeType = application/xml ]
 {
-<ToolSet Name="Production" Description="Production lifecycle, business host management, monitoring, deployment, and purging tools (stub — populated in Phase 4).">
+<ToolSet Name="Production">
+    <Description>Production CRUD, lifecycle, and business host management. Read-only inventory + describe; mutating start/stop/create/delete/host-edit operations gated by the confirmation policy.</Description>
+    <Include Class="AgenticInterop.Tool.Production"/>
 </ToolSet>
 }
 

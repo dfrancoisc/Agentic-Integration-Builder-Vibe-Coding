@@ -36,24 +36,61 @@ XData UrlMap [ XMLNamespace = "http://www.intersystems.com/urlmap" ]
     <Route Url="/editor/agent/:class"           Method="PUT"    Call="SaveAgent" />
     <Route Url="/editor/agent"                  Method="POST"   Call="CreateAgent" />
     <Route Url="/editor/agent/:class"           Method="DELETE" Call="DeleteAgent" />
+    <Route Url="/editor/agent/:class/reset"     Method="POST"   Call="ResetAgent" />
 
     <!-- MCP CRUD -->
     <Route Url="/editor/mcp/:class"             Method="GET"    Call="GetMCP" />
     <Route Url="/editor/mcp/:class"             Method="PUT"    Call="SaveMCP" />
     <Route Url="/editor/mcp"                    Method="POST"   Call="CreateMCP" />
     <Route Url="/editor/mcp/:class"             Method="DELETE" Call="DeleteMCP" />
+    <Route Url="/editor/mcp/:class/reset"       Method="POST"   Call="ResetMCP" />
 
     <!-- ToolSet CRUD -->
     <Route Url="/editor/toolset/:class"         Method="GET"    Call="GetToolSet" />
     <Route Url="/editor/toolset/:class"         Method="PUT"    Call="SaveToolSet" />
     <Route Url="/editor/toolset"                Method="POST"   Call="CreateToolSet" />
     <Route Url="/editor/toolset/:class"         Method="DELETE" Call="DeleteToolSet" />
+    <Route Url="/editor/toolset/:class/reset"   Method="POST"   Call="ResetToolSet" />
+
+    <!-- Tool providers — list all %AI.Tool subclasses for the ToolSet editor -->
+    <Route Url="/editor/tool-providers"         Method="GET"    Call="ListToolProviders" />
 
     <!-- Tool CRUD (one tool entry inside a ToolSet's XData Definition) -->
     <Route Url="/editor/tool/:toolset/:name"    Method="GET"    Call="GetTool" />
     <Route Url="/editor/tool/:toolset/:name"    Method="PUT"    Call="SaveTool" />
     <Route Url="/editor/tool/:toolset"          Method="POST"   Call="CreateTool" />
     <Route Url="/editor/tool/:toolset/:name"    Method="DELETE" Call="DeleteTool" />
+    <Route Url="/editor/tool/:toolset/:name/dryrun" Method="POST" Call="DryRunTool" />
+
+    <!-- Connection CRUD + secret + test (LLM provider config). Modeled
+         on Catalog.Connections from new-interoperability-health: name-
+         keyed, %Wallet.KeyValue secrets, %AI.Provider.Create + ChatComplete
+         for the live test. -->
+    <Route Url="/connections"                   Method="GET"    Call="ListConnections" />
+    <Route Url="/connections"                   Method="POST"   Call="CreateConnection" />
+    <Route Url="/connections/:name"             Method="GET"    Call="GetConnection" />
+    <Route Url="/connections/:name"             Method="PUT"    Call="SaveConnection" />
+    <Route Url="/connections/:name"             Method="DELETE" Call="DeleteConnection" />
+    <Route Url="/connections/:name/secret"      Method="POST"   Call="SaveConnectionSecret" />
+    <Route Url="/connections/:name/test"        Method="POST"   Call="TestConnection" />
+
+    <!-- Phase 2 chat — non-streaming single turn against the default
+         (or named) Connection. Kept for callers that don't want SSE. -->
+    <Route Url="/chat"                          Method="POST"   Call="Chat" />
+    <!-- Phase 3 chat — Server-Sent Events stream. Token-by-token text
+         + tool-call lifecycle events as the model produces them. -->
+    <Route Url="/chat/stream"                   Method="POST"   Call="ChatStream" />
+
+    <!-- Phase 5 catalog admin: search_ens / search_hs vector index
+         status + rebuild. The rebuild call is synchronous and can
+         run ~30s on a stock IRIS for Health install. -->
+    <Route Url="/catalog/status"                Method="GET"    Call="CatalogStatus" />
+    <Route Url="/catalog/rebuild"               Method="POST"   Call="CatalogRebuild" />
+
+    <!-- Phase 7 audit trail viewer: list recent audit rows with
+         filters, plus distinct kinds for dropdowns. -->
+    <Route Url="/audit/log"                     Method="GET"    Call="AuditList" />
+    <Route Url="/audit/kinds"                   Method="GET"    Call="AuditKinds" />
 </Routes>
 }
 
@@ -87,21 +124,125 @@ ClassMethod OnPreDispatch(pUrl As %String, pMethod As %String, ByRef pContinue A
     }
 
     If pContinue {
-        // Optional namespace switch via X-IRIS-Namespace header.
+        // Phase 3 access gate. The X-IRIS-Namespace header names the
+        // namespace the chat (and its tools) should logically operate
+        // on. We DO NOT switch $namespace permanently here — the
+        // dispatch class is only compiled in the install namespace
+        // (HSCUSTOM by default), so a permanent switch breaks every
+        // request afterward. Instead we probe access in a New'd
+        // stack frame and surface 400 (namespace doesn't exist) /
+        // 403 (user has no access) before the route runs. Per-tool
+        // namespace switching is the layer that actually changes
+        // execution context inside chat.
         Set targetNs = $get(%request.CgiEnvs("HTTP_X_IRIS_NAMESPACE"))
         If targetNs '= "", targetNs '= $namespace {
-            Try {
-                Set $namespace = targetNs
-            } Catch ex {
+            Set exists = ..NamespaceExists(targetNs)
+            If 'exists {
                 Set %response.Status = "400 Bad Request"
-                Do ..%WriteJSON({"error": "Invalid namespace", "namespace": (targetNs)})
+                Do ..%WriteJSON({"error": "Namespace does not exist", "namespace": (targetNs)})
                 Set pContinue = 0
-                Do ..AuditEnd(400, "invalid namespace " _ targetNs)
+                Do ..AuditEnd(400, "missing namespace " _ targetNs)
+            } ElseIf '..NamespaceAccessible(targetNs) {
+                Set %response.Status = "403 Forbidden"
+                Do %response.SetHeader("Content-Type", "application/json")
+                Do ..%WriteJSON({"error": "User does not have access to this namespace", "namespace": (targetNs), "user": (user)})
+                Set pContinue = 0
+                Do ..AuditEnd(403, "no access to namespace " _ targetNs _ " for user " _ user)
             }
         }
     }
 
     Quit $$$OK
+}
+
+/// True iff a namespace by that name is configured on this instance.
+/// Uses the system %SYS.Namespace API; runs in %SYS to avoid leaking
+/// the caller's current namespace context. Used only by the access
+/// gate in OnPreDispatch — not exposed via REST.
+ClassMethod NamespaceExists(pName As %String) As %Boolean
+{
+    If pName = "" Quit 0
+    Set ok = 0
+    New $namespace
+    Set $namespace = "%SYS"
+    Try { Set ok = ##class(%SYS.Namespace).Exists(pName) } Catch  { Set ok = 0 }
+    Quit ok
+}
+
+/// True iff the AUTHENTICATED user has permission to use pName as
+/// their active namespace.
+///
+/// Why this can't be a "Set $namespace = pName" probe: the
+/// /api/agentic CSP application elevates to %ISCMgtPortal at request
+/// dispatch (see module.xml), so $namespace assignments succeed for
+/// any namespace %ISCMgtPortal can reach — bypassing the calling
+/// user's actual privileges. We instead inspect the user's BASE
+/// roles (Security.Users.Roles) and walk each role's %DB_<db>:Read
+/// resources, checking if any of them grants the namespace's
+/// default global database. Equivalent to "would this user be able
+/// to switch to this namespace from the Management Portal as
+/// themselves." %All in the user's roles is treated as a master
+/// key.
+ClassMethod NamespaceAccessible(pName As %String) As %Boolean
+{
+    If pName = "" Quit 0
+    Set ok = 0
+    New $namespace
+    Set $namespace = "%SYS"
+    Try {
+        // 1. Walk Config.Namespaces -> Globals (default DB name) ->
+        //    Config.Databases -> Directory (file path) ->
+        //    SYS.Database -> ResourceName. Resource isn't a column on
+        //    Config.Databases — it lives on the SYS.Database wrapper.
+        Set sc = ##class(Config.Namespaces).Get(pName, .nsProps)
+        If $$$ISERR(sc) { Quit }
+        Set defaultDB = $get(nsProps("Globals"))
+        If defaultDB = "" { Quit }
+        Set sc = ##class(Config.Databases).Get(defaultDB, .dbProps)
+        If $$$ISERR(sc) { Quit }
+        Set directory = $get(dbProps("Directory"))
+        If directory = "" { Quit }
+        Set db = ##class(SYS.Database).%OpenId(directory)
+        If '$isobject(db) { Quit }
+        Set requiredResource = db.ResourceName
+        If requiredResource = "" {
+            // No resource gates this database — open access.
+            Set ok = 1
+            Quit
+        }
+
+        // 2. _SYSTEM and any user with %All are free-passers. Read
+        //    BASE roles directly from Security.Users so the CSP app's
+        //    %ISCMgtPortal elevation doesn't mask user privileges.
+        Set userRoles = ""
+        Set ru = ##class(%SQL.Statement).%ExecDirect(,"SELECT Roles FROM Security.Users WHERE Name = ?", $username)
+        If ru.%Next() { Set userRoles = ru.%Get("Roles") }
+        If userRoles [ "%All" { Set ok = 1 Quit }
+
+        // 3. For each role, check if it grants <requiredResource>:Read.
+        //    Security.Roles.Resources format: "Res1:perm1,Res2:perm2".
+        For i=1:1:$LENGTH(userRoles, ",") {
+            Set role = $ZSTRIP($PIECE(userRoles, ",", i), "<>W")
+            If role = "" { Continue }
+            Set rs = ##class(%SQL.Statement).%ExecDirect(,"SELECT Resources FROM Security.Roles WHERE Name = ?", role)
+            If 'rs.%Next() { Continue }
+            Set resList = rs.%Get("Resources")
+            For j=1:1:$LENGTH(resList, ",") {
+                Set entry = $ZSTRIP($PIECE(resList, ",", j), "<>W")
+                If entry = "" { Continue }
+                Set resName = $PIECE(entry, ":", 1)
+                Set resPerm = $PIECE(entry, ":", 2)
+                If (resName = requiredResource) && (resPerm [ "R") {
+                    Set ok = 1
+                    Quit
+                }
+            }
+            If ok { Quit }
+        }
+    } Catch  {
+        Set ok = 0
+    }
+    Quit ok
 }
 
 /// Debug endpoint — anonymous-allowed. Dumps what the gateway gave us.
@@ -262,6 +403,26 @@ ClassMethod DeleteMCP(pClass As %String) As %Status
     Quit ##class(AgenticInterop.Editor.MCPService).Delete(%response, pClass)
 }
 
+ClassMethod ResetMCP(pClass As %String) As %Status
+{
+    Quit ##class(AgenticInterop.Editor.MCPService).Reset(%response, pClass)
+}
+
+ClassMethod ResetAgent(pClass As %String) As %Status
+{
+    Quit ##class(AgenticInterop.Editor.AgentService).Reset(%response, pClass)
+}
+
+ClassMethod ResetToolSet(pClass As %String) As %Status
+{
+    Quit ##class(AgenticInterop.Editor.ToolSetService).Reset(%response, pClass)
+}
+
+ClassMethod ListToolProviders() As %Status
+{
+    Quit ##class(AgenticInterop.Editor.ToolSetService).ListProviders(%response)
+}
+
 ClassMethod GetToolSet(pClass As %String) As %Status
 {
     Quit ##class(AgenticInterop.Editor.ToolSetService).Get(%response, pClass)
@@ -300,6 +461,76 @@ ClassMethod CreateTool(pToolSet As %String) As %Status
 ClassMethod DeleteTool(pToolSet As %String, pName As %String) As %Status
 {
     Quit ##class(AgenticInterop.Editor.ToolService).Delete(%response, pToolSet, pName)
+}
+
+ClassMethod DryRunTool(pToolSet As %String, pName As %String) As %Status
+{
+    Quit ##class(AgenticInterop.Editor.ToolService).DryRun(%response, pToolSet, pName, %request.Content)
+}
+
+ClassMethod ListConnections() As %Status
+{
+    Quit ##class(AgenticInterop.Editor.ConnectionService).List(%response)
+}
+
+ClassMethod GetConnection(pName As %String) As %Status
+{
+    Quit ##class(AgenticInterop.Editor.ConnectionService).Get(%response, pName)
+}
+
+ClassMethod CreateConnection() As %Status
+{
+    Quit ##class(AgenticInterop.Editor.ConnectionService).Create(%response, %request.Content)
+}
+
+ClassMethod SaveConnection(pName As %String) As %Status
+{
+    Quit ##class(AgenticInterop.Editor.ConnectionService).Save(%response, pName, %request.Content)
+}
+
+ClassMethod DeleteConnection(pName As %String) As %Status
+{
+    Quit ##class(AgenticInterop.Editor.ConnectionService).Delete(%response, pName)
+}
+
+ClassMethod SaveConnectionSecret(pName As %String) As %Status
+{
+    Quit ##class(AgenticInterop.Editor.ConnectionService).SaveSecret(%response, pName, %request.Content)
+}
+
+ClassMethod TestConnection(pName As %String) As %Status
+{
+    Quit ##class(AgenticInterop.Editor.ConnectionService).Test(%response, pName)
+}
+
+ClassMethod Chat() As %Status
+{
+    Quit ##class(AgenticInterop.Editor.ChatService).Chat(%response, %request.Content)
+}
+
+ClassMethod ChatStream() As %Status
+{
+    Quit ##class(AgenticInterop.Editor.ChatService).ChatStream(%response, %request.Content)
+}
+
+ClassMethod CatalogStatus() As %Status
+{
+    Quit ##class(AgenticInterop.Editor.CatalogService).Status(%response)
+}
+
+ClassMethod CatalogRebuild() As %Status
+{
+    Quit ##class(AgenticInterop.Editor.CatalogService).Rebuild(%response, %request.Content)
+}
+
+ClassMethod AuditList() As %Status
+{
+    Quit ##class(AgenticInterop.Editor.AuditService).List(%response)
+}
+
+ClassMethod AuditKinds() As %Status
+{
+    Quit ##class(AgenticInterop.Editor.AuditService).Kinds(%response)
 }
 
 }

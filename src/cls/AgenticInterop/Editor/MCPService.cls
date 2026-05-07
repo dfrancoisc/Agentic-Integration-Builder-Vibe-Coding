@@ -1,7 +1,11 @@
 /// CRUD for MCP classes (subclasses of AgenticInterop.MCP.Base).
 /// User-authored MCPs live under AgenticInterop.User.MCP.*; shipped MCPs
-/// under AgenticInterop.MCP.* are read-only (Get works, Save and Delete
-/// reject with 403).
+/// under AgenticInterop.MCP.* can be EDITED (Save) — the user can re-bind
+/// toolsets, rename, edit descriptions — but NOT deleted (Delete still
+/// requires User.MCP.*). Note: edits to shipped classes write to the
+/// .cls dictionary directly and will be overwritten by a subsequent
+/// `zpm load` of the shipped module. If preservation across upgrades is
+/// required, copy the class under AgenticInterop.User.MCP.* first.
 Class AgenticInterop.Editor.MCPService Extends %RegisteredObject
 {
 
@@ -20,26 +24,30 @@ ClassMethod Get(pResponse As %CSP.Response, pClass As %String) As %Status
     If '$classmethod(util, "ExtendsClass", pClass, "AgenticInterop.MCP.Base") {
         Quit $classmethod(util, "WriteError", pResponse, "400 Bad Request", "Class is not an MCP", pClass)
     }
-    Set body = {
-        "class":             (pClass),
-        "userAuthored":      (..IsUserAuthored(pClass)),
-        "description":       ($classmethod(util, "ClassDescription", pClass)),
-        "name":              ($classmethod(util, "ParamDefault", pClass, "NAME")),
-        "shortDescription":  ($classmethod(util, "ParamDefault", pClass, "DESCRIPTION")),
-        "toolsetsCsv":       ($classmethod(util, "ParamDefault", pClass, "TOOLSETS"))
-    }
-    Set body.toolsets = $classmethod(util, "CsvToArray", body.toolsetsCsv)
+    // Overlay-aware read: GetEffectiveMCP layers any user override
+    // on top of the shipped .cls metadata, so the UI sees what the
+    // chat runtime will see at request time.
+    Set body = ##class(AgenticInterop.Editor.Overlay).GetEffectiveMCP(pClass)
+    Set body.userAuthored = ..IsUserAuthored(pClass)
     Quit $classmethod(util, "WriteJSON", pResponse, body)
 }
 
 /// PUT /api/agentic/editor/mcp/:class
 /// Body: { name, shortDescription, description, toolsets:[] }
+///
+/// Save routing:
+///   - User-authored classes (AgenticInterop.User.MCP.*) write to
+///     the .cls dictionary as before — those classes are operator-
+///     owned and zpm doesn't touch them.
+///   - Shipped classes (AgenticInterop.MCP.*) write to the
+///     AgenticInterop.Data.MCPOverride table. The overlay layer
+///     surfaces the edit transparently to the UI and the chat
+///     runtime, and a subsequent `zpm load` of the upstream module
+///     leaves the override row untouched, so customizations
+///     survive upgrade.
 ClassMethod Save(pResponse As %CSP.Response, pClass As %String, pBodyStream) As %Status
 {
     Set util = "AgenticInterop.Editor.Util"
-    If '..IsUserAuthored(pClass) {
-        Quit $classmethod(util, "WriteError", pResponse, "403 Forbidden", "Only user-authored MCPs can be edited", pClass)
-    }
     Set req = $classmethod(util, "ParseBody", pBodyStream)
     If '$isobject(req) {
         Quit $classmethod(util, "WriteError", pResponse, "400 Bad Request", "Invalid JSON body")
@@ -47,9 +55,32 @@ ClassMethod Save(pResponse As %CSP.Response, pClass As %String, pBodyStream) As 
     If '##class(%Dictionary.CompiledClass).%ExistsId(pClass) {
         Quit $classmethod(util, "WriteError", pResponse, "404 Not Found", "MCP class does not exist", pClass)
     }
-    Set tSC = ..ApplyEdits(pClass, req)
+    If ..IsUserAuthored(pClass) {
+        Set tSC = ..ApplyEdits(pClass, req)
+    } Else {
+        Set tSC = ##class(AgenticInterop.Editor.Overlay).SaveMCPOverride(pClass, req, $username)
+    }
     If 'tSC {
         Quit $classmethod(util, "WriteError", pResponse, "500 Internal Server Error", "Save failed", $system.Status.GetErrorText(tSC))
+    }
+    Quit ..Get(pResponse, pClass)
+}
+
+/// POST /api/agentic/editor/mcp/:class/reset — drops the override
+/// row for a shipped MCP, restoring it to the shipping defaults.
+/// 404s on user-authored classes (those don't have overrides).
+ClassMethod Reset(pResponse As %CSP.Response, pClass As %String) As %Status
+{
+    Set util = "AgenticInterop.Editor.Util"
+    If '##class(%Dictionary.CompiledClass).%ExistsId(pClass) {
+        Quit $classmethod(util, "WriteError", pResponse, "404 Not Found", "MCP class does not exist", pClass)
+    }
+    If ..IsUserAuthored(pClass) {
+        Quit $classmethod(util, "WriteError", pResponse, "400 Bad Request", "User-authored MCPs do not use overrides — edits already write to .cls.", pClass)
+    }
+    Set tSC = ##class(AgenticInterop.Editor.Overlay).ResetMCP(pClass)
+    If 'tSC {
+        Quit $classmethod(util, "WriteError", pResponse, "500 Internal Server Error", "Reset failed", $system.Status.GetErrorText(tSC))
     }
     Quit ..Get(pResponse, pClass)
 }

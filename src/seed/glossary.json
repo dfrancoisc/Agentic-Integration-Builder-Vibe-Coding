@@ -1,0 +1,1478 @@
+[
+  {
+    "term": "$X/$Y action table",
+    "termKey": "$x$y",
+    "category": "System",
+    "definition": "Internal table that specifies whether a character, on input to or output from a device, modifies $X, $Y, or both. The special variables $X and $Y keep track of the horizontal and vertical coordinates on the device."
+  },
+  {
+    "term": "$ZF function",
+    "termKey": "$zf",
+    "category": "ObjectScript",
+    "definition": "An InterSystems implementation-specific function that lets you invoke external programs or routines from within InterSystems IRIS. On UNIX®, you can use $ZF functions to issue UNIX® shell commands, call UNIX® System Services, or call routines written in high-level languages, such as C."
+  },
+  {
+    "term": "abstract class",
+    "termKey": "abstract",
+    "category": "Objects",
+    "definition": "An abstract class cannot be instantiated. It acts as a template for multiple non-abstract subclasses with common characteristics."
+  },
+  {
+    "term": "access mode",
+    "termKey": "access",
+    "category": "System",
+    "definition": "A category of the available connection tools, where each access mode has particular characteristics and is for particular situations. There are three different access modes: local (where the user interacts directly with InterSystems IRIS on the server machine); client-server (where the user connects to InterSystems IRIS from a separate executable, usually on a separate machine); and web (where the user interacts with InterSystems IRIS through a web application that uses the Web Gateway)."
+  },
+  {
+    "term": "activate",
+    "termKey": "activate",
+    "category": "System",
+    "definition": "To retrieve a database-encryption key from memory and store its value internally in a running InterSystems IRIS instance so that InterSystems IRIS can mount and manipulate an encrypted database."
+  },
+  {
+    "term": "added role",
+    "termKey": "added",
+    "category": "System",
+    "definition": "Any role that becomes associated with a user after that user authenticates to InterSystems IRIS."
+  },
+  {
+    "term": "ad hoc query",
+    "termKey": "ad",
+    "category": "General",
+    "definition": "A SELECT statement used in embedded SQL or via ODBC or JDBC. Within object applications, ad hoc queries differ from normal queries in that they are not part of a class definition and they cannot be processed using the query interface."
+  },
+  {
+    "term": "application mode",
+    "termKey": "application",
+    "category": "System",
+    "definition": "The mode in which InterSystems IRIS initiates a terminal session in a pre-specified namespace and running a pre-specified program. In application mode, the user cannot initiate programs from the InterSystems IRIS prompt, and the terminal session ends when the user shuts down the program. Application mode is designed to allow users to perform a limited set of operations and not to gain access to other, more powerful aspects of the Terminal that are available in programmer mode."
+  },
+  {
+    "term": "array",
+    "termKey": "array",
+    "category": "Objects",
+    "definition": "A collection that uses key-value pairs to access data. Arrays are projected to SQL as child tables."
+  },
+  {
+    "term": "ASCII character set",
+    "termKey": "ascii",
+    "category": "System",
+    "definition": "For InterSystems products, ASCII refers to extended, 8-bit character sets, rather than the more limited, 7- bit character set. By default, an InterSystems IRIS instance uses the character set from the machine’s locale, as specified in Supported Languages for this release; if there is no support for a machine’s default language, InterSys- tems IRIS uses the ISO-8859-1 character set, commonly known as Latin-1."
+  },
+  {
+    "term": "asset",
+    "termKey": "asset",
+    "category": "System",
+    "definition": "Data or functionality that is protected by InterSystems security. Assets are represented within InterSystems IRIS as resources; each resource represents one or more assets."
+  },
+  {
+    "term": "atomic lock",
+    "termKey": "atomic",
+    "category": "Objects",
+    "definition": "An atomic lock performs no locking for data stored in a single node of the database. It holds a shared lock while data stored in more than one node is being loaded and holds an exclusive lock while the same data is saved."
+  },
+  {
+    "term": "attribute",
+    "termKey": "attribute",
+    "category": "Objects",
+    "definition": "A data element representing a specific characteristic associated with a class. Each object of that class contains a literal value for the attribute. Together, the attributes of a class represent its state. Also known as a property. Strictly speaking, an attribute is any property that is not a relationship."
+  },
+  {
+    "term": "audit database",
+    "termKey": "audit",
+    "category": "System",
+    "definition": "A database containing a list of some of the events that have occurred while InterSystems IRIS is running. When auditing is enabled, InterSystems IRIS logs various events, depending on the choices of the InterSystems IRIS administrator. Applications can also create and log their own events. The audit database is also known as the audit log."
+  },
+  {
+    "term": "authentication",
+    "termKey": "authentication",
+    "category": "System",
+    "definition": "The process by which users demonstrate that they are who they say they are. In the most commonly rec- ognized case, this occurs by providing a password. However, other authentication schemes are commercially available. 2 InterSystems Glossary of Terms Complete Glossary of Terms"
+  },
+  {
+    "term": "authorization",
+    "termKey": "authorization",
+    "category": "System",
+    "definition": "The process of determining what an authenticated user can do on an InterSystems IRIS system. Authorization includes several aspects: assigning roles to users (performed by a role-assignment mechanism); managing those roles and what they can do; and managing resources within InterSystems IRIS."
+  },
+  {
+    "term": "binary stream",
+    "termKey": "binary",
+    "category": "Objects",
+    "definition": "A binary stream provides an interface to manipulate and store large chunks of binary data such as images. Data stored in a binary stream is not translated during Unicode conversions. The InterSystems IRIS stream interface can be used to manipulate binary streams in ObjectScript, SQL, and Java."
+  },
+  {
+    "term": "bind",
+    "termKey": "bind",
+    "category": "InterSystems SQL",
+    "definition": "To associate a variable in an application program with a host variable using embedded SQL."
+  },
+  {
+    "term": "BLOB",
+    "termKey": "blob",
+    "category": "InterSystems SQL",
+    "definition": "A BLOB, or Binary Large Object, is the relational term for a large chunk of data. InterSystems IRIS uses its stream interface to manipulate BLOBs."
+  },
+  {
+    "term": "breakpoint",
+    "termKey": "breakpoint",
+    "category": "ObjectScript",
+    "definition": "Location in an InterSystems IRIS routine that you specify with the ZBREAK command. When execution reaches that line, InterSystems IRIS suspends execution of the routine and, optionally, executes debugging actions you define."
+  },
+  {
+    "term": "buffer",
+    "termKey": "buffer",
+    "category": "General",
+    "definition": "Defined location of computer memory that holds specific information. Buffers make it easy for multiple processes to access the same data. For instance, InterSystems IRIS caches globals in global buffers, and routines in routine buffers."
+  },
+  {
+    "term": "CLASSPATH",
+    "termKey": "classpath",
+    "category": "Java",
+    "definition": "A system variable used by Java compilers to search for classes and packages referenced in the classes they compile."
+  },
+  {
+    "term": "calculated property",
+    "termKey": "calculated",
+    "category": "Objects",
+    "definition": "A property that has no in-memory storage allocated for it when the object containing it is instantiated. Instead, its value is determined each time it is requested."
+  },
+  {
+    "term": "call method",
+    "termKey": "call",
+    "category": "Objects",
+    "definition": "A method that directly invokes an InterSystems IRIS routine."
+  },
+  {
+    "term": "callin interface",
+    "termKey": "callin",
+    "category": "System",
+    "definition": "InterSystems IRIS facility that lets you execute and evaluate ObjectScript commands and expressions from within C programs. You can also use the callin interface from $ZF routines."
+  },
+  {
+    "term": "callback method",
+    "termKey": "callback",
+    "category": "Objects",
+    "definition": "Callback methods are called by system methods to allow additional user written processing during specific events. To distinguish these types of methods, they are given names of the form %OnEvent, where Event describes the event that triggers the callback."
+  },
+  {
+    "term": "canonical form",
+    "termKey": "canonical",
+    "category": "General",
+    "definition": "The canonical form of a name is its complete, standard, and unambiguous form. InterSystems IRIS has canonical forms for various entities, including numbers, global references, command options, files and paths, and devices. For information on the canonical form of numbers, see $NUMBER. For information on the canonical form of globals and the related naked global references, see Naked Global Ref- erences or the $NAME or $ZREFERENCE reference pages. Information on the canonical form of command options appears on the reference page for the command itself. The canonical form of files, paths, and devices depends on the operating system. For example, on Windows, a reference to the file ..\\iris.wij is not in canonical form, while C:\\InterSystems\\MyIRIS\\IRIS.WIJ is (if there is an instance of InterSystems IRIS called MyIRIS and installed in the standard location). For UNIX®, an example of the canonical form of a device name is /dev/tty."
+  },
+  {
+    "term": "cascading dot syntax",
+    "termKey": "cascading",
+    "category": "Objects",
+    "definition": "Cascading dot syntax is used to follow the chain of other objects referenced by an object and directly manipulate the properties and methods of these referenced objects. For example: ObjectScript Write auto.Engine.Cylinder.SparkPlug.IdNumber"
+  },
+  {
+    "term": "character set",
+    "termKey": "character",
+    "category": "System",
+    "definition": "A set of values that defines the internal representation of InterSystems IRIS data for an instance."
+  },
+  {
+    "term": "child table",
+    "termKey": "child",
+    "category": "InterSystems SQL",
+    "definition": "A table that is dependent on another table (its parent). Rows in a child table must have a pointer to a row in the parent table. 4 InterSystems Glossary of Terms Complete Glossary of Terms"
+  },
+  {
+    "term": "circular reference",
+    "termKey": "circular",
+    "category": "Objects",
+    "definition": "A set of two properties in different classes where each property is a reference to the other class. InterSystems IRIS fully supports circular references as long as both properties are not required properties. If both properties in a circular reference are required, you will not be able to save objects of either class."
+  },
+  {
+    "term": "class compiler",
+    "termKey": "class",
+    "category": "Objects",
+    "definition": "The class compiler compiles InterSystems IRIS classes. You can use the class compiler from your IDE or by using one of the compile calls in the InterSystems IRIS object utility library."
+  },
+  {
+    "term": "client data type",
+    "termKey": "client",
+    "category": "Objects",
+    "definition": "The client data type is used to specify information needed to project data to clients via an InterSystems IRIS Object Server. Every data type class must have a client data type. Attributes based on a data type class project that class’s client data type as the attribute’s data type to SQL and clients such as Java."
+  },
+  {
+    "term": "code method",
+    "termKey": "code",
+    "category": "Objects",
+    "definition": "A method that executes ObjectScript."
+  },
+  {
+    "term": "collation rule",
+    "termKey": "collation",
+    "category": "System",
+    "definition": "An algorithm that determines the order in which InterSystems IRIS retrieves global nodes. InterSystems IRIS built-in collation rules include UNICODE, ANSI and string. In ANSI collation, canonical numeric subscripts come first in numeric order, followed by all others in string order; string order is the order of characters in the character set. String rule orders all subscripts as strings in the character set, just as the ObjectScript \"]\" operator does."
+  },
+  {
+    "term": "collection",
+    "termKey": "collection",
+    "category": "Objects",
+    "definition": "A collection is a property containing multiple elements (either literal values or objects). InterSystems IRIS supports two types of collections: lists and arrays."
+  },
+  {
+    "term": "column",
+    "termKey": "column",
+    "category": "InterSystems SQL",
+    "definition": "A column contains a specific element of data for each instance stored within a table. Properties are projected to SQL as columns."
+  },
+  {
+    "term": "communications protocol",
+    "termKey": "communications",
+    "category": "General",
+    "definition": "A set of conventions that define how data is transferred between computers on a network. More specifically, it is the software that determines how a message packet is formatted. Communication protocols are used to talk to a network interface device. More than one communication protocol can share the same physical interface device. 6 InterSystems Glossary of Terms Complete Glossary of Terms"
+  },
+  {
+    "term": "compilation flag",
+    "termKey": "compilation",
+    "category": "Objects",
+    "definition": "A compilation flag tells the class compiler how to compile classes. Compilation flags control which classes are compiled, whether source code is deleted from the system, and how InterSystems IRIS handles com- piling classes with objects in memory."
+  },
+  {
+    "term": "compiler directive",
+    "termKey": "compiler",
+    "category": "Objects",
+    "definition": "A compiler directive provides information on the files needed to successfully compile a specific class or routine. Examples of compiler directives include specifying include files and specifying that a class must be compiled after another class has already been compiled."
+  },
+  {
+    "term": "computed field",
+    "termKey": "computed",
+    "category": "Objects",
+    "definition": "A field whose value is derived from a calculation defined in ObjectScript compiled code. ObjectScript compiled code can reference other fields in the associated base table as well as ObjectScript functions and special variables."
+  },
+  {
+    "term": "computer name",
+    "termKey": "computer",
+    "category": "System",
+    "definition": "The name assigned to one processor, its peripheral equipment, and all of its associated datasets. This name must be unique across the network. See also System Name."
+  },
+  {
+    "term": "concurrency mode",
+    "termKey": "concurrency",
+    "category": "Objects",
+    "definition": "The concurrency mode determines what type of locking is performed when you open and save objects. InterSystems IRIS supports five concurrency modes (0-4) which allow you to specify no locking, atomic locking, shared locking, shared retained locking, and exclusive locking."
+  },
+  {
+    "term": "concurrent backup",
+    "termKey": "concurrent",
+    "category": "System",
+    "definition": "A backup performed without stopping other database activity. InterSystems IRIS uses a multipass method that minimizes the impact of backup on users while maintaining the integrity of the backup. Note: Transaction processing that occurs during backup may not be completely journaled if you clear, delete, or replace the current journal file as part of backup."
+  },
+  {
+    "term": "configuration",
+    "termKey": "configuration",
+    "category": "System",
+    "definition": "An InterSystems IRIS configuration describes InterSystems IRIS resources at startup. You define a con- figuration in the Management Portal. You can create more than one configuration, although only one can be current at a time. InterSystems IRIS uses the current configuration at startup."
+  },
+  {
+    "term": "connection",
+    "termKey": "connection",
+    "category": "System",
+    "definition": "A link between a client application or tool and InterSystems IRIS. Each connection has an associated process on the InterSystems IRIS server."
+  },
+  {
+    "term": "conversion code",
+    "termKey": "conversion",
+    "category": "Objects",
+    "definition": "Compiled code used by InterSystems IRIS to convert data values from internal storage formats to external display formats, and from external input formats to internal storage formats."
+  },
+  {
+    "term": "CPF",
+    "termKey": "cpf",
+    "category": "System",
+    "definition": "Short for Configuration Parameter File, a CPF is a file with a .cpf extension that defines a configuration. See Configuration."
+  },
+  {
+    "term": "credentials cache",
+    "termKey": "credentials",
+    "category": "System",
+    "definition": "A file containing authentication information for a previously identified user. The credentials cache is used to speed up the authentication process by avoiding duplicated effort. Used most frequently in reference to Kerberos authentication."
+  },
+  {
+    "term": "current device",
+    "termKey": "current",
+    "category": "System",
+    "definition": "The device through which I/O commands are processed. When you log on, your current device is your principal device. This is usually the terminal or personal computer at which you logged on."
+  },
+  {
+    "term": "cursor-based SQL",
+    "termKey": "cursorbased",
+    "category": "InterSystems SQL",
+    "definition": "A type of embedded SQL query that opens a cursor to process the query. When your application needs to access multiple rows of data, you must use a cursor. A cursor acts like a pointer—it focuses on accessing and processing one row at a time, then moves from that row to the next in the sequence."
+  },
+  {
+    "term": "cursor",
+    "termKey": "cursor",
+    "category": "InterSystems SQL",
+    "definition": "A forward-moving iterator within multiple rows of data."
+  },
+  {
+    "term": "custom storage",
+    "termKey": "custom",
+    "category": "Objects",
+    "definition": "Custom storage allows you to determine the storage structure of objects by writing your own implemen- tation of the storage interface methods. Generally, classes that use custom storage are not projected to SQL. 8 InterSystems Glossary of Terms Complete Glossary of Terms"
+  },
+  {
+    "term": "database",
+    "termKey": "database",
+    "category": "General",
+    "definition": "A IRIS.DAT file. It can contain code and data. Via global, package, and routine mappings, any given database can be used by multiple namespaces."
+  },
+  {
+    "term": "database-encryption key",
+    "termKey": "databaseencryption",
+    "category": "System",
+    "definition": "An AES key used to encrypt an InterSystems IRIS database."
+  },
+  {
+    "term": "Data Definition Language",
+    "termKey": "data",
+    "category": "InterSystems SQL",
+    "definition": "Data Definition Language or DDL is a command-based language used to create, define the structure of, and delete tables."
+  },
+  {
+    "term": "dataset",
+    "termKey": "dataset",
+    "category": "General",
+    "definition": "A logical entity that represents a directory name or directory and system name in InterSystems IRIS."
+  },
+  {
+    "term": "DDL import utility",
+    "termKey": "ddl",
+    "category": "Objects",
+    "definition": "A utility included in the InterSystems IRIS Relational Utility Library to import DDL files into InterSystems IRIS. The utility automatically adds the corresponding definition to the Class Dictionary."
+  },
+  {
+    "term": "deep save",
+    "termKey": "deep",
+    "category": "Objects",
+    "definition": "A deep save saves an object and all objects that it references, as described in class reference content for the %Persistent.%Save method."
+  },
+  {
+    "term": "default dataset",
+    "termKey": "default",
+    "category": "System",
+    "definition": "The directory in which a namespace executes commands and receives any globals not independently mapped."
+  },
+  {
+    "term": "dependent relationship",
+    "termKey": "dependent",
+    "category": "Objects",
+    "definition": "A parent-child relationship that defines a child table for each row of the parent table."
+  },
+  {
+    "term": "device accounts",
+    "termKey": "device",
+    "category": "System",
+    "definition": "Device accounts allow TELNET users to log in to specific routines and namespaces on your system remotely and locally. You may set up user accounts and/or device accounts using the Management Portal to facilitate better control over which users have access to specific routines, databases and namespaces."
+  },
+  {
+    "term": "directory",
+    "termKey": "directory",
+    "category": "General",
+    "definition": "A name for a location on a disk where files can be stored. The InterSystems IRIS database file, IRIS.DAT, resides in a directory. Only one InterSystems IRIS database file is permitted per directory."
+  },
+  {
+    "term": "dismount, dismounted",
+    "termKey": "dismount",
+    "category": "System",
+    "definition": "To dismount a database is to disconnect it from an instance of InterSystems IRIS. When a database is dismounted, it must be explicitly mounted again for an instance to use it."
+  },
+  {
+    "term": "display format",
+    "termKey": "display",
+    "category": "Objects",
+    "definition": "The display format of a property is the format used to display and input data."
+  },
+  {
+    "term": "distributed database",
+    "termKey": "distributed",
+    "category": "System",
+    "definition": "A database that is stored on multiple computers in a network. When you use InterSystems IRIS in a dis- tributed database environment, ObjectScript routines that reside on one computer can access globals on other computers in the network, within the file protection limits established on those systems."
+  },
+  {
+    "term": "DMNNET",
+    "termKey": "dmnnet",
+    "category": "System",
+    "definition": "An InterSystems IRIS process that handles incoming global requests from a network. It is the name that appears on the System Status (%SS) display or the Processes panel in System Operations Utilities to represent the network daemon."
+  },
+  {
+    "term": "dot syntax",
+    "termKey": "dot",
+    "category": "Objects",
+    "definition": "Dot syntax allows you to get and set property values and to execute methods. It also allows you to access the properties and methods of referenced and embedded objects from the object referencing them. 10 InterSystems Glossary of Terms Complete Glossary of Terms"
+  },
+  {
+    "term": "embeddable class",
+    "termKey": "embeddable",
+    "category": "Objects",
+    "definition": "Objects derived from an embeddable (serial) class can exist independently in memory, but, when stored to the database, exist only as data stored within a persistent object. See %SerialObject."
+  },
+  {
+    "term": "embedded HTML",
+    "termKey": "embedded",
+    "category": "ObjectScript",
+    "definition": "HTML that is directly embedded within ObjectScript methods or macro routines. Embedded HTML must be encased within &html<> statements."
+  },
+  {
+    "term": "empty string",
+    "termKey": "empty",
+    "category": "System",
+    "definition": "A string that logically has no characters in it, often represented in text as \"\". Some material may also refer to this as the null string. Different languages differently represent the empty string, which determines if and how it occupies real space in computer memory. For example, in ObjectScript, \"\" does not occupy space in memory, while, in SQL, it does. Note also that a string with no characters in it is still a string and that, depending on the context, may be treated differently from the NULL (unassigned) value. For example, in the following ObjectScript code: ObjectScript New A New B Set A = \"\" Write A Write B the first Write statement succeeds (though this is not evident visually) and the second results in an <UNDEFINED> error."
+  },
+  {
+    "term": "encapsulation",
+    "termKey": "encapsulation",
+    "category": "Objects",
+    "definition": "Encapsulation hides the internal details of a class by presenting a public interface that outlines all of the allowed interactions of the class without presenting any of the details used to perform those operations."
+  },
+  {
+    "term": "endian",
+    "termKey": "endian",
+    "category": "System",
+    "definition": "Whether a system is big-endian or little-endian refers to the order in which it stores the bytes of a multibyte element. InterSystems IRIS supports both big-endian and little-endian systems. It also includes a utility, cvendian, for converting databases from one form to the other. For details about cvendian, see Using cvendian to Convert Between Big-endian and Little-endian Systems."
+  },
+  {
+    "term": "Enterprise Cache Protocol (ECP)",
+    "termKey": "enterprise",
+    "category": "System",
+    "definition": "The internal networking system for InterSystems IRIS. ECP networking allows you to use InterSystems IRIS in a distributed database environment that contains a configurable number of nodes and a variety of hardware and software configurations."
+  },
+  {
+    "term": "enumerated attribute",
+    "termKey": "enumerated",
+    "category": "Objects",
+    "definition": "Enumerated attributes allow multiple choice values for a property value. The value of these attributes must be one of the predetermined choices."
+  },
+  {
+    "term": "exclusive lock",
+    "termKey": "exclusive",
+    "category": "General",
+    "definition": "An exclusive lock prevents another process from viewing or editing the specified data. If you use an exclusive lock when you open an object, it acquires an exclusive lock when the object is opened and releases it when the object is closed."
+  },
+  {
+    "term": "explicit reference",
+    "termKey": "explicit",
+    "category": "System",
+    "definition": "Also called extended reference. A global reference that is made with a full definition of the system and namespace where the global resides."
+  },
+  {
+    "term": "expression method",
+    "termKey": "expression",
+    "category": "Objects",
+    "definition": "An object method that may be placed in-line in the code generated by the class compiler."
+  },
+  {
+    "term": "extended global reference",
+    "termKey": "extended",
+    "category": "System",
+    "definition": "Also called explicit reference. A global reference that identifies the location of the global. The location can be specified as either a defined namespace or an implied namespace. Used when an InterSystems IRIS appli- cation needs to override the current namespace mapping for the global, which resolves to a different directory, or directory and system, than the one desired. For example, if the application is running in namespace ADMIN but needs to refer to a global ^PARTS in the INVEN namespace, you can use the extended reference: ^[\"INVEN\"]PARTS. If, on the other hand, a specific physical location is desired instead of the mapping currently in force for a particular namespace, you can use an implied namespace. To refer to global ^PARTS in the directory \"inven\" on the computer with the directory set name \"production\" on a UNIX® computer, you might make the extended reference: ^[\"^production^/usr/inven\"]PARTS."
+  },
+  {
+    "term": "extent index",
+    "termKey": "extent",
+    "category": "Objects",
+    "definition": "An extent index maintains an index of all of the objects in an extent."
+  },
+  {
+    "term": "factory class",
+    "termKey": "factory",
+    "category": "Objects",
+    "definition": "Objects instantiated from the Factory class in Java manage connections to InterSystems IRIS. They also create and open instances of other InterSystems IRIS classes and provide other administrative functionality."
+  },
+  {
+    "term": "field",
+    "termKey": "field",
+    "category": "Objects",
+    "definition": "Another name for an SQL column."
+  },
+  {
+    "term": "file stream",
+    "termKey": "file",
+    "category": "Objects",
+    "definition": "A file stream provides an interface to manipulate and store large chunks of text-based or binary data in an external file. The InterSystems IRIS stream interface can be used to manipulate file streams in ObjectScript, SQL, and Java."
+  },
+  {
+    "term": "final class",
+    "termKey": "final",
+    "category": "Objects",
+    "definition": "A class that cannot be extended or subclassed."
+  },
+  {
+    "term": "foreign key",
+    "termKey": "foreign",
+    "category": "InterSystems SQL",
+    "definition": "A foreign key constrains a column in a table to point to another column in a table. The value supplied for the first column must exist in the second column. foundation Health care. In InterSystems IRIS for Health™ and HealthShare®, a namespace that is enabled for health care interoperability."
+  },
+  {
+    "term": "global",
+    "termKey": "global",
+    "category": "System",
+    "definition": "A multidimensional storage structure. Globals are implemented using balanced-tree technology within an InterSystems IRIS database. A global is a kind of variable."
+  },
+  {
+    "term": "globals database",
+    "termKey": "globals",
+    "category": "System",
+    "definition": "The underlying logical and physical data storage structure of InterSystems IRIS, in which all data is stored in a system of multiply-subscripted arrays called “globals.”"
+  },
+  {
+    "term": "globally unique identifier (GUID)",
+    "termKey": "globally",
+    "category": "System",
+    "definition": "A GUID is an identifier for an entity, such as an instance of a class, that is trusted to be unique for all instances of InterSystems IRIS, even across multiple systems. For example, if two independent instances of InterSystems IRIS use a common class definition that includes a GUID for each instance, then bringing the data together from these two instances will not result in any duplicate GUID values. InterSystems IRIS uses GUIDs as part of object synchronization. For general information about using GUIDs, see the class documentation for %ExtentMgr.GUID and %Library.GlobalIdentifier."
+  },
+  {
+    "term": "GSA file",
+    "termKey": "gsa",
+    "category": "System",
+    "definition": "A GSA file is a globals save file. The GSA file extension is not a requirement, but allows InterSystems IRIS and programmers to easily identify saved globals. Other than the file extension, there is no significance to a GSA file."
+  },
+  {
+    "term": "host name",
+    "termKey": "host",
+    "category": "General",
+    "definition": "The name of the server system."
+  },
+  {
+    "term": "identified by",
+    "termKey": "identified",
+    "category": "Objects",
+    "definition": "A class is identified by another class when it is logically dependent on that class for its existence."
+  },
+  {
+    "term": "identifying relationship",
+    "termKey": "identifying",
+    "category": "Objects",
+    "definition": "An identifying relationship defines a relationship between two classes where one class is dependent upon the other for its existence."
+  },
+  {
+    "term": "identity",
+    "termKey": "identity",
+    "category": "Objects",
+    "definition": "The identity, or ID, of an object uniquely identifies it within its extent."
+  },
+  {
+    "term": "idkey",
+    "termKey": "idkey",
+    "category": "Objects",
+    "definition": "An index that is used to designate the contents of the ID of an object. Any properties used in an idkey must remain static throughout the life of the object."
+  },
+  {
+    "term": "implicit global reference",
+    "termKey": "implicit",
+    "category": "System",
+    "definition": "See Mapped Global Reference. 14 InterSystems Glossary of Terms Complete Glossary of Terms"
+  },
+  {
+    "term": "implied namespace",
+    "termKey": "implied",
+    "category": "System",
+    "definition": "A namespace that InterSystems IRIS creates internally when you use a directory or directory and system name in an extended global reference."
+  },
+  {
+    "term": "include file",
+    "termKey": "include",
+    "category": "ObjectScript",
+    "definition": "Files containing definitions that can be used in the preprocessor phase of ObjectScript source code compilation to expand macro source routines and determine whether optional lines of code should be included. They also can be used to include a common block of code in several routines, saving the overhead of calls to a common subroutine."
+  },
+  {
+    "term": "incoming lock",
+    "termKey": "incoming",
+    "category": "System",
+    "definition": "A lock issued by a process on a remote client computer on an item on the local computer. It is also called a server lock, since the item being locked is located on the local computer, which is acting as a server. When you view locks, this lock appears in the Lock Table display with the system name of the remote computer that issued the LOCK request in the Owner column. The local server computer does not know which process on the remote client computer issued the LOCK nor does it track the number of locks on the item."
+  },
+  {
+    "term": "index",
+    "termKey": "index",
+    "category": "Objects",
+    "definition": "An index optimizes data retrieval by storing a sorted subset of the data for each object belonging to its class."
+  },
+  {
+    "term": "inheritance",
+    "termKey": "inheritance",
+    "category": "Objects",
+    "definition": "Inheritance passes the characteristics and members of a class to all of its subclasses. It allows you to group common aspects of multiple classes together in one superclass."
+  },
+  {
+    "term": "in-memory value",
+    "termKey": "inmemory",
+    "category": "Objects",
+    "definition": "The value of a property while it is in memory. For some types of properties, this can differ from its stored, or on-disk, value."
+  },
+  {
+    "term": "install-dir",
+    "termKey": "installdir",
+    "category": "System",
+    "definition": "When generically referring to the InterSystems IRIS installation directory, the documentation uses the term install-dir. In its examples, the documentation uses C:\\MyIRIS\\. The section Default Installation Directory describes where InterSystems IRIS is installed on all supported operating systems."
+  },
+  {
+    "term": "instance",
+    "termKey": "instance",
+    "category": "Objects",
+    "definition": "An implementation of a class representing a specific entity. The terms instance and object can be used interchangeably."
+  },
+  {
+    "term": "instantiate",
+    "termKey": "instantiate",
+    "category": "Objects",
+    "definition": "To place an object instance into memory where a program can act upon it."
+  },
+  {
+    "term": "intermediate source code",
+    "termKey": "intermediate",
+    "category": "ObjectScript",
+    "definition": "The standard 3GL (third generation language) ObjectScript source code available in InterSystems IRIS. Intermediate code is produced from macro source by the InterSystems IRIS compiler. At this level, all pre- processor syntax, including embedded SQL, has been resolved, and the routine contains only pure source code. It is possible to write ObjectScript routines at this level, but without the benefit of embedded SQL or other prepro- cessor syntax, such as macros."
+  },
+  {
+    "term": "InterSystems IRIS launcher",
+    "termKey": "intersystems",
+    "category": "System",
+    "definition": "The icon that appears on the taskbar when you start InterSystems IRIS on a Windows system. From this icon, you can configure and manage your InterSystems IRIS systems as well as create and manage classes and routines."
+  },
+  {
+    "term": "I/O translation",
+    "termKey": "io",
+    "category": "System",
+    "definition": "National Language Support facility consisting of a set of tables that transform between the character set of the computer and a particular device’s character set. See also Language Configuration. IP address InterSystems IRIS System. The numeric identifier for a computer according to the Internet Protocol (IP). InterSys- tems IRIS supports both IPv6 and IPv4 formats. For more information on InterSystems IRIS support for IPv6, see Use of IPv6 Addressing."
+  },
+  {
+    "term": "IRIS.DAT",
+    "termKey": "irisdat",
+    "category": "System",
+    "definition": "The primary volume in an InterSystems IRIS database. It contains InterSystems IRIS globals and routines."
+  },
+  {
+    "term": "ITG file",
+    "termKey": "itg",
+    "category": "System",
+    "definition": "An ASCII file that contains a database integrity report with an extension of .ITG for easy identification. An ITG file is created by a database integrity check."
+  },
+  {
+    "term": "Java",
+    "termKey": "java",
+    "category": "General",
+    "definition": "An object-oriented language originally created by Sun Microsystems."
+  },
+  {
+    "term": "JOBbed process",
+    "termKey": "jobbed",
+    "category": "System",
+    "definition": "A background process created by issuing an ObjectScript JOB command at the InterSystems IRIS prompt or from within an application. On the relational server system, server masters, and the server processes they create, are examples of JOBbed processes."
+  },
+  {
+    "term": "join",
+    "termKey": "join",
+    "category": "InterSystems SQL",
+    "definition": "A request for information from an InterSystems IRIS relational database base table (via a query, form, or report) in which data must be retrieved from more than one table, necessitating a link between tables."
+  },
+  {
+    "term": "journaling",
+    "termKey": "journaling",
+    "category": "System",
+    "definition": "A feature that, at the system manager’s option, causes InterSystems IRIS to keep a log of changes to all or selected globals in a journal file. If there is a system failure, these changes can be rolled forward. That is, an entire transaction can be reapplied to a database during a restore. See also Write Image Journaling."
+  },
+  {
+    "term": "KDC",
+    "termKey": "kdc",
+    "category": "System",
+    "definition": "Key Distribution Center. As part of a Kerberos installation, this is the central Kerberos server that ensures the proper authentication of all parties. Specifically, the KDC is part of the trusted third-party Kerberos server that generates the keys that form the basis of ticket-granting tickets and service tickets. On Windows, the Key Distri- bution Center is part of the Windows Domain Controller (DC) and is sometimes called by that name. The com- monality of the two initials is coincidental."
+  },
+  {
+    "term": "Kerberos",
+    "termKey": "kerberos",
+    "category": "System",
+    "definition": "A trusted third-party authentication system developed by Project Athena at MIT. It allows for the authentication of users or applications (collectively known as principals) by establishing a database of authentication information. This database is secured (and therefore trusted) and separate from any two parties performing authentication (which is why it is a third-party system). Kerberos is designed to be used on networks that are not necessarily secure, such as the Internet. It has been in use in large commercial and educational institutions since the late 1980’s."
+  },
+  {
+    "term": "key (unique index)",
+    "termKey": "key",
+    "category": "Objects",
+    "definition": "A key is another name for a unique index."
+  },
+  {
+    "term": "key-encryption key",
+    "termKey": "keyencryption",
+    "category": "System",
+    "definition": "With InterSystems IRIS database encryption, the second key involved in the process. The first key is used to encrypt the database and the key-encryption key — the second k ey — is used to encrypt (and therefore protect) the first key. When a database-encryption key is activated, it is decrypted with a key-encryption key and loaded into memory for use."
+  },
+  {
+    "term": "keyword (class definition)",
+    "termKey": "keyword",
+    "category": "Objects",
+    "definition": "A keyword defines a specific characteristic within a class definition. Also known as a class keyword."
+  },
+  {
+    "term": "language configuration",
+    "termKey": "language",
+    "category": "System",
+    "definition": "A set of four tables: character set, collation sequence, $X/$Y action, and pattern match; that define the device-independent aspects of National Language Support. Counterpart to the device-dependent National Language Support characteristic, I/O translation."
+  },
+  {
+    "term": "license",
+    "termKey": "license",
+    "category": "System",
+    "definition": "An agreement between InterSystems and its customer that defines the components of InterSystems IRIS software available to the customer and the number of users who can use each component. A customer must be licensed to run InterSystems IRIS. License information is distributed in a Product Activation Key and stored on your system in a file named iris.key."
+  },
+  {
+    "term": "list",
+    "termKey": "list",
+    "category": "Objects",
+    "definition": "An ordered collection that uses slot numbers to access data. Each list is projected to SQL as a single list field."
+  },
+  {
+    "term": "locale",
+    "termKey": "locale",
+    "category": "System",
+    "definition": "The parameters that specify the user language, country, and any other, special variant preferences. A locale specifies user-visible conventions for the input, output, and processing of data, such as the representation of number and dates, and the names of days and months."
+  },
+  {
+    "term": "lock table",
+    "termKey": "lock",
+    "category": "System",
+    "definition": "An InterSystems IRIS internal table where all LOCK commands issued by processes are stored. You can view this table by using the System Viewer."
+  },
+  {
+    "term": "log files",
+    "termKey": "log",
+    "category": "System",
+    "definition": "Files in the system manager’s directory containing messages about system operations, errors and metrics. These include the messages log (messages.log), System Monitor log (SystemMonitor.log), alerts log (alerts.log), initialization log (iboot.log), and journal history log (journal.log). For information about these log files, see Moni- toring Log Files."
+  },
+  {
+    "term": "logical format",
+    "termKey": "logical",
+    "category": "Objects",
+    "definition": "The logical format of an object property is the format used in memory. All comparisons and calculations are performed on this format."
+  },
+  {
+    "term": "login role",
+    "termKey": "login",
+    "category": "System",
+    "definition": "Any role that becomes associated with a user by the action of authenticating to InterSystems IRIS (and not afterwards)."
+  },
+  {
+    "term": "macro preprocessor",
+    "termKey": "macro",
+    "category": "ObjectScript",
+    "definition": "A part of the ObjectScript compiler that converts macro code into usable ObjectScript code."
+  },
+  {
+    "term": "map",
+    "termKey": "map",
+    "category": "System",
+    "definition": "In InterSystems IRIS, a definition that determines how data is stored when using InterSystems SQL"
+  },
+  {
+    "term": "System. In InterSystems IRIS, a definition that determines how data is stored when using InterSystems SQL",
+    "termKey": "system",
+    "category": "Storage",
+    "definition": "In Windows, a unit within an InterSystems IRIS database consisting of 400 2048-byte blocks, residing in a flat file. In UNIX®, a unit within an InterSystems IRIS database consisting of 400 2048-byte blocks, residing in a single UNIX® file or raw partition."
+  },
+  {
+    "term": "mapped global reference",
+    "termKey": "mapped",
+    "category": "System",
+    "definition": "A logical reference to a global that resides in a different directory, without using the extended reference syntax otherwise required to refer to a remote global. You can refer to the global as if it resides in the database’s data location. That home directory can be on the same computer or any other computer on the network known to your InterSystems IRIS server. The system manager defines the actual location of a mapped global using the namespace/network configuration editor."
+  },
+  {
+    "term": "matching role",
+    "termKey": "matching",
+    "category": "System",
+    "definition": "With a secured InterSystems IRIS application, a role that causes additional privileges to be granted. If a user holds a matching role, then, while using the application, that user is also granted whatever target roles are specified. Sometimes known as a match role."
+  },
+  {
+    "term": "metadata class",
+    "termKey": "metadata",
+    "category": "Objects",
+    "definition": "A metadata class provides an interface to examine the data stored in object applications. See the %Dictionary.ClassDefinition class."
+  },
+  {
+    "term": "method generator",
+    "termKey": "method",
+    "category": "Objects",
+    "definition": "Method generators are methods that generate runtime code based on the values of class parameters."
+  },
+  {
+    "term": "mount, mounted",
+    "termKey": "mount",
+    "category": "System",
+    "definition": "To mount a database is to explicitly connect it to an instance of InterSystems IRIS, thereby making its contents immediately available for use. A database in this state is described as mounted."
+  },
+  {
+    "term": "multidimensional property",
+    "termKey": "multidimensional",
+    "category": "Objects",
+    "definition": "Multidimensional properties act like array nodes. Multidimensional attributes do not have any associated property methods, cannot be accessed using dot syntax, and are not projected to SQL or Java. 20 InterSystems Glossary of Terms Complete Glossary of Terms"
+  },
+  {
+    "term": "multidrop link",
+    "termKey": "multidrop",
+    "category": "General",
+    "definition": "Network hardware that connects more than two computers."
+  },
+  {
+    "term": "multiple inheritance",
+    "termKey": "multiple",
+    "category": "Objects",
+    "definition": "Multiple inheritance allows a class to have more than one superclass. A class inherits characteristics and class members from each of its superclasses."
+  },
+  {
+    "term": "namespace",
+    "termKey": "namespace",
+    "category": "System",
+    "definition": "A logical entity that provides access to data and code physically stored in databases. References to database objects are made logically through namespaces rather than to physical database locations. Namespace mappings specify the database locations of globals so users and code need only make a simple reference to a global in a namespace, without having to be concerned with the physical location of the data it contains. For example, namespace mappings allow you to collect objects from multiple databases into a single namespace, which serves as a single frame of reference, as if they were all stored together. For information on namespace names, see Configuring Namespaces."
+  },
+  {
+    "term": "National Language Support (NLS)",
+    "termKey": "national",
+    "category": "System",
+    "definition": "An InterSystems IRIS facility that helps you overcome differences among national languages that affect the way you enter, display, process, store, and transfer data. It consists of a set of tables that specify the internal character set, a collation sequence, pattern match, $X/$Y actions, and I/O translation. The system manager defines and loads these tables with the NLS utility. Users select tables for their processes and devices with the %NLS utility and the K and Y parameters to OPEN and USE commands."
+  },
+  {
+    "term": "network interface device",
+    "termKey": "network",
+    "category": "General",
+    "definition": "The hardware that connects a computer to a network link."
+  },
+  {
+    "term": "node",
+    "termKey": "node",
+    "category": "System",
+    "definition": "One entry within a multidimensional array (global)."
+  },
+  {
+    "term": "object",
+    "termKey": "object",
+    "category": "Objects",
+    "definition": "A logical entity that encapsulates all of the data representing a specific item and the interface to manipulate that data."
+  },
+  {
+    "term": "ObjectScript",
+    "termKey": "objectscript",
+    "category": "System",
+    "definition": "One of the programming languages supported by InterSystems IRIS."
+  },
+  {
+    "term": "object-SQL projection",
+    "termKey": "objectsql",
+    "category": "Objects",
+    "definition": "The object-SQL projection determines how InterSystems IRIS object functionality is projected to elements of InterSystems SQL."
+  },
+  {
+    "term": "ODBC",
+    "termKey": "odbc",
+    "category": "General",
+    "definition": "See Open Database Connectivity."
+  },
+  {
+    "term": "OID",
+    "termKey": "oid",
+    "category": "Objects",
+    "definition": "See object identifier."
+  },
+  {
+    "term": "one-way outer join",
+    "termKey": "oneway",
+    "category": "InterSystems SQL",
+    "definition": "A programmer-defined join that designates the first table specified in the join condition as the source table and includes all rows from the source table in the output table, even if there is no match in the second table. The source table pulls relevant information out of the second table but never sacrifices its own rows for lack of a match in the second table. 22 InterSystems Glossary of Terms Complete Glossary of Terms"
+  },
+  {
+    "term": "Open Database Connectivity (ODBC)",
+    "termKey": "open",
+    "category": "General",
+    "definition": "The Microsoft Open Database Connectivity, or ODBC, provides a standard interface for data access on Windows."
+  },
+  {
+    "term": "Operating-System–based authentication",
+    "termKey": "operatingsystembased",
+    "category": "System",
+    "definition": "An authentication mechanism by which InterSystems IRIS accepts the identify of a user who has successfully authenticated to an operating system. The InterSystems IRIS user account must match the name of the operating system account. Also, once authenticated, the user’s activities are restricted by the account’s roles."
+  },
+  {
+    "term": "OREF",
+    "termKey": "oref",
+    "category": "Objects",
+    "definition": "See object reference."
+  },
+  {
+    "term": "outgoing lock",
+    "termKey": "outgoing",
+    "category": "System",
+    "definition": "A lock issued by a process on the local client computer on an item on a remote server computer. It is also called a client lock, since the local computer is the client. When you run the LOCKTAB utility from the Terminal or the Locks utility in System Operations Utilities, this lock appears in the Lock Table display with an asterisk preceding the pid of the process issuing the lock. If incremental locks are issued on an item that already exists in the Lock Table, these requests are not sent across the network. Rather, the local computer keeps track of the number of incremental locks on outgoing locks."
+  },
+  {
+    "term": "override",
+    "termKey": "override",
+    "category": "Objects",
+    "definition": "By default, every class inherits the class members of its superclasses. However, unless a member is marked final, you can chose to modify the member so it acts differently in the subclass. This is called overriding the member."
+  },
+  {
+    "term": "package",
+    "termKey": "package",
+    "category": "Objects",
+    "definition": "A package contains a set of related classes."
+  },
+  {
+    "term": "parameter",
+    "termKey": "parameter",
+    "category": "Objects",
+    "definition": "A class parameter is a special constant set during application design time. Class parameters are available to all instances of a class and can be used for any purpose you wish. Every data type class has a set of class parameters that impose behavior on attributes based on that data type."
+  },
+  {
+    "term": "parent ID",
+    "termKey": "parent",
+    "category": "Objects",
+    "definition": "In an InterSystems IRIS relational database, a field automatically created to define the Row ID in the dependent child table when a characteristic link is defined. The Parent ID acts like a designative reference from the child table to the parent table and has the same name as the parent table."
+  },
+  {
+    "term": "parent-child relationship",
+    "termKey": "parentchild",
+    "category": "Objects",
+    "definition": "In a parent-child relationship, the existence of child object is dependent on the existence of a parent object. That is, a child object must be associated with a parent object and that child object is deleted when the parent object is deleted."
+  },
+  {
+    "term": "partition",
+    "termKey": "partition",
+    "category": "System",
+    "definition": "Another name for the process private section of memory. Each process has its own partition for data private to that process. Also called the InterSystems IRIS partition or user partition. For UNIX®, see also Raw Disk Par- tition."
+  },
+  {
+    "term": "passing by reference",
+    "termKey": "passing",
+    "category": "System",
+    "definition": "A way of passing the address, rather than the value, of an argument. This allows access to the actual variable so that the variable’s actual value can be changed by the method, function, or routine to which it is passed. passing by value A way of passing the value of an argument. This provides a copy of the variable. As a result, the variable’s actual value cannot be changed by the method, function, or routine to which it is passed."
+  },
+  {
+    "term": "pattern match table",
+    "termKey": "pattern",
+    "category": "System",
+    "definition": "Internal table that tells InterSystems IRIS whether to treat characters as alphabetic, punctuation, numeric, or control characters."
+  },
+  {
+    "term": "permission",
+    "termKey": "permission",
+    "category": "System",
+    "definition": "The ability to perform an activity on a resource. For database resources, the available permissions are Read and Write. For services, applications, or administrative actions, the available permission is Use."
+  },
+  {
+    "term": "persistent class",
+    "termKey": "persistent",
+    "category": "Objects",
+    "definition": "Objects of a persistent class can be stored in the database. Persistent classes inherit the persistent interface from the %Persistent class to manage data storage and retrieval."
+  },
+  {
+    "term": "point-to-point link",
+    "termKey": "pointtopoint",
+    "category": "General",
+    "definition": "A network link that connects two computers, one at each end."
+  },
+  {
+    "term": "polymorphism",
+    "termKey": "polymorphism",
+    "category": "Objects",
+    "definition": "Runtime references to overridden methods are dispatched based on the type of object it is. For example, if the Person class has a Student subclass with an overridden method Print(), Student objects will always use the Student Print() method even when they are opened as Person objects."
+  },
+  {
+    "term": "populate utility",
+    "termKey": "populate",
+    "category": "Objects",
+    "definition": "The Populate Utility, implemented by the %Populate class, allows you to add dummy objects to your database for testing purposes."
+  },
+  {
+    "term": "port number",
+    "termKey": "port",
+    "category": "General",
+    "definition": "A device number that identifies a particular network port. You must specify this number when connecting to a server from a client."
+  },
+  {
+    "term": "primary key",
+    "termKey": "primary",
+    "category": "InterSystems SQL",
+    "definition": "A primary key is used by some systems to identify data."
+  },
+  {
+    "term": "principal device",
+    "termKey": "principal",
+    "category": "System",
+    "definition": "The input/output device associated with your process, usually your terminal or computer keyboard and monitor. For jobbed processes, you can assign the principal device in the JOB command or set it as the principal device of the parent process in the System Configuration editor. If you do not set the device in one of these ways then the default device for jobbed processes is the null device. UNIX®: For interactive users, the terminal at which the user enters InterSystems IRIS. It is the same as the prin- cipal input device UNIX® has assigned to that user. For jobbed processes, the principal device can be assigned by the JOB command, and is /dev/null by default."
+  },
+  {
+    "term": "priority setting",
+    "termKey": "priority",
+    "category": "System",
+    "definition": "In UNIX®, priority is the system-level definition of the order in which jobs are assigned system resources and responses."
+  },
+  {
+    "term": "private",
+    "termKey": "private",
+    "category": "Objects",
+    "definition": "A private class member can only be accessed by methods belonging to that class. Both methods and properties can be private."
+  },
+  {
+    "term": "privilege",
+    "termKey": "privilege",
+    "category": "System",
+    "definition": "A specification of the ability to perform a particular action on a particular resource, such as being able to read the DocBook database. Only roles can hold privileges."
+  },
+  {
+    "term": "privileged routine application",
+    "termKey": "privileged",
+    "category": "System",
+    "definition": "A set of one or more InterSystems IRIS routines that are grouped together for security purposes. Such a group is treated as a single application and is represented by a single resource."
+  },
+  {
+    "term": "procedure",
+    "termKey": "procedure",
+    "category": "System",
+    "definition": "A named sequence of statements executed as a unit."
+  },
+  {
+    "term": "process-private section",
+    "termKey": "processprivate",
+    "category": "System",
+    "definition": "The area of memory used solely by a particular process."
+  },
+  {
+    "term": "process",
+    "termKey": "process",
+    "category": "System",
+    "definition": "An entity scheduled by the system software, which provides a context in which an image executes. Within InterSystems IRIS, a process is the context in which server-based code executes."
+  },
+  {
+    "term": "Product Activation Key",
+    "termKey": "product",
+    "category": "System",
+    "definition": "A paper key that arrives with your software distribution on which is printed an encoded version of your InterSystems IRIS license. You must enter this information into a file called IRIS.KEY in order to activate the license."
+  },
+  {
+    "term": "programmer mode",
+    "termKey": "programmer",
+    "category": "System",
+    "definition": "The mode in which all program development activity takes place. In programmer mode, you initiate pro- grams from the InterSystems IRIS prompt, and the InterSystems IRIS prompt reappears at the conclusion of every program you run. Programmer mode encompasses the InterSystems IRIS environment and all programs that can be called from it, including the InterSystems SQL development environment and environment. In programmer mode, you can create applications that users subsequently run in application mode."
+  },
+  {
+    "term": "project",
+    "termKey": "project",
+    "category": "System",
+    "definition": "A user-defined list of related source documents (such as routines or class definitions). Visual Studio Code uses projects to help organize application development."
+  },
+  {
+    "term": "property",
+    "termKey": "property",
+    "category": "Objects",
+    "definition": "A data element representing a specific characteristic associated with a class. Each object of that class contains a literal value for the property or a reference to another object representing the data. Together, a class’s properties represent its state."
+  },
+  {
+    "term": "public",
+    "termKey": "public",
+    "category": "Objects",
+    "definition": "A public class member can be seen and used by any class."
+  },
+  {
+    "term": "query",
+    "termKey": "query",
+    "category": "General",
+    "definition": "A request for data that meets the specified criteria. InterSystems IRIS supports predefined queries in SQL or ObjectScript (defined in classes) or ad hoc queries (from embedded SQL or ODBC)."
+  },
+  {
+    "term": "range indicator",
+    "termKey": "range",
+    "category": "System",
+    "definition": "A range indicator (:) allows you to indicate a range of globals in one entry. For example A:Cost would include all globals from ^Aardvark to ^Cost, but would not include ^CrossReference."
+  },
+  {
+    "term": "raw disk partition",
+    "termKey": "raw",
+    "category": "System",
+    "definition": "A UNIX® operating system division of a disk, that is not associated with a UNIX® file system. When an InterSystems IRIS database resides in a raw disk partition, it does not have UNIX® file name."
+  },
+  {
+    "term": "RECEIVE",
+    "termKey": "receive",
+    "category": "System",
+    "definition": "An InterSystems IRIS system process that broadcasts InterSystems IRIS network configuration information to all known remote computers."
+  },
+  {
+    "term": "reconfiguration",
+    "termKey": "reconfiguration",
+    "category": "System",
+    "definition": "In InterSystems IRIS networking, the alteration of either network hardware or remote system, dataset or namespace definitions."
+  },
+  {
+    "term": "recovery",
+    "termKey": "recovery",
+    "category": "System",
+    "definition": "A method of recovering from a loss of data integrity after a system failure."
+  },
+  {
+    "term": "redirection",
+    "termKey": "redirection",
+    "category": "System",
+    "definition": "A way to make the location of a global invisible to an application. InterSystems IRIS supports two types of redirection: namespace definition and replication."
+  },
+  {
+    "term": "reference",
+    "termKey": "reference",
+    "category": "Objects",
+    "definition": "A reference points to another object or table, creating a one-way relationship between a property or field and the referenced object or table."
+  },
+  {
+    "term": "registered class",
+    "termKey": "registered",
+    "category": "Objects",
+    "definition": "A registered class is derived from the %RegisteredObject class. InterSystems IRIS automatically manages object references for registered classes and supports polymorphism."
+  },
+  {
+    "term": "relational database",
+    "termKey": "relational",
+    "category": "General",
+    "definition": "A collection of related data that is organized according to the relational model."
+  },
+  {
+    "term": "relationship",
+    "termKey": "relationship",
+    "category": "Objects",
+    "definition": "A two-way reference between properties of two different classes."
+  },
+  {
+    "term": "relative dot syntax",
+    "termKey": "relative",
+    "category": "ObjectScript",
+    "definition": "Relative dot syntax (..) is used to reference a property or invoke a method of the current class."
+  },
+  {
+    "term": "remote computer",
+    "termKey": "remote",
+    "category": "System",
+    "definition": "Any computer that is linked to the local computer via a network link."
+  },
+  {
+    "term": "replicated global",
+    "termKey": "replicated",
+    "category": "System",
+    "definition": "A global whose namespace mapping defines one or more locations for duplicate copies in addition to the primary data location. Any SET or KILL operations on the original copy of a replicated global are performed on all copies of that global. Any SET or KILL operations performed on a copy of a replicated global only affect the copy."
+  },
+  {
+    "term": "required field",
+    "termKey": "required",
+    "category": "Objects",
+    "definition": "A field in a table that must contain a valid non-null value before the row can be filed. See Required Property."
+  },
+  {
+    "term": "resource",
+    "termKey": "resource",
+    "category": "System",
+    "definition": "The smallest granular unit that can be protected with InterSystems security. A resource represents one or more assets, which can be databases, access to applications, or other elements. Generally, resources can only include homogeneous sets of sets of assets."
+  },
+  {
+    "term": "result set",
+    "termKey": "result",
+    "category": "Objects",
+    "definition": "A result set contains the data returned by a query. It can be processed using the Query Interface."
+  },
+  {
+    "term": "role",
+    "termKey": "role",
+    "category": "System",
+    "definition": "An entity within InterSystems security that can receive the ability to both perform actions and view or alter data. These abilities are granted to a role in the form of privileges. When a user becomes a member of a role, it receives the role’s privileges."
+  },
+  {
+    "term": "role-assignment mechanism",
+    "termKey": "roleassignment",
+    "category": "System",
+    "definition": "A means by which a user is given various roles for using InterSystems IRIS. Role assignment can occur using a native InterSystems IRIS mechanism, LDAP, or delegated (that is, user-defined) code. It is part of the authorization process."
+  },
+  {
+    "term": "roll back",
+    "termKey": "roll",
+    "category": "System",
+    "definition": "A process by which an incomplete transaction can be removed from your InterSystems IRIS database. InterSystems IRIS removes such changes as part of its recovery procedure. See Journaling, Transaction."
+  },
+  {
+    "term": "root class",
+    "termKey": "root",
+    "category": "Objects",
+    "definition": "The root class of an extent is the top class in its hierarchy. Every class is the root class of its own extent. However, the term root class generally refers to the primary persistent superclass of a class hierarchy, especially in the context of data storage."
+  },
+  {
+    "term": "routine",
+    "termKey": "routine",
+    "category": "System",
+    "definition": "In InterSystems IRIS, an ObjectScript program. Routines are stored in an InterSystems IRIS database. 28 InterSystems Glossary of Terms Complete Glossary of Terms"
+  },
+  {
+    "term": "row",
+    "termKey": "row",
+    "category": "InterSystems SQL",
+    "definition": "A group of related field values that describes an entity in the domain of a relational table. For example, in a Customers table, a row describes a single customer. Also called a record in traditional data processing terminology, or a tuple in relational database terminology."
+  },
+  {
+    "term": "schema evolution",
+    "termKey": "schema",
+    "category": "Objects",
+    "definition": "Schema evolution allows you to add new class members to a class without losing the ability to access data stored using the old class definition."
+  },
+  {
+    "term": "search user",
+    "termKey": "search",
+    "category": "System",
+    "definition": "The user with which InterSystems IRIS connects to an LDAP server and whose privileges allow for searching the LDAP database. Its value is specified in either the LDAP search user DN or LDAP username to use for searches field on the LDAP Configurations page (System Administration > Security > System Security > LDAP Configurations. (Note that the page name and menu choice includes Kerberos, if that is enabled.)"
+  },
+  {
+    "term": "secondary volume",
+    "termKey": "secondary",
+    "category": "System",
+    "definition": "Any volume in a volume set other than the primary volume. There can be from zero through seven secondary volumes in an InterSystems IRIS database, for a total of eight volumes."
+  },
+  {
+    "term": "Security Advisor",
+    "termKey": "security",
+    "category": "System",
+    "definition": "A diagnostic tool within the Management Portal that provides feedback on those areas in which an Inter- Systems IRIS instance’s setup differs from that suggested by typical security standards."
+  },
+  {
+    "term": "selectivity",
+    "termKey": "selectivity",
+    "category": "InterSystems SQL",
+    "definition": "The selectivity of a property specifies the approximate frequency of specific values within the entire distribution of values."
+  },
+  {
+    "term": "sequential file",
+    "termKey": "sequential",
+    "category": "General",
+    "definition": "A file whose data is stored in the order in which it is entered."
+  },
+  {
+    "term": "server lock",
+    "termKey": "server",
+    "category": "System",
+    "definition": "See Incoming Lock."
+  },
+  {
+    "term": "service",
+    "termKey": "service",
+    "category": "System",
+    "definition": "An entity within InterSystems security that regulates access to InterSystems IRIS through an existing pathway, for example, Telnet or JDBC. An application sits on top of a service when connecting to InterSystems IRIS."
+  },
+  {
+    "term": "shallow save",
+    "termKey": "shallow",
+    "category": "Objects",
+    "definition": "A shallow save saves an object but not the objects that it references. For more details, see the class reference content for the %Persistent.%Save method."
+  },
+  {
+    "term": "shared lock",
+    "termKey": "shared",
+    "category": "Objects",
+    "definition": "A shared lock holds a shared lock on an object while it is loaded from the database and an exclusive lock while it is being saved if it spans more than one node or if it is being updated. No lock is obtained for an object in a single node being saved for the first time."
+  },
+  {
+    "term": "SOAP",
+    "termKey": "soap",
+    "category": "General",
+    "definition": "A protocol specification for the implementation of web services. It uses XML as its message format, and usually relies on other application layer protocols — such as Remote Procedure Call (RPC) and HTTP — for message negotiation and transmission. SOAP was formerly an acronym that stood for Simple Object Access Pro- tocol, but it is no longer an acronym — it is simply the name of the protocol."
+  },
+  {
+    "term": "special variable",
+    "termKey": "special",
+    "category": "System",
+    "definition": "One of many variables that InterSystems IRIS maintains. Application developers can examine special variables to get information about the system."
+  },
+  {
+    "term": "SQL",
+    "termKey": "sql",
+    "category": "General",
+    "definition": "Structured Query Language. SQL is the ANSI-standard fourth generation programming language designed specifically for accessing and maintaining relational data bases."
+  },
+  {
+    "term": "SQLCODE",
+    "termKey": "sqlcode",
+    "category": "InterSystems SQL",
+    "definition": "A local variable that holds the status of executed SQL statements. If an error occurred during execution, the SQLCODE contains the number of the error. 30 InterSystems Glossary of Terms Complete Glossary of Terms"
+  },
+  {
+    "term": "status code",
+    "termKey": "status",
+    "category": "Objects",
+    "definition": "A status code is returned by some methods and indicates whether the method was successfully executed. See %Status."
+  },
+  {
+    "term": "storage definition",
+    "termKey": "storage",
+    "category": "Objects",
+    "definition": "A storage definition consists of a storage class and any defined SQL mappings. Together, these elements determine how data is stored."
+  },
+  {
+    "term": "stored procedure",
+    "termKey": "stored",
+    "category": "InterSystems SQL",
+    "definition": "Stored procedures allow you to execute a query or class method from ODBC or JDBC."
+  },
+  {
+    "term": "stream interface",
+    "termKey": "stream",
+    "category": "Objects",
+    "definition": "The InterSystems IRIS stream interface is used to manipulate streams in ObjectScript, SQL, and Java."
+  },
+  {
+    "term": "superserver",
+    "termKey": "superserver",
+    "category": "System",
+    "definition": "The server that listens on a specified port for incoming connections to InterSystems IRIS and dispatches them to the appropriate subsystem. The default superserver port is 1972; if 1972 is not available, the superserver listens on the next available port, starting with 51773. To set the superserver port number, use the Superserver Port Number field of the Memory and Startup page of the Management Portal (System Administration > Configuration > System Configuration > Memory and Startup)."
+  },
+  {
+    "term": "swizzling",
+    "termKey": "swizzling",
+    "category": "Objects",
+    "definition": "The process of automatically pulling embedded and persistent objects into memory as soon as they are referenced. Also known as lazy loading."
+  },
+  {
+    "term": "table",
+    "termKey": "table",
+    "category": "InterSystems SQL",
+    "definition": "A data structure composed of rows representing specific entities and columns representing a specific data point about each entity."
+  },
+  {
+    "term": "target role",
+    "termKey": "target",
+    "category": "System",
+    "definition": "Within a secured InterSystems IRIS application, a role that is granted by an application to a user who is already the member of some other role (called a matching role). If a user holds a matching role, then, while using the application, the user can be granted one or more additional target roles."
+  },
+  {
+    "term": "TCP/IP",
+    "termKey": "tcpip",
+    "category": "General",
+    "definition": "Transmission Control Protocol/Internet Protocol, one of the communications protocols that can govern the connection between the Relational Client and Relational Server. Also referred to as TCP."
+  },
+  {
+    "term": "temporary global",
+    "termKey": "temporary",
+    "category": "System",
+    "definition": "A global that is stored in the temporary database, IRISTEMP. See Temporary Globals and the IRISTEMP"
+  },
+  {
+    "term": "Terminal",
+    "termKey": "terminal",
+    "category": "System",
+    "definition": "Formally, this term refers to the Windows Terminal application. Informally, this term can also refer to the ObjectScript shell, the interactive command line interface to InterSystems IRIS. The Terminal application includes the ObjectScript shell but also provides menus and additional options. See Using the Terminal and Using the ObjectScript Shell."
+  },
+  {
+    "term": "transaction",
+    "termKey": "transaction",
+    "category": "General",
+    "definition": "A logical unit of work. Application developers can define transactions using SQL or ObjectScript com- mands. InterSystems IRIS logs updates to globals in a transaction in the journal file. If a transaction is incomplete, it can be rolled back."
+  },
+  {
+    "term": "transient property",
+    "termKey": "transient",
+    "category": "Objects",
+    "definition": "A transient property is stored in memory but not on disk."
+  },
+  {
+    "term": "translation methods",
+    "termKey": "translation",
+    "category": "Objects",
+    "definition": "The translation methods are used to convert values between ODBC, display, logical, and storage formats."
+  },
+  {
+    "term": "trigger",
+    "termKey": "trigger",
+    "category": "InterSystems SQL",
+    "definition": "A sequence of actions defined by the developer to execute at various points during an InterSys- tems SQL application or an object application using InterSystems SQL Storage. Triggers are database actions initiated by INSERT, UPDATE, or DELETE actions performed on a table. Triggers help maintain integrity con- straints and other data dependencies."
+  },
+  {
+    "term": "UIC",
+    "termKey": "uic",
+    "category": "System",
+    "definition": "User Identification Code. The UIC of a database determines who can have access to globals in that database. On UNIX®, a UIC consists of a groupid, followed by a comma (,) and a userid; the system manager assigns UICs to users at the UNIX® level, and uses the InterSystems IRIS MSU utility to assign a UIC to each database."
+  },
+  {
+    "term": "unauthenticated access",
+    "termKey": "unauthenticated",
+    "category": "System",
+    "definition": "Access to InterSystems IRIS that is not based on any verification of user identity."
+  },
+  {
+    "term": "Unicode",
+    "termKey": "unicode",
+    "category": "System",
+    "definition": "An InterSystems IRIS collation designed to handle a 16-bit character set. This allows for 64K possible characters as opposed to ASCII which allows only 256 characters. This collation allows for smooth transition to foreign character sets containing more than 256 characters."
+  },
+  {
+    "term": "unique index",
+    "termKey": "unique",
+    "category": "Objects",
+    "definition": "A unique index specifies that each object has a unique value for the attribute or combination of attributes in the index."
+  },
+  {
+    "term": "unmounted",
+    "termKey": "unmounted",
+    "category": "System",
+    "definition": "An unmounted database is available for use by an instance of InterSystems IRIS but is not in active use. A reference to any of the contents of an unmounted database implicitly mounts it."
+  },
+  {
+    "term": "user account",
+    "termKey": "user",
+    "category": "System",
+    "definition": "The entity that allows individual users to log in to specific routines and namespaces on your system remotely and locally. You set up user accounts and/or device accounts using the System Operations Utility User Accts to facilitate better control over which users have access to specific routines, databases and namespaces."
+  },
+  {
+    "term": "valid subscript ranges",
+    "termKey": "valid",
+    "category": "System",
+    "definition": "Subscript ranges are valid when all subscripts in the range are valid. Examples of valid subscript ranges would be: (1):(10) or (\"a\"):(\"P\"). The first subscript in the range is inclusive, while the second is exclusive. Thus (1):(10) includes the subscript value 1 but does not include the value 10. This allows InterSystems IRIS to define an upper boundary on the range."
+  },
+  {
+    "term": "variable",
+    "termKey": "variable",
+    "category": "System",
+    "definition": "A symbolic name that is used to reference a data value. Variables can be local or global. Local variables reside in the local symbol table associated with a given partition. Global variables reside on disk."
+  },
+  {
+    "term": "view",
+    "termKey": "view",
+    "category": "InterSystems SQL",
+    "definition": "A view presents data from one or more tables that meets a specified criteria."
+  },
+  {
+    "term": "virtual field",
+    "termKey": "virtual",
+    "category": "InterSystems SQL",
+    "definition": "A field that does not correspond directly to a single stored value but instead is composed of several stored values. For example, the Row ID field for a child table is sometimes composed of two stored val- ues—the Ro w ID of the parent and a subscript corresponding to a particular child row."
+  },
+  {
+    "term": "watchpoint",
+    "termKey": "watchpoint",
+    "category": "System",
+    "definition": "Variable that you identify in a ZBREAK command. When its value is changed via a SET or KILL command, you can cause the interruption of routine execution and/or the execution of debugging actions you define within the ZBREAK command."
+  },
+  {
+    "term": "web application",
+    "termKey": "web",
+    "category": "System",
+    "definition": "A web-based application that can be registered with InterSystems IRIS and thereby regulated as part of the InterSystems security model. The user of a web application must be authenticated to InterSystems IRIS using one of the supported authentication mechanisms."
+  },
+  {
+    "term": "working set",
+    "termKey": "working",
+    "category": "System",
+    "definition": "The data typically cached in memory by a given application workload. See database cache."
+  },
+  {
+    "term": "write image journaling",
+    "termKey": "write",
+    "category": "System",
+    "definition": "A way to update an InterSystems IRIS database that minimizes the possibility of degradation of the internal integrity of the database, by retaining a copy of all modifications that the write daemon has not yet actually written into the database."
+  },
+  {
+    "term": "XData",
+    "termKey": "xdata",
+    "category": "General",
+    "definition": "A class member that holds a named block of well-formed XML for use after compilation. While an XData block may contain any structured information, it is typically used with production-related classes."
+  }
+]

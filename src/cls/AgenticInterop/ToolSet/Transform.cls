@@ -1,12 +1,16 @@
-/// Stub. The full Transform toolset (DTL CRUD + dry-run + lookup tables,
-/// BPL CRUD + validate, business rule CRUD + evaluate_rule) lands in Phase
-/// 4. See docs/TOOLS.md "ToolSet.Transform" for the complete catalog.
-Class AgenticInterop.ToolSet.Transform Extends %AI.ToolSet
+/// %AI.ToolSet wrapper for the Transform tool family. Composes the
+/// AgenticInterop.Tool.Transform %AI.Tool subclass via <Include> so
+/// the framework's auto-discovery picks up every public ClassMethod
+/// as a tool. Create/Update/Compile/Validate operations route through
+/// the confirmation gate.
+Class AgenticInterop.ToolSet.Transform Extends %AI.ToolSet [ DependsOn = AgenticInterop.Tool.Transform ]
 {
 
 XData Definition [ MimeType = application/xml ]
 {
-<ToolSet Name="Transform" Description="DTL transformations, BPL business processes, and business / routing rules (stub — populated in Phase 4).">
+<ToolSet Name="Transform">
+    <Description>DTL (Data Transformation Language), BPL (Business Process Language), lookup tables, and routing rules. Read-only inventory + DryRunDTL; Create/Update/Compile/Validate operations gated by the confirmation policy.</Description>
+    <Include Class="AgenticInterop.Tool.Transform"/>
 </ToolSet>
 }
 

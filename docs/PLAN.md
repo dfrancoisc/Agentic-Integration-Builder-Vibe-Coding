@@ -121,11 +121,12 @@ Read/write API summary (verified against IRIS for Health 2026.2 AI 162.0):
 
 Caveat: after a `%Save()` + recompile, `%Dictionary.CompiledParameter.%OpenId()` returns the previous (cached) value in the same process. The runtime `$parameter()` macro and SQL queries against `%Dictionary.Compiled*` see the new value immediately. The editor services therefore use SQL on read paths, never `%OpenId` for verification. (See memory note: "OpenId hits process-local OREF cache".)
 
-The remaining classes do still use %Persistent (chat sessions, audit, providers — these have row-level lifecycle, not class-level shape):
+The remaining classes do still use %Persistent (chat sessions, audit, LLM connections — these have row-level lifecycle, not class-level shape):
 
 | Class | Purpose |
 |---|---|
-| AgenticInterop.Data.Provider | LLM provider config + Wallet ref + semaphore status |
+| AgenticInterop.Data.Connection | LLM connection config (provider/model/region/baseURL/maxTokens/enabled/isDefault) plus last-test result. Secret lives in IRIS Secured Wallet, never in the row. SQL alias `AgenticInterop_Data.LLMConnection` because "Connection" is reserved. |
+| AgenticInterop.Connections | Facade for Connection rows + secrets. Modeled on the `Catalog.Connections` pattern from new-interoperability-health: List/Get/Create/Update/Delete + SetSecret/HasSecret/ClearSecret/Test/GetProvider, with idempotent wallet bootstrap and a seeded `bedrock-default` core row. Uses %AI.Provider.Create + ChatComplete for the live test call (universal across openai/anthropic/bedrock/gemini/azure-openai/nim — no per-kind boto3 code). |
 | AgenticInterop.Data.Conversation | Chat session header |
 | AgenticInterop.Data.Message | Chat message rows |
 | AgenticInterop.Data.ToolInvocation | Audit trail per tool call |
@@ -273,13 +274,15 @@ Each phase ends with a working slice and a commit + push to dfrancoisc/agentic_i
 - README install instructions verified by uninstalling + reinstalling on iris-agentic
 - Definition of done: `zpm "load ."` from a clean IRIS namespace creates the apps; `curl http://localhost:22773/api/agentic/health` returns 200 with namespace info.
 
-### Phase 1 — Data model + Provider config + semaphore
-- All Data.* classes
-- AgenticInterop.Wallet.Vault (helpers around %Wallet.KeyValue)
-- AgenticInterop.Provider.Factory (Provider row → %AI.Provider)
-- ProviderAPI: CRUD + healthcheck + secret-write endpoints
-- React admin page for Providers with semaphore (green/red/unknown)
-- Definition of done: configure Anthropic provider through UI, click Save and test, see green semaphore.
+### Phase 1 — Connection layer + admin UI (DONE)
+- AgenticInterop.Data.Connection (persistent, name-keyed, `LLMConnection` SQL alias)
+- AgenticInterop.Connections facade (List/Get/Create/Update/Delete + SetSecret/HasSecret/ClearSecret + Test + GetProvider). Idempotent wallet bootstrap (Security.Resources + %Wallet.Collection); seeds a `bedrock-default` core row.
+- AgenticInterop.Editor.ConnectionService thin REST wrapper.
+- Routes: `GET/POST /api/agentic/connections`, `GET/PUT/DELETE /api/agentic/connections/:name`, `POST /api/agentic/connections/:name/secret`, `POST /api/agentic/connections/:name/test`.
+- Secrets in real IRIS Secured Wallet (`%Wallet.KeyValue` collection `AgenticInteropConnections`, resource `AgenticInteropConnections`). Stored as JSON `{"value":"<key>"}`.
+- Test endpoint runs `%AI.Provider.Create(provider, settings).ChatComplete(model, [{role:user, content:"reply with the single word ok"}], 0.0, 16)` — works for all 6 kinds (openai/anthropic/bedrock/gemini/azure-openai/nim) without per-kind code. Bedrock-specific: settings use `bearer_token` (not `api_key`); `AWS_BEARER_TOKEN_BEDROCK` and `AWS_REGION` env vars set via `$system.Util.SetEnviron` so the Rust LLM library picks them up.
+- Admin SPA "Connections" tab with list (status dot, enabled/default/core badges), detail form (name, displayName, description, provider, enabled, isDefault, model, maxTokens, region, baseURL, masked secret), and a live "Test connection" button that posts to `/test` and renders green/red with model + latency or verbatim error.
+- Definition of done: paste a Bedrock bearer through the UI, click Test connection, see green semaphore with model + latency. ✓ verified live (3008ms round-trip to Sonnet 4).
 
 ### Phase 2 — Single ToolSet + Skill scaffolding + non-streaming chat
 - AgenticInterop.ToolSet.Catalog with a stub `search_ens(query)` returning fake data

@@ -11,7 +11,7 @@
 // to /agentic/admin/).
 
 const API = '/api/agentic';
-const TABS = ['agents', 'mcps', 'toolsets', 'tools', 'skills'];
+const TABS = ['agents', 'mcps', 'toolsets', 'tools', 'skills', 'connections', 'catalogs', 'audit'];
 const AUTH_KEY = 'AGENTIC_AUTH';
 
 // Bearer + namespace received from inject.js via postMessage. Set
@@ -64,14 +64,19 @@ const $ = (id) => document.getElementById(id);
 
 // -------- auth helpers --------
 
+// Stored in localStorage so credentials survive iframe close+reopen,
+// browser tab restarts, and overlay dismissals. The parent IRIS shell
+// is already authenticated; we want to ride that for the duration of
+// the IRIS session, not prompt every time the AI Settings overlay
+// reopens.
 function getStoredAuth() {
-    try { return sessionStorage.getItem(AUTH_KEY) || ''; } catch { return ''; }
+    try { return localStorage.getItem(AUTH_KEY) || ''; } catch { return ''; }
 }
 function setStoredAuth(basic) {
-    try { sessionStorage.setItem(AUTH_KEY, basic); } catch {}
+    try { localStorage.setItem(AUTH_KEY, basic); } catch {}
 }
 function clearStoredAuth() {
-    try { sessionStorage.removeItem(AUTH_KEY); } catch {}
+    try { localStorage.removeItem(AUTH_KEY); } catch {}
 }
 
 function showLoginOverlay(message) {
@@ -157,7 +162,11 @@ async function bootstrapAuth() {
         authValidated = true;
         return;
     }
-    if (stored) clearStoredAuth();
+    // DO NOT clear stored creds on probe failure here. The probe could
+    // have failed for transient reasons (server restart, network blip,
+    // 5xx) — wiping creds turns one transient failure into "user is
+    // re-prompted forever." Keep them; they'll succeed on the next
+    // bootstrap or be replaced when the user signs in via the overlay.
     await showLoginOverlay();
     authValidated = true;
 }
@@ -181,15 +190,17 @@ async function api(path, opts = {}) {
     let json = null;
     try { json = text ? JSON.parse(text) : null; } catch (e) { /* keep null */ }
     if (res.status === 401) {
-        // We were authenticated at bootstrap; mid-session token
-        // expired. DO NOT auto-prompt — that produced the rapid-fire
-        // re-prompt loop the customer flagged. Surface a toast and
-        // throw; the user can manually re-trigger bootstrap by
-        // refreshing the modal (close + reopen the AI Settings tab).
-        authValidated = false;
-        bridgeBearer = '';
-        toast('Session expired — close and reopen AI Settings to sign in again.', 'error');
-        const err = new Error('Authentication expired');
+        // Bootstrap succeeded once and got us a working credential. A
+        // mid-session 401 is almost always either (a) a transient
+        // server-side hiccup, or (b) a single endpoint that requires
+        // a different scope. Either way, do NOT reset authValidated
+        // and do NOT clear stored creds — that turns one bad request
+        // into a forced re-login on the next click, which is the
+        // exact pain the customer escalated. Surface a toast for this
+        // request and let the next call try again with the same
+        // credentials.
+        toast('Authorization rejected for this request.', 'error');
+        const err = new Error('Authorization rejected');
         err.status = 401;
         throw err;
     }
@@ -228,10 +239,14 @@ function setTab(tab) {
     document.querySelectorAll('#tabs button').forEach(b => {
         b.classList.toggle('active', b.dataset.tab === tab);
     });
+    // Tabs without a per-row detail pane (audit, catalogs) get the
+    // whole viewport — body[data-layout=full] hides #detail-panel
+    // and lets #list-panel flex to 100% width.
+    document.body.dataset.layout = (tab === 'audit' || tab === 'catalogs') ? 'full' : 'split';
     $('list-title').textContent = ({
-        agents: 'Agents', mcps: 'MCPs', toolsets: 'ToolSets', tools: 'Tools', skills: 'Skills'
+        agents: 'Agents', mcps: 'MCPs', toolsets: 'ToolSets', tools: 'Tools', skills: 'Skills', connections: 'Connections', catalogs: 'Catalogs', audit: 'Audit'
     })[tab];
-    $('btn-new').style.display = (tab === 'tools' || tab === 'skills') ? 'none' : 'inline-block';
+    $('btn-new').style.display = (tab === 'tools' || tab === 'skills' || tab === 'catalogs' || tab === 'audit') ? 'none' : 'inline-block';
     $('detail-panel').hidden = true;
     loadList();
 }
@@ -266,6 +281,16 @@ async function loadList() {
             state.list = data.skills || [];
             state.registry.skills = state.list;
             renderSkillList();
+        } else if (state.tab === 'connections') {
+            const data = await get('/connections');
+            state.list = data.connections || [];
+            renderConnectionList();
+        } else if (state.tab === 'catalogs') {
+            const data = await get('/catalog/status');
+            state.list = [data];
+            renderCatalogList();
+        } else if (state.tab === 'audit') {
+            await loadAuditList();
         } else if (state.tab === 'tools') {
             // Tools view: flatten across all toolsets that the registry knows
             const data = await get('/registry/toolsets');
@@ -284,13 +309,18 @@ function renderAgentList() {
     list.innerHTML = '';
     for (const a of state.list) {
         const isUser = a.class.indexOf('AgenticInterop.User.Agent.') === 0;
+        const customizedBadge = a.customized
+            ? '<span class="badge user" title="Edits saved as override row that survives zpm load.">customized</span>'
+            : '';
         const div = document.createElement('div');
         div.className = 'list-item';
+        div.dataset.id = a.class;
         div.innerHTML = `
             <div class="row1">
                 ${escapeHtml(a.name || shortName(a.class))}
                 <span class="badge ${isUser ? 'user' : 'shipped'}">${isUser ? 'user' : 'shipped'}</span>
                 ${a.abstract ? '<span class="badge abstract">abstract</span>' : ''}
+                ${customizedBadge}
             </div>
             <div class="row2"><code>${escapeHtml(a.class)}</code></div>
             <div class="row2 desc">${escapeHtml((a.description || '').replace(/\s+/g, ' ').trim() || '—')}</div>
@@ -306,12 +336,17 @@ function renderMCPList() {
     list.innerHTML = '';
     for (const m of state.list) {
         const isUser = m.class.indexOf('AgenticInterop.User.MCP.') === 0;
+        const customizedBadge = m.customized
+            ? '<span class="badge user" title="Edits saved as an override row that survives zpm load.">customized</span>'
+            : '';
         const div = document.createElement('div');
         div.className = 'list-item';
+        div.dataset.id = m.class;
         div.innerHTML = `
             <div class="row1">
                 ${escapeHtml(m.name || shortName(m.class))}
                 <span class="badge ${isUser ? 'user' : 'shipped'}">${isUser ? 'user' : 'shipped'}</span>
+                ${customizedBadge}
             </div>
             <div class="row2"><code>${escapeHtml(m.class)}</code></div>
             <div class="row2 desc">${escapeHtml((m.shortDescription || m.description || '').replace(/\s+/g, ' ').trim() || '—')}</div>
@@ -328,12 +363,17 @@ function renderToolSetList() {
     list.innerHTML = '';
     for (const t of state.list) {
         const isUser = t.class.indexOf('AgenticInterop.User.ToolSet.') === 0;
+        const customizedBadge = t.customized
+            ? '<span class="badge user" title="Edits saved as override row that survives zpm load.">customized</span>'
+            : '';
         const div = document.createElement('div');
         div.className = 'list-item';
+        div.dataset.id = t.class;
         div.innerHTML = `
             <div class="row1">
                 ${escapeHtml(t.name || shortName(t.class))}
                 <span class="badge ${isUser ? 'user' : 'shipped'}">${isUser ? 'user' : 'shipped'}</span>
+                ${customizedBadge}
             </div>
             <div class="row2"><code>${escapeHtml(t.class)}</code></div>
             <div class="row2 desc">${escapeHtml((t.description || '').replace(/\s+/g, ' ').trim() || '—')}</div>
@@ -351,6 +391,7 @@ function renderSkillList() {
     for (const s of state.list) {
         const div = document.createElement('div');
         div.className = 'list-item';
+        div.dataset.id = s.class;
         div.innerHTML = `
             <div class="row1">${escapeHtml(shortName(s.class))} <span class="badge shipped">shipped</span></div>
             <div class="row2"><code>${escapeHtml(s.class)}</code></div>
@@ -362,36 +403,427 @@ function renderSkillList() {
     }
 }
 
-async function renderToolList() {
-    // Tools across all toolsets — fetch each one (only user-authored show full tool list)
+// LLM Connections — modeled on Catalog.Connections from
+// new-interoperability-health. Identity is the connection NAME (frozen on
+// create), not a numeric id. Provider is one of openai / anthropic /
+// bedrock / gemini / azure-openai / nim. A live "Test" button posts to
+// /connections/:name/test which runs %AI.Provider.Create + ChatComplete.
+const CONNECTION_PROVIDERS = ['openai','anthropic','bedrock','gemini','azure-openai','nim'];
+
+const CONNECTION_KEY_LABEL = {
+    openai:        'OpenAI API key',
+    anthropic:     'Anthropic API key',
+    bedrock:       'AWS bearer token (AWS_BEARER_TOKEN_BEDROCK)',
+    gemini:        'Gemini API key',
+    'azure-openai': 'Azure OpenAI key',
+    nim:           'NIM API key (optional for local NIM)'
+};
+
+function renderConnectionList() {
     const list = $('list');
-    list.innerHTML = '<div class="empty-state">Loading tools…</div>';
-    const userToolsets = state.list.filter(t => t.class.indexOf('AgenticInterop.User.ToolSet.') === 0);
-    if (!userToolsets.length) {
-        list.innerHTML = '<div class="empty-state">No user-authored ToolSets yet. Create one under the ToolSets tab to start adding tools.</div>';
+    if (!state.list.length) {
+        list.innerHTML = '<div class="empty-state">No connections configured. Click + New to add one.</div>';
         return;
     }
     list.innerHTML = '';
-    for (const ts of userToolsets) {
+    for (const c of state.list) {
+        const div = document.createElement('div');
+        div.className = 'list-item conn-item';
+        div.dataset.id = c.name;
+        const status = c.lastTestOk === 1 ? 'green' : (c.lastTestOk === 0 ? 'red' : 'unknown');
+        const statusLabel = status === 'green' ? 'tested ok' : (status === 'red' ? 'last test failed' : 'untested');
+        // One-line meta (kind + status). Latency is the operational
+        // detail the user actually cares about; full timestamp goes to
+        // the detail page.
+        const latency = c.lastTestLatencyMs ? c.lastTestLatencyMs + 'ms' : '';
+        const metaParts = [escapeHtml(c.provider || '')];
+        if (latency) metaParts.push(escapeHtml(latency));
+        metaParts.push(c.hasSecret ? 'API key set' : '<em>no API key</em>');
+        const badges = [];
+        if (!c.enabled)  badges.push('<span class="badge abstract">disabled</span>');
+        if (c.isDefault) badges.push('<span class="badge shipped">default</span>');
+        if (c.core)      badges.push('<span class="badge abstract">core</span>');
+        div.innerHTML = `
+            <div class="row1 conn-row1">
+                <span class="status-dot ${status}"></span>
+                <span class="conn-name">${escapeHtml(c.displayName || c.name)}</span>
+                <span class="conn-badges">${badges.join('')}</span>
+            </div>
+            <div class="row2 conn-id"><code>${escapeHtml(c.name)}</code></div>
+            <div class="row2 conn-meta">${metaParts.join(' · ')}</div>
+            <div class="row2 conn-status">${escapeHtml(statusLabel)}${c.lastTestAt ? ' · ' + escapeHtml(c.lastTestAt) : ''}</div>
+        `;
+        div.addEventListener('click', () => openConnection(c.name));
+        list.appendChild(div);
+    }
+}
+
+async function openConnection(name) {
+    try {
+        const c = await get('/connections/' + encodeURIComponent(name));
+        state.selected = c;
+        state.detailKind = 'connection';
+        $('detail-panel').hidden = false;
+        renderConnectionDetail();
+        markListSelected(name);
+    } catch (e) { toast('Load failed: ' + e.message, 'error'); }
+}
+
+function renderConnectionDetail() {
+    const c = state.selected;
+    const isNew = !!c._isNew;
+    const nameDisplay = c.displayName || c.name || 'New Connection';
+    $('detail-title').textContent = isNew ? 'New Connection' : nameDisplay;
+    $('btn-delete').style.display = (isNew || c.core) ? 'none' : 'inline-block';
+    $('btn-save').disabled = false;
+    const status = c.lastTestOk === 1 ? 'green' : (c.lastTestOk === 0 ? 'red' : 'unknown');
+    const statusLabel = status === 'green' ? 'tested ok' : (status === 'red' ? 'last test failed' : 'untested');
+    const inlineLatency = (status === 'green' && c.lastTestLatencyMs)
+        ? `<span class="status-time">${escapeHtml(c.lastTestModel || c.model)} · ${escapeHtml(String(c.lastTestLatencyMs))}ms</span>`
+        : '';
+    const semaphore = `
+        <div class="semaphore status-${status}">
+            <span class="status-dot ${status}"></span>
+            <span class="status-label">${escapeHtml(statusLabel)}</span>
+            ${c.lastTestAt ? `<span class="status-time">checked ${escapeHtml(c.lastTestAt)}</span>` : ''}
+            ${inlineLatency}
+            <button id="f-test" class="primary" type="button" ${isNew ? 'disabled' : ''}>Test connection</button>
+        </div>
+        ${(status === 'red' && c.lastTestError) ? `<div class="err-block">${escapeHtml(c.lastTestError)}</div>` : ''}
+    `;
+    const enabledYes  = c.enabled  === undefined ? true  : !!c.enabled;
+    const isDefault   = !!c.isDefault;
+    // Connection name is frozen post-create — only editable when _isNew.
+    const nameField = isNew
+        ? `<div class="field"><label>Name</label><input id="f-name" type="text" value="${escapeAttr(c.name || '')}" placeholder="my-bedrock"><div class="hint">Lowercase, alpha-start, alphanumeric + dash. Used as the lookup key — frozen after save.</div></div>`
+        : `<div class="field readonly"><label>Name</label><input type="text" value="${escapeAttr(c.name)}" readonly></div>`;
+    $('form').innerHTML = `
+        ${nameField}
+        <div class="field">
+            <label>Display name</label>
+            <input id="f-displayName" type="text" value="${escapeAttr(c.displayName || '')}" placeholder="AWS Bedrock (Sonnet 4)">
+        </div>
+        <div class="field">
+            <label>Description</label>
+            <textarea id="f-description">${escapeHtml(reflowProse(c.description))}</textarea>
+        </div>
+        <div class="field-row">
+            <div class="field">
+                <label>Provider</label>
+                <select id="f-provider">
+                    ${CONNECTION_PROVIDERS.map(p => `<option value="${p}" ${c.provider === p ? 'selected' : ''}>${p}</option>`).join('')}
+                </select>
+            </div>
+            <div class="field">
+                <label>Enabled</label>
+                <select id="f-enabled">
+                    <option value="true"  ${enabledYes ? 'selected' : ''}>Enabled</option>
+                    <option value="false" ${enabledYes ? '' : 'selected'}>Disabled</option>
+                </select>
+                <div class="hint">Disabled connections are skipped by the chat runtime.</div>
+            </div>
+            <div class="field">
+                <label>Default</label>
+                <select id="f-isDefault">
+                    <option value="false" ${isDefault ? '' : 'selected'}>No</option>
+                    <option value="true"  ${isDefault ? 'selected' : ''}>Yes</option>
+                </select>
+                <div class="hint">Exactly one row is the default.</div>
+            </div>
+        </div>
+        <div class="field-row">
+            <div class="field">
+                <label>Model</label>
+                <input id="f-model" type="text" value="${escapeAttr(c.model || '')}" placeholder="global.anthropic.claude-sonnet-4-20250514-v1:0">
+            </div>
+            <div class="field">
+                <label>Max tokens</label>
+                <input id="f-maxTokens" type="text" value="${escapeAttr(c.maxTokens || '8192')}">
+            </div>
+        </div>
+        <div class="field-row">
+            <div class="field">
+                <label>Region</label>
+                <input id="f-region" type="text" value="${escapeAttr(c.region || '')}" placeholder="us-east-1 (Bedrock / Azure)">
+            </div>
+            <div class="field">
+                <label>Base URL</label>
+                <input id="f-baseURL" type="text" value="${escapeAttr(c.baseURL || '')}" placeholder="(optional override)">
+            </div>
+        </div>
+        <div class="field">
+            <label>${escapeHtml(CONNECTION_KEY_LABEL[c.provider] || 'API key')}</label>
+            <input id="f-secret" type="password" placeholder="${c.hasSecret ? '(stored — paste a new value to replace)' : 'paste the API key'}" autocomplete="new-password">
+            <div class="hint">Stored in the IRIS Secured Wallet (collection AgenticInteropConnections). Never echoed back through the API.</div>
+        </div>
+        ${isNew ? '' : semaphore}
+    `;
+    bindAutoSizeTextareas($('form'));
+    if (!isNew) {
+        $('f-test').addEventListener('click', async () => {
+            const btn = $('f-test'); btn.disabled = true;
+            try {
+                const r = await post('/connections/' + encodeURIComponent(c.name) + '/test', {});
+                // Re-fetch to get the persisted row state.
+                state.selected = await get('/connections/' + encodeURIComponent(c.name));
+                renderConnectionDetail();
+                toast(r.ok ? 'Connection OK.' : 'Test failed — see details.', r.ok ? 'success' : 'error');
+            } catch (e) {
+                showError(e);
+            } finally {
+                const b2 = $('f-test'); if (b2) b2.disabled = false;
+            }
+        });
+    }
+}
+
+// Phase 5 catalog admin. Renders one card per catalog (search_ens,
+// search_hs) with row count, last-built note, and a Rebuild button
+// that POSTs /catalog/rebuild scoped to that catalog. Long-running
+// (~30s for both catalogs); the button shows BUILDING while it
+// waits and re-fetches status on completion.
+function renderCatalogList() {
+    const list = $('list');
+    const status = state.list[0] || {};
+    list.innerHTML = '';
+    const sourceNs = renderCatalogControls();
+    list.appendChild(sourceNs);
+    list.appendChild(renderCatalogCard('search_ens', 'Ens.* business hosts and adapters in the active interop namespace.', status.ens || {}));
+    list.appendChild(renderCatalogCard('search_hs',  'HealthShare HS.* transformation classes — DTLs, FHIR↔SDA3 mappers, HL7 helpers.', status.hs  || {}));
+}
+
+function renderCatalogControls() {
+    const wrap = document.createElement('div');
+    wrap.className = 'list-item';
+    wrap.style.cursor = 'default';
+    wrap.innerHTML = `
+        <div class="row1">Catalog rebuild source</div>
+        <div class="row2 desc">Rebuild walks <code>%Dictionary</code> in the named source namespace. The catalog itself persists in HSCUSTOM (the install namespace); only the dictionary read is namespace-scoped.</div>
+        <div class="field-row" style="margin-top:8px;">
+            <div class="field" style="margin:0;">
+                <label>Source namespace</label>
+                <input id="f-catalog-ns" type="text" value="USER" style="max-width:200px;">
+            </div>
+            <div class="field" style="margin:0;">
+                <label>Cap (max rows per catalog)</label>
+                <input id="f-catalog-cap" type="text" value="2000" style="max-width:200px;">
+            </div>
+        </div>
+    `;
+    return wrap;
+}
+
+function renderCatalogCard(name, description, st) {
+    const card = document.createElement('div');
+    card.className = 'list-item';
+    card.style.cursor = 'default';
+    const rowsLine = st.exists
+        ? `<span class="badge user">${st.rows || 0} rows indexed</span>`
+        : `<span class="badge abstract">not built</span>`;
+    card.innerHTML = `
+        <div class="row1">${escapeHtml(name)} ${rowsLine}</div>
+        <div class="row2 desc">${escapeHtml(description)}</div>
+        <div class="row2"><code>${escapeHtml(st.table || '')}</code></div>
+        <div class="row2" style="margin-top:6px;">
+            <button class="primary" data-rebuild="${name === 'search_ens' ? 'ens' : 'hs'}">Rebuild this catalog</button>
+            <span class="rebuild-status" style="margin-left:10px;color:var(--muted);font-size:11px;"></span>
+        </div>
+    `;
+    card.querySelector('button[data-rebuild]').addEventListener('click', (e) => {
+        const scope = e.currentTarget.dataset.rebuild;
+        rebuildCatalog(scope, e.currentTarget, card.querySelector('.rebuild-status'));
+    });
+    return card;
+}
+
+async function rebuildCatalog(scope, btn, statusEl) {
+    const sourceNamespace = ($('f-catalog-ns')?.value || 'USER').trim();
+    const cap = Number($('f-catalog-cap')?.value) || 2000;
+    btn.disabled = true;
+    statusEl.textContent = 'BUILDING — embedding can run 10-60 seconds…';
+    try {
+        const r = await post('/catalog/rebuild', { sourceNamespace, scope, cap });
+        const block = scope === 'ens' ? r.ens : r.hs;
+        if (block) {
+            statusEl.textContent = `built — scanned ${block.scanned}, indexed ${block.indexed} in ${block.elapsedMs}ms`;
+        } else if (r.ok) {
+            statusEl.textContent = 'built';
+        } else {
+            statusEl.textContent = 'FAILED — ' + (r.error || 'unknown error');
+        }
+        toast('Catalog rebuilt.', 'success');
+        // Refresh the status display
+        if (state.tab === 'catalogs') loadList();
+    } catch (e) {
+        statusEl.textContent = 'FAILED — ' + e.message;
+        showError(e);
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+// Phase 7 audit trail. One scrollable table of recent audit rows
+// with filter chips at the top: errors-only toggle, kind dropdown,
+// limit input. Click any row to expand and see the full ErrorText
+// (when present). The audit log is populated automatically by
+// REST.Dispatch.OnPreDispatch / AuditEnd — every /api/agentic/*
+// request lands a row.
+const auditState = { errorsOnly: false, kind: '', limit: 100 };
+
+async function loadAuditList() {
+    const list = $('list');
+    list.innerHTML = '<div class="empty-state">Loading audit log…</div>';
+    try {
+        const params = new URLSearchParams();
+        params.set('limit', String(auditState.limit));
+        if (auditState.errorsOnly) params.set('errorsOnly', 'true');
+        if (auditState.kind) params.set('kind', auditState.kind);
+        const data = await get('/audit/log?' + params.toString());
+        const kindsResp = await get('/audit/kinds').catch(() => ({ kinds: [] }));
+        renderAuditList(data.rows || [], kindsResp.kinds || []);
+    } catch (e) {
+        list.innerHTML = `<div class="empty-state">Failed: ${escapeHtml(e.message)}</div>`;
+    }
+}
+
+function renderAuditList(rows, kinds) {
+    const list = $('list');
+    list.innerHTML = '';
+    const wrap = document.createElement('div');
+    wrap.className = 'audit-wrap';
+    const kindOptions = ['<option value="">all kinds</option>']
+        .concat(kinds.map(k => `<option value="${escapeAttr(k)}" ${auditState.kind === k ? 'selected' : ''}>${escapeHtml(k)}</option>`))
+        .join('');
+    wrap.innerHTML = `
+        <div class="audit-controls">
+            <div class="audit-control">
+                <label>Kind</label>
+                <select id="f-audit-kind">${kindOptions}</select>
+            </div>
+            <div class="audit-control">
+                <label>Errors only</label>
+                <select id="f-audit-errors">
+                    <option value="false" ${!auditState.errorsOnly ? 'selected' : ''}>no</option>
+                    <option value="true"  ${auditState.errorsOnly ? 'selected' : ''}>yes (status &ge; 400)</option>
+                </select>
+            </div>
+            <div class="audit-control">
+                <label>Limit</label>
+                <input id="f-audit-limit" type="text" value="${auditState.limit}">
+            </div>
+            <div class="audit-control audit-actions">
+                <button id="f-audit-refresh" class="primary" type="button">Refresh</button>
+                <span class="audit-summary">${rows.length} rows · most recent first</span>
+            </div>
+        </div>
+        <table class="audit-table">
+            <thead>
+                <tr>
+                    <th class="t-status">Status</th>
+                    <th class="t-method">Method</th>
+                    <th class="t-path">Path</th>
+                    <th class="t-kind">Kind</th>
+                    <th class="t-when">When</th>
+                    <th class="t-user">User</th>
+                    <th class="t-ns">Namespace</th>
+                    <th class="t-ms">Duration</th>
+                    <th class="t-size">Bytes (in/out)</th>
+                </tr>
+            </thead>
+            <tbody id="audit-body"></tbody>
+        </table>
+    `;
+    list.appendChild(wrap);
+    const tbody = wrap.querySelector('#audit-body');
+    if (!rows.length) {
+        tbody.innerHTML = '<tr><td colspan="9" class="audit-empty">No matching audit rows.</td></tr>';
+    }
+    for (const r of rows) {
+        const isErr = r.statusCode >= 400;
+        const tr = document.createElement('tr');
+        tr.className = 'audit-row' + (isErr ? ' audit-error' : '');
+        tr.innerHTML = `
+            <td><span class="audit-status ${isErr ? 'err' : 'ok'}">${r.statusCode}</span></td>
+            <td class="t-method">${escapeHtml(r.method)}</td>
+            <td class="t-path"><code>${escapeHtml(r.path)}</code></td>
+            <td>${r.kind ? `<span class="badge user">${escapeHtml(r.kind)}</span>` : ''}</td>
+            <td class="t-when">${escapeHtml(r.created || '')}</td>
+            <td>${escapeHtml(r.username || '?')}</td>
+            <td>${escapeHtml(r.namespace || '?')}</td>
+            <td class="t-ms">${r.durationMs || 0}ms</td>
+            <td class="t-size">${r.requestSize || 0} / ${r.responseSize || 0}</td>
+        `;
+        tbody.appendChild(tr);
+        // Expand row click to show errorText / session / job
+        const detailTr = document.createElement('tr');
+        detailTr.className = 'audit-detail';
+        detailTr.hidden = true;
+        detailTr.innerHTML = `
+            <td colspan="9">
+                <div class="audit-detail-body">
+                    <span><span class="dim">id:</span> ${escapeHtml(String(r.id))}</span>
+                    <span><span class="dim">session:</span> ${escapeHtml(r.sessionId || '—')}</span>
+                    <span><span class="dim">job:</span> ${escapeHtml(String(r.job || '—'))}</span>
+                    ${r.errorText ? `<pre class="dryrun-output" style="margin:6px 0 0 0;">${escapeHtml(r.errorText)}</pre>` : ''}
+                </div>
+            </td>
+        `;
+        tbody.appendChild(detailTr);
+        tr.style.cursor = 'pointer';
+        tr.addEventListener('click', () => { detailTr.hidden = !detailTr.hidden; });
+    }
+    $('f-audit-refresh').addEventListener('click', () => {
+        auditState.kind = $('f-audit-kind').value;
+        auditState.errorsOnly = ($('f-audit-errors').value === 'true');
+        auditState.limit = Math.max(1, Math.min(1000, Number($('f-audit-limit').value) || 100));
+        loadAuditList();
+    });
+}
+
+async function renderToolList() {
+    // Tools across ALL toolsets — both shipped (AgenticInterop.ToolSet.*)
+    // and user-authored (AgenticInterop.User.ToolSet.*). Shipped tools
+    // show as read-only when opened (the detail view already handles
+    // that via isUser branching). Each row gets a SHIPPED / USER badge
+    // so the operator can scan at a glance which ones are editable.
+    const list = $('list');
+    list.innerHTML = '<div class="empty-state">Loading tools…</div>';
+    if (!state.list.length) {
+        list.innerHTML = '<div class="empty-state">No ToolSets registered. The framework manifest seeds the shipped set on install — if you see this, run the install routine again.</div>';
+        return;
+    }
+    list.innerHTML = '';
+    let total = 0;
+    for (const ts of state.list) {
         try {
             const detail = await get('/editor/toolset/' + encodeURIComponent(ts.class));
             const tools = detail.tools || [];
+            const isUser = (ts.class || '').indexOf('AgenticInterop.User.ToolSet.') === 0;
+            const sourceBadge = isUser
+                ? '<span class="badge user">USER</span>'
+                : '<span class="badge shipped">SHIPPED</span>';
             for (const t of tools) {
+                const isMutating = /^(Start|Stop|Delete|Remove|Purge|Drop|Reset|Clear|Truncate|Kill|Unmount|Deploy|Uninstall|Compile|Create|Update|Send|Patch|Put|Post|Enable|Disable|Restart|Add)[A-Z]/.test(t.name || '');
+                const mutBadge = isMutating ? '<span class="badge mut">MUTATING</span>' : '<span class="badge ro">READ-ONLY</span>';
                 const div = document.createElement('div');
                 div.className = 'list-item';
+                div.dataset.id = ts.class + '|' + t.name;
+                // Left-nav stays terse: name + badges + class. The full
+                // description is only shown in the detail / Edit panel
+                // and in the Class Source XData — the user requested the
+                // listing not be cluttered by long descriptions.
                 div.innerHTML = `
-                    <div class="row1">${escapeHtml(t.name)}</div>
-                    <div class="row2">${escapeHtml(t.description || '—')}</div>
+                    <div class="row1">${escapeHtml(t.name)} ${sourceBadge} ${mutBadge}</div>
                     <div class="row2"><code>${escapeHtml(ts.class)}</code></div>
-                    <div class="row2">kind: ${escapeHtml((t.implementation && t.implementation.kind) || '—')}</div>
                 `;
                 div.addEventListener('click', () => openTool(ts.class, t.name));
                 list.appendChild(div);
+                total += 1;
             }
         } catch (e) { /* keep going */ }
     }
-    if (!list.children.length) {
-        list.innerHTML = '<div class="empty-state">No tools yet. Open a user-authored ToolSet to add some.</div>';
+    if (!total) {
+        list.innerHTML = '<div class="empty-state">No tools defined. Shipped ToolSets are still empty; create a User ToolSet under the ToolSets tab to add custom tools.</div>';
     }
 }
 
@@ -402,8 +834,9 @@ async function openAgent(cls) {
         const a = await get('/editor/agent/' + encodeURIComponent(cls));
         state.selected = a;
         state.detailKind = 'agent';
-        renderAgentDetail();
-        $('detail-panel').hidden = false;
+        $('detail-panel').hidden = false;   // unhide BEFORE render so
+        renderAgentDetail();                 // bindAutoSizeTextareas can
+        markListSelected(cls);               // measure scrollHeight live
     } catch (e) { toast('Load failed: ' + e.message, 'error'); }
 }
 
@@ -412,8 +845,9 @@ async function openMCP(cls) {
         const m = await get('/editor/mcp/' + encodeURIComponent(cls));
         state.selected = m;
         state.detailKind = 'mcp';
-        renderMCPDetail();
         $('detail-panel').hidden = false;
+        renderMCPDetail();
+        markListSelected(cls);
     } catch (e) { toast('Load failed: ' + e.message, 'error'); }
 }
 
@@ -422,8 +856,9 @@ async function openToolSet(cls) {
         const t = await get('/editor/toolset/' + encodeURIComponent(cls));
         state.selected = t;
         state.detailKind = 'toolset';
-        renderToolSetDetail();
         $('detail-panel').hidden = false;
+        renderToolSetDetail();
+        markListSelected(cls);
     } catch (e) { toast('Load failed: ' + e.message, 'error'); }
 }
 
@@ -432,8 +867,9 @@ async function openTool(toolset, name) {
         const t = await get('/editor/tool/' + encodeURIComponent(toolset) + '/' + encodeURIComponent(name));
         state.selected = { ...t, _toolset: toolset, _originalName: name };
         state.detailKind = 'tool';
-        renderToolDetail();
         $('detail-panel').hidden = false;
+        renderToolDetail();
+        markListSelected(toolset + '|' + name);
     } catch (e) { toast('Load failed: ' + e.message, 'error'); }
 }
 
@@ -445,24 +881,29 @@ function openSkill(cls) {
     if (!s) { toast('Skill not in registry', 'error'); return; }
     state.selected = s;
     state.detailKind = 'skill';
-    renderSkillDetail();
     $('detail-panel').hidden = false;
+    renderSkillDetail();
+    markListSelected(cls);
 }
 
 // -------- detail forms --------
 
 function renderAgentDetail() {
     const a = state.selected;
-    const isUser = a.class.indexOf('AgenticInterop.User.Agent.') === 0;
-    const ro = isUser ? '' : 'readonly';
-    $('detail-title').textContent = a.class || 'New Agent';
-    $('btn-delete').style.display = isUser ? 'inline-block' : 'none';
-    $('btn-save').disabled = !isUser;
+    // All agents are now editable (shipped → override, user → .cls).
+    const isUser = true;
+    const ro = '';
+    $('detail-title').textContent = a._isNew ? 'New Agent' : (a.class || 'New Agent');
+    const isUserAuthored = a._isNew || (a.class && a.class.indexOf('AgenticInterop.User.Agent.') === 0);
+    $('btn-delete').style.display = (isUserAuthored && !a._isNew) ? 'inline-block' : 'none';
+    $('btn-save').disabled = false;
+    const classFieldHtml = a._isNew
+        ? `<div class="field"><label>Class</label><input id="f-class" type="text" value="${escapeAttr(a.class)}" placeholder="AgenticInterop.User.Agent.MyAgent" autocomplete="off"><div class="hint">Must start with <code>AgenticInterop.User.Agent.</code></div></div>`
+        : `<div class="field readonly"><label>Class</label><input type="text" value="${escapeAttr(a.class)}" readonly></div>`;
+    a._overlayKind = 'agent';
     $('form').innerHTML = `
-        <div class="field readonly">
-            <label>Class</label>
-            <input type="text" value="${escapeAttr(a.class)}" readonly>
-        </div>
+        ${customizedBannerHtml(a)}
+        ${classFieldHtml}
         <div class="field-row">
             <div class="field">
                 <label>Display name</label>
@@ -485,7 +926,7 @@ function renderAgentDetail() {
         </div>
         <div class="field">
             <label>Description</label>
-            <textarea id="f-description" ${ro}>${escapeHtml(a.description || '')}</textarea>
+            <textarea id="f-description" ${ro}>${escapeHtml(reflowProse(a.description))}</textarea>
         </div>
         <div class="field">
             <label>System prompt (XData INSTRUCTIONS, markdown)</label>
@@ -504,33 +945,77 @@ function renderAgentDetail() {
         ${a.class && !a._isNew ? sourcePanelHtml(a.class) : ''}
     `;
     bindSourcePanel($('form'));
+    bindAutoSizeTextareas($('form'));
+    const aResetBtn = $('f-reset-override');
+    if (aResetBtn) aResetBtn.addEventListener('click', () => resetOverride('agent', a.class, renderAgentDetail));
     if (isUser && state.registry.mcps.length === 0) loadRegistries(true).then(() => renderAgentDetail());
+}
+
+// Generic "drop the override" handler. kindPath is the URL segment
+// ("mcp" / "agent" / "toolset"); rerender is the per-detail render
+// function so the form refreshes after the reset.
+async function resetOverride(kindPath, cls, rerender) {
+    if (!confirm('Drop the customization and restore ' + cls + ' to its shipped defaults?')) return;
+    try {
+        const r = await post('/editor/' + kindPath + '/' + encodeURIComponent(cls) + '/reset', {});
+        state.selected = r;
+        toast('Reset to shipping defaults.', 'success');
+        rerender();
+        loadList();
+    } catch (e) { showError(e); }
+}
+
+function customizedBannerHtml(entity) {
+    if (!entity || !entity.customized || entity._isNew) return '';
+    const dataClass = entity.class || '';
+    const persistedTable = ({
+        agent:   'AgenticInterop.Data.AgentOverride',
+        mcp:     'AgenticInterop.Data.MCPOverride',
+        toolset: 'AgenticInterop.Data.ToolSetOverride'
+    })[entity._overlayKind || ''] || 'override row';
+    return `
+        <div class="customized-banner">
+            <div>
+                <strong>Customized.</strong> Saved fields are stored in <code>${escapeHtml(persistedTable)}</code> and survive <code>zpm load</code> of the upstream module.
+                ${entity.updatedAt ? `Last updated ${escapeHtml(entity.updatedAt)} by ${escapeHtml(entity.updatedBy || '?')}.` : ''}
+            </div>
+            <button id="f-reset-override" class="danger" type="button">Reset to shipping defaults</button>
+        </div>`;
 }
 
 function renderMCPDetail() {
     const m = state.selected;
-    const isUser = m.userAuthored;
-    const ro = isUser ? '' : 'readonly';
-    $('detail-title').textContent = m.class || 'New MCP';
-    $('btn-delete').style.display = isUser ? 'inline-block' : 'none';
-    $('btn-save').disabled = !isUser;
+    // MCPs are editable regardless of shipped/user-authored. Save
+    // routing is namespace-aware: User-authored writes to .cls;
+    // shipped writes to AgenticInterop.Data.MCPOverride so the
+    // customization survives `zpm load` of the upstream module.
+    // The "customized" badge + "Reset to shipping defaults" button
+    // surface this state to the operator.
+    const ro = '';
+    $('detail-title').textContent = m._isNew ? 'New MCP' : (m.class || 'New MCP');
+    $('btn-delete').style.display = (m.userAuthored && !m._isNew) ? 'inline-block' : 'none';
+    $('btn-save').disabled = false;
+    const isUser = true;   // used downstream by renderCheckboxList
+    const classFieldHtml = m._isNew
+        ? `<div class="field"><label>Class</label><input id="f-class" type="text" value="${escapeAttr(m.class)}" placeholder="AgenticInterop.User.MCP.MyMCP" autocomplete="off"><div class="hint">Must start with <code>AgenticInterop.User.MCP.</code></div></div>`
+        : `<div class="field readonly"><label>Class</label><input type="text" value="${escapeAttr(m.class)}" readonly></div>`;
+    m._overlayKind = 'mcp';
+    const customizedBanner = customizedBannerHtml(m);
     $('form').innerHTML = `
-        <div class="field readonly">
-            <label>Class</label>
-            <input type="text" value="${escapeAttr(m.class)}" readonly>
-        </div>
+        ${customizedBanner}
+        ${classFieldHtml}
         <div class="field">
             <label>Name (Parameter NAME)</label>
             <input id="f-name" type="text" value="${escapeAttr(m.name || '')}" ${ro}>
         </div>
         <div class="field">
             <label>Short description (Parameter DESCRIPTION)</label>
-            <textarea id="f-shortDescription" ${ro}>${escapeHtml(m.shortDescription || '')}</textarea>
+            <textarea id="f-shortDescription" ${ro}>${escapeHtml(reflowProse(m.shortDescription))}</textarea>
             <div class="hint">Shown in the AI's tool catalog. One sentence is fine; multiple sentences are fine too. The chatbot reads this when deciding whether to use this MCP.</div>
         </div>
         <div class="field">
             <label>Class description (developer comment, behind ///)</label>
-            <textarea id="f-description" ${ro}>${escapeHtml(m.description || '')}</textarea>
+            <textarea id="f-description" ${ro}>${escapeHtml(reflowProse(m.description))}</textarea>
         </div>
         <div class="field">
             <label>ToolSets bound (${(m.toolsets || []).length} of ${state.registry.toolsets.length})</label>
@@ -540,61 +1025,179 @@ function renderMCPDetail() {
         ${m.class && !m._isNew ? sourcePanelHtml(m.class) : ''}
     `;
     bindSourcePanel($('form'));
+    bindAutoSizeTextareas($('form'));
+    const resetBtn = $('f-reset-override');
+    if (resetBtn) resetBtn.addEventListener('click', () => resetOverride('mcp', m.class, renderMCPDetail));
     if (isUser && state.registry.toolsets.length === 0) loadRegistries(true).then(() => renderMCPDetail());
 }
 
-function renderToolSetDetail() {
+async function renderToolSetDetail() {
     const t = state.selected;
-    const isUser = t.userAuthored;
-    const ro = isUser ? '' : 'readonly';
-    $('detail-title').textContent = t.class || 'New ToolSet';
-    $('btn-delete').style.display = isUser ? 'inline-block' : 'none';
-    $('btn-save').disabled = !isUser;
+    const isUser = true;
+    const ro = '';
+    const isUserAuthored = t._isNew || !!t.userAuthored;
+    $('detail-title').textContent = t._isNew ? 'New ToolSet' : (t.class || 'New ToolSet');
+    $('btn-delete').style.display = (isUserAuthored && !t._isNew) ? 'inline-block' : 'none';
+    $('btn-save').disabled = false;
+    t._overlayKind = 'toolset';
+
+    // Fetch available tool providers for the selector
+    if (!state._toolProviders) {
+        try { state._toolProviders = (await get('/editor/tool-providers')).providers || []; }
+        catch { state._toolProviders = []; }
+    }
+    const providers = state._toolProviders;
     const tools = t.tools || [];
-    const toolsHtml = tools.length === 0
-        ? '<tr class="empty-row"><td colspan="4">No tools yet.</td></tr>'
-        : tools.map(tool => `
-            <tr>
-                <td><strong>${escapeHtml(tool.name)}</strong></td>
-                <td>${escapeHtml(tool.description || '—')}</td>
-                <td><code>${escapeHtml((tool.implementation && tool.implementation.kind) || '—')}</code></td>
-                <td class="actions-cell">
-                    <button onclick="openTool('${escapeAttr(t.class)}','${escapeAttr(tool.name)}')">Edit</button>
-                    <button class="danger" onclick="deleteTool('${escapeAttr(t.class)}','${escapeAttr(tool.name)}')">Delete</button>
-                </td>
-            </tr>`).join('');
+    const includedClass = t.includedClass || '';
+
+    // Tool provider dropdown — for new ToolSets the user picks a provider;
+    // for existing ones it shows the current provider (editable).
+    const providerOptions = providers.map(p => {
+        const sel = p.class === includedClass ? ' selected' : '';
+        return `<option value="${escapeAttr(p.class)}"${sel}>${escapeHtml(p.class)} (${p.methodCount} tools)</option>`;
+    }).join('');
+
+    // Tool selector: checkboxes for each tool from the included class.
+    // If the ToolSet has <Include> (Pattern 5), tools come with enabled flags.
+    // If no Include yet (new ToolSet), show tools from the first selected provider.
+    const toolCheckboxes = tools.length > 0
+        ? tools.map(tool => {
+            const checked = tool.enabled !== 0 ? 'checked' : '';
+            const isMut = /^(Start|Stop|Delete|Remove|Create|Add|Update|Send|Compile|Validate)[A-Z]/.test(tool.name);
+            const badge = isMut ? '<span class="badge mut">mutating</span>' : '<span class="badge ro">read-only</span>';
+            const descSnippet = (tool.description || '').replace(/\r?\n/g, ' ').trim();
+            const shortDesc = descSnippet.length > 120 ? descSnippet.substring(0, 117) + '...' : descSnippet;
+            return `<label class="tool-select-row ${checked ? 'is-selected' : ''}">
+                <input type="checkbox" name="tool-select" value="${escapeAttr(tool.name)}" ${checked}>
+                <span class="tool-select-name">${escapeHtml(tool.name)}</span>
+                ${badge}
+                <span class="tool-select-desc">${escapeHtml(shortDesc || '')}</span>
+            </label>`;
+        }).join('')
+        : '<div class="empty">Select a tool provider above to see available tools.</div>';
+
+    const enabledCount = tools.filter(tl => tl.enabled !== 0).length;
+    const totalCount = tools.length;
+
+    const classFieldHtml = t._isNew
+        ? `<div class="field"><label>Class</label><input id="f-class" type="text" value="${escapeAttr(t.class)}" placeholder="AgenticInterop.User.ToolSet.MyToolSet" autocomplete="off"><div class="hint">Must start with <code>AgenticInterop.User.ToolSet.</code></div></div>`
+        : `<div class="field readonly"><label>Class</label><input type="text" value="${escapeAttr(t.class)}" readonly></div>`;
     $('form').innerHTML = `
-        <div class="field readonly">
-            <label>Class</label>
-            <input type="text" value="${escapeAttr(t.class)}" readonly>
-        </div>
+        ${customizedBannerHtml(t)}
+        ${classFieldHtml}
         <div class="field">
             <label>Name (Parameter NAME)</label>
             <input id="f-name" type="text" value="${escapeAttr(t.name || '')}" ${ro}>
         </div>
         <div class="field">
             <label>Class description</label>
-            <textarea id="f-description" ${ro}>${escapeHtml(t.description || '')}</textarea>
+            <textarea id="f-description" class="short" ${ro}>${escapeHtml(reflowProse(t.description))}</textarea>
         </div>
         <div class="field">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
-                <label style="margin:0;">Tools (XData ToolManifest)</label>
-                ${isUser ? `<button class="primary" onclick="newToolInside('${escapeAttr(t.class)}')">+ Tool</button>` : ''}
+            <label>Tool Provider (%AI.Tool class)</label>
+            <select id="f-includedClass">
+                <option value="">-- Select a tool provider --</option>
+                ${providerOptions}
+            </select>
+            <div class="hint">Each tool provider is a <code>%AI.Tool</code> subclass whose public ClassMethods become tools. Changing the provider replaces the tool list below.</div>
+        </div>
+        <div class="field">
+            <div class="tool-select-head">
+                <label style="margin:0;">Tools <span class="tool-select-count" id="f-tool-count">${enabledCount} of ${totalCount} enabled</span></label>
+                <div class="tool-select-actions">
+                    <button type="button" class="link-btn" id="btn-select-all">Select all</button>
+                    <button type="button" class="link-btn" id="btn-deselect-all">Deselect all</button>
+                </div>
             </div>
-            <table class="tools-table">
-                <thead><tr><th>Name</th><th>Description</th><th>Kind</th><th></th></tr></thead>
-                <tbody>${toolsHtml}</tbody>
-            </table>
-            <div class="hint">Tools are stored in the ToolSet's XData ToolManifest (JSON). Phase 4 will translate these entries into the framework's XML Definition for runtime invocation.</div>
+            <div class="tool-select-list" id="f-tools">
+                ${toolCheckboxes}
+            </div>
+            <div class="hint">Check the tools you want this ToolSet to expose to the agent. Unchecked tools are excluded from the XData Definition. On Save, the class source is updated and recompiled.</div>
         </div>
         <div class="field">
-            <label>Framework Definition XData (XML, advanced)</label>
-            <textarea id="f-definitionRaw" class="tall" ${ro}>${escapeHtml(t.definitionRaw || '')}</textarea>
-            <div class="hint">Edited by the framework's compile-time generator. Leave alone unless you know what you're doing.</div>
+            <div class="source-toggle" data-toggle-def>
+                <span class="chev">&#9654;</span>
+                <span>Framework Definition XData (XML, advanced)</span>
+            </div>
+            <div class="def-body" style="display:none;">
+                <textarea id="f-definitionRaw" class="tall" ${ro}>${escapeHtml(t.definitionRaw || '')}</textarea>
+                <div class="hint">Auto-generated from the tool selection above. Edit manually only if you know the framework's XData schema.</div>
+            </div>
         </div>
         ${t.class && !t._isNew ? sourcePanelHtml(t.class) : ''}
     `;
     bindSourcePanel($('form'));
+    bindAutoSizeTextareas($('form'));
+    const tResetBtn = $('f-reset-override');
+    if (tResetBtn) tResetBtn.addEventListener('click', () => resetOverride('toolset', t.class, renderToolSetDetail));
+
+    // Wire up provider-change handler
+    const providerSelect = $('f-includedClass');
+    if (providerSelect) {
+        providerSelect.addEventListener('change', () => {
+            const cls = providerSelect.value;
+            if (!cls) return;
+            const prov = providers.find(p => p.class === cls);
+            if (!prov) return;
+            // Replace tool checkboxes with the new provider's methods — all checked
+            const container = $('f-tools');
+            container.innerHTML = prov.methods.map(m => {
+                const isMut = /^(Start|Stop|Delete|Remove|Create|Add|Update|Send|Compile|Validate)[A-Z]/.test(m.name);
+                const badge = isMut ? '<span class="badge mut">mutating</span>' : '<span class="badge ro">read-only</span>';
+                const descSnippet = (m.description || '').replace(/\r?\n/g, ' ').trim();
+                const shortDesc = descSnippet.length > 120 ? descSnippet.substring(0, 117) + '...' : descSnippet;
+                return `<label class="tool-select-row is-selected">
+                    <input type="checkbox" name="tool-select" value="${escapeAttr(m.name)}" checked>
+                    <span class="tool-select-name">${escapeHtml(m.name)}</span>
+                    ${badge}
+                    <span class="tool-select-desc">${escapeHtml(shortDesc || '')}</span>
+                </label>`;
+            }).join('');
+            updateToolCount();
+        });
+    }
+
+    // Wire up select-all / deselect-all
+    const btnAll = document.getElementById('btn-select-all');
+    const btnNone = document.getElementById('btn-deselect-all');
+    if (btnAll) btnAll.addEventListener('click', () => {
+        document.querySelectorAll('#f-tools input[name="tool-select"]').forEach(cb => {
+            cb.checked = true;
+            cb.closest('.tool-select-row').classList.add('is-selected');
+        });
+        updateToolCount();
+    });
+    if (btnNone) btnNone.addEventListener('click', () => {
+        document.querySelectorAll('#f-tools input[name="tool-select"]').forEach(cb => {
+            cb.checked = false;
+            cb.closest('.tool-select-row').classList.remove('is-selected');
+        });
+        updateToolCount();
+    });
+
+    // Toggle highlight on individual checkbox change
+    const toolContainer = $('f-tools');
+    if (toolContainer) toolContainer.addEventListener('change', (e) => {
+        if (e.target.name !== 'tool-select') return;
+        e.target.closest('.tool-select-row').classList.toggle('is-selected', e.target.checked);
+        updateToolCount();
+    });
+
+    // Collapsible Definition XData toggle
+    const defToggle = $('form').querySelector('[data-toggle-def]');
+    if (defToggle) defToggle.addEventListener('click', () => {
+        const body = defToggle.nextElementSibling;
+        const isOpen = body.style.display !== 'none';
+        body.style.display = isOpen ? 'none' : 'block';
+        defToggle.querySelector('.chev').textContent = isOpen ? '▶' : '▼';
+    });
+}
+
+function updateToolCount() {
+    const all = document.querySelectorAll('#f-tools input[name="tool-select"]');
+    const checked = document.querySelectorAll('#f-tools input[name="tool-select"]:checked');
+    const el = document.getElementById('f-tool-count');
+    if (el) el.textContent = `${checked.length} of ${all.length} enabled`;
 }
 
 function renderSkillDetail() {
@@ -609,7 +1212,7 @@ function renderSkillDetail() {
         </div>
         <div class="field readonly">
             <label>Description (developer comment)</label>
-            <textarea readonly>${escapeHtml(s.description || '')}</textarea>
+            <textarea readonly>${escapeHtml(reflowProse(s.description))}</textarea>
         </div>
         <div class="field">
             <label>ToolSets bound (Parameter TOOLS)</label>
@@ -619,28 +1222,47 @@ function renderSkillDetail() {
         ${sourcePanelHtml(s.class)}
     `;
     bindSourcePanel($('form'));
+    bindAutoSizeTextareas($('form'));
 }
 
 function renderToolDetail() {
     const t = state.selected;
     const isUser = (t._toolset || '').indexOf('AgenticInterop.User.ToolSet.') === 0;
     const ro = isUser ? '' : 'readonly';
-    $('detail-title').textContent = `${t._toolset} · ${t.name || 'New Tool'}`;
+    const sourceBadge = isUser
+        ? '<span class="badge user">USER</span>'
+        : '<span class="badge shipped">SHIPPED</span>';
+    $('detail-title').innerHTML = `${escapeHtml(t._toolset)} &middot; ${escapeHtml(t.name || 'New Tool')} ${sourceBadge}`;
     $('btn-delete').style.display = isUser && t._originalName ? 'inline-block' : 'none';
     $('btn-save').disabled = !isUser;
+    // Build the formal-spec line ("(arg As %String, ...)") if known.
+    const sigParts = [];
+    if (t.classMethod) sigParts.push('ClassMethod');
+    sigParts.push(t.method || t.name || '');
+    let sig = sigParts.join(' ');
+    if (t.formalSpec) sig += '(' + t.formalSpec + ')';
+    if (t.returnType) sig += ' As ' + t.returnType;
     $('form').innerHTML = `
         <div class="field readonly">
             <label>ToolSet</label>
             <input type="text" value="${escapeAttr(t._toolset || '')}" readonly>
         </div>
         <div class="field">
-            <label>Name</label>
+            <label>Name <span class="hint-inline">— what the LLM calls when invoking this tool</span></label>
             <input id="f-name" type="text" value="${escapeAttr(t.name || '')}" ${ro}>
         </div>
         <div class="field">
-            <label>Description</label>
-            <textarea id="f-description" ${ro}>${escapeHtml(t.description || '')}</textarea>
+            <label>Description <span class="hint-inline">— the contract the LLM reads to decide whether to call this tool</span></label>
+            <textarea id="f-description" class="tall" ${ro}>${escapeHtml(reflowProse(t.description))}</textarea>
+            <div class="hint">${isUser
+                ? 'Edited here. Treat this as documentation written for the model, not for humans — clear inputs, side effects, output shape.'
+                : 'Read-only. Source: leading <code>///</code> block on <code>' + escapeHtml((t.method || t.name) || '') + '</code> in <code>' + escapeHtml(t._toolset || '') + '</code>. The %AI framework feeds this exact text to the LLM as the tool\'s description.'}</div>
         </div>
+        ${!isUser && sig.trim() ? `
+        <div class="field">
+            <label>Method signature</label>
+            <pre class="code-block" style="white-space:pre-wrap;">${escapeHtml(sig)}</pre>
+        </div>` : ''}
         <div class="field">
             <label>Input schema (JSON Schema)</label>
             <textarea id="f-inputSchema" class="tall" ${ro}>${escapeHtml(toJsonString(t.inputSchema))}</textarea>
@@ -665,13 +1287,114 @@ function renderToolDetail() {
             </div>
         </div>
         <div class="field">
-            <label>Implementation body</label>
-            <textarea id="f-implBody" class="tall" ${ro}>${escapeHtml((t.implementation && t.implementation.body) || '')}</textarea>
-            <div class="hint">For SQL: a single statement or a parameterized query. For ObjectScript: code that sets %result. For Python: a function body. For REST: an endpoint URL or template.</div>
+            <label>${isUser ? 'Implementation body' : 'Source code'} <span class="hint-inline">${isUser ? '— what runs when the tool is dispatched' : '— ObjectScript method body (read-only; lives in the .cls file)'}</span></label>
+            <textarea id="f-implBody" class="tall code-block" ${ro}>${escapeHtml((t.implementation && t.implementation.body) || '')}</textarea>
+            ${isUser
+                ? '<div class="hint">For SQL: a single statement or a parameterized query. For ObjectScript: code that sets %result. For Python: a function body. For REST: an endpoint URL or template.</div>'
+                : '<div class="hint">Pulled from <code>%Dictionary.CompiledMethod.Implementation</code>. To edit, modify the <code>.cls</code> file in the source tree and recompile.</div>'}
         </div>
+        ${t._toolset && t._originalName ? renderToolDryRunHtml(t) : ''}
         ${t._toolset ? sourcePanelHtml(t._toolset) : ''}
     `;
     bindSourcePanel($('form'));
+    bindAutoSizeTextareas($('form'));
+    if (t._toolset && t._originalName) bindToolDryRun(t);
+}
+
+// Phase 6 — Dry Run panel. Lives at the bottom of the Tool detail
+// form for tools that already exist (saved). Lets the operator paste
+// an input JSON, click Run, and see the actual output the framework
+// would deliver to the LLM. Mutating tools warn before firing
+// because dry-run BYPASSES the confirmation gate (the operator's
+// click is the explicit intent).
+function renderToolDryRunHtml(t) {
+    const isMutating = /^(Start|Stop|Delete|Remove|Purge|Drop|Reset|Clear|Truncate|Kill|Unmount|Deploy|Uninstall|Compile|Create|Update|Send|Patch|Put|Post|Enable|Disable|Restart|Add)[A-Z]/.test(t.name || '');
+    const warning = isMutating
+        ? '<div class="hint" style="color:var(--warn);margin-bottom:6px;">Mutating tool. Dry run bypasses the confirmation gate and will actually change IRIS state. Use only with safe inputs.</div>'
+        : '';
+    // Sample arguments come from the server (ToolService.SampleInput)
+    // — curated per tool name. Falls back to {} for tools without a
+    // curated sample. The user can edit before clicking Run.
+    const sample = (t.sampleInput && typeof t.sampleInput === 'object')
+        ? t.sampleInput
+        : {};
+    const hasSample = sample && Object.keys(sample).length > 0;
+    const sampleHint = hasSample
+        ? '<div class="hint">Pre-filled with a sample. Click <strong>Run tool</strong> to execute as-is, or edit first. Resets to the sample on every reload.</div>'
+        : '<div class="hint">No curated sample for this tool. Pass an empty object <code>{}</code> if it takes no arguments, or read the <strong>Description</strong> above for the expected input shape.</div>';
+    return `
+        <div class="dryrun-panel">
+            <div class="dryrun-head">DRY RUN</div>
+            ${warning}
+            <div class="field">
+                <label>Input JSON ${hasSample ? '<span class="hint-inline">— pre-filled with a curated sample</span>' : ''}</label>
+                <textarea id="f-dryrun-input" class="tall code-block">${escapeHtml(toJsonString(sample))}</textarea>
+                ${sampleHint}
+                ${hasSample ? '<div style="margin-top:6px;"><button type="button" class="link-btn" id="f-dryrun-reset">Reset to sample</button></div>' : ''}
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+                <button id="f-dryrun-go" class="primary" type="button">Run tool</button>
+                <span id="f-dryrun-status" style="color:var(--muted);font-size:11px;"></span>
+            </div>
+            <div class="field">
+                <label>Output</label>
+                <pre id="f-dryrun-output" class="dryrun-output"></pre>
+            </div>
+        </div>
+    `;
+}
+
+function bindToolDryRun(t) {
+    const goBtn = $('f-dryrun-go');
+    if (!goBtn) return;
+    // Reset-to-sample button (only present when a curated sample exists).
+    const resetBtn = $('f-dryrun-reset');
+    if (resetBtn) {
+        resetBtn.addEventListener('click', () => {
+            const inputEl = $('f-dryrun-input');
+            if (!inputEl) return;
+            inputEl.value = toJsonString(t.sampleInput || {});
+            const statusEl = $('f-dryrun-status');
+            if (statusEl) {
+                statusEl.style.color = 'var(--muted)';
+                statusEl.textContent = 'reset to sample';
+                setTimeout(() => { if (statusEl.textContent === 'reset to sample') statusEl.textContent = ''; }, 1800);
+            }
+        });
+    }
+    goBtn.addEventListener('click', async () => {
+        const inputEl = $('f-dryrun-input');
+        const statusEl = $('f-dryrun-status');
+        const outEl = $('f-dryrun-output');
+        let parsed;
+        try { parsed = JSON.parse(inputEl.value || '{}'); }
+        catch (e) { statusEl.textContent = 'Invalid JSON: ' + e.message; statusEl.style.color = 'var(--danger)'; return; }
+        goBtn.disabled = true;
+        statusEl.style.color = 'var(--muted)';
+        statusEl.textContent = 'running…';
+        outEl.textContent = '';
+        try {
+            const r = await post(
+                '/editor/tool/' + encodeURIComponent(t._toolset) + '/' + encodeURIComponent(t._originalName) + '/dryrun',
+                { input: parsed }
+            );
+            if (r.ok) {
+                statusEl.style.color = 'var(--success)';
+                statusEl.textContent = 'OK · ' + r.elapsedMs + 'ms' + (r.timing ? ' (tool ' + r.timing + 's)' : '');
+                outEl.textContent = (typeof r.output === 'string') ? r.output : JSON.stringify(r.output, null, 2);
+            } else {
+                statusEl.style.color = 'var(--danger)';
+                statusEl.textContent = 'FAILED · ' + r.elapsedMs + 'ms';
+                outEl.textContent = r.error || '(no error message)';
+            }
+        } catch (e) {
+            statusEl.style.color = 'var(--danger)';
+            statusEl.textContent = 'FAILED';
+            outEl.textContent = e.message || String(e);
+        } finally {
+            goBtn.disabled = false;
+        }
+    });
 }
 
 // -------- save / delete --------
@@ -688,14 +1411,32 @@ $('btn-save').addEventListener('click', async () => {
             await saveToolSet();
         } else if (kind === 'tool') {
             await saveTool();
+        } else if (kind === 'connection') {
+            await saveConnection();
         }
     } catch (e) {
         showError(e);
     }
 });
 
+function readNewClass(prefix, kindLabel) {
+    const v = ($('f-class')?.value || '').trim();
+    if (!v) { toast('Class name is required.', 'error'); return null; }
+    if (v.indexOf(prefix) !== 0) {
+        toast(`Class name must start with ${prefix}`, 'error');
+        return null;
+    }
+    if (v === prefix) { toast(`Add a ${kindLabel} name after the prefix.`, 'error'); return null; }
+    return v;
+}
+
 async function saveAgent() {
     const a = state.selected;
+    if (a._isNew) {
+        const cls = readNewClass('AgenticInterop.User.Agent.', 'agent');
+        if (!cls) return;
+        a.class = cls;
+    }
     const body = {
         name:          $('f-name').value,
         description:   $('f-description').value,
@@ -716,6 +1457,11 @@ async function saveAgent() {
 
 async function saveMCP() {
     const m = state.selected;
+    if (m._isNew) {
+        const cls = readNewClass('AgenticInterop.User.MCP.', 'MCP');
+        if (!cls) return;
+        m.class = cls;
+    }
     const body = {
         name:             $('f-name').value,
         shortDescription: $('f-shortDescription').value,
@@ -732,17 +1478,84 @@ async function saveMCP() {
 
 async function saveToolSet() {
     const t = state.selected;
+    if (t._isNew) {
+        const cls = readNewClass('AgenticInterop.User.ToolSet.', 'ToolSet');
+        if (!cls) return;
+        t.class = cls;
+    }
+    const includedClass = $('f-includedClass') ? $('f-includedClass').value : '';
+    // Collect selected tools from the checkboxes
+    const selectedTools = [];
+    document.querySelectorAll('#f-tools input[name="tool-select"]:checked').forEach(cb => {
+        selectedTools.push(cb.value);
+    });
+    const allTools = document.querySelectorAll('#f-tools input[name="tool-select"]');
+    // Determine if all tools are selected (no filter needed)
+    const allSelected = selectedTools.length === allTools.length;
+
     const body = {
         name:           $('f-name').value,
-        description:    $('f-description').value,
-        definitionRaw:  $('f-definitionRaw').value
+        description:    $('f-description').value
     };
+
+    // If we have a provider selected, send structured tool selection
+    // instead of raw definitionRaw — the backend generates the XData.
+    if (includedClass) {
+        body.includedClass = includedClass;
+        body.selectedTools = allSelected ? [] : selectedTools;  // empty = all
+        body.toolsetDescription = $('f-description').value;
+    } else {
+        // Fallback: raw XData editing (no provider selected)
+        const defRaw = $('f-definitionRaw');
+        if (defRaw) body.definitionRaw = defRaw.value;
+    }
+
     const path = '/editor/toolset/' + encodeURIComponent(t.class);
     const r = t._isNew ? await post('/editor/toolset', { class: t.class, ...body }) : await put(path, body);
     state.selected = r;
-    toast('Saved.', 'success');
+    // Clear cached providers so next detail open re-fetches
+    state._toolProviders = null;
+    toast('Saved. ToolSet class updated and recompiled.', 'success');
     renderToolSetDetail();
     if (state.tab === 'toolsets') loadList();
+}
+
+async function saveConnection() {
+    const c = state.selected;
+    const isNew = !!c._isNew;
+    const props = {
+        displayName: ($('f-displayName')?.value || '').trim(),
+        description: $('f-description')?.value || '',
+        provider:    $('f-provider').value,
+        model:       ($('f-model')?.value || '').trim(),
+        region:      ($('f-region')?.value || '').trim(),
+        baseURL:     ($('f-baseURL')?.value || '').trim(),
+        maxTokens:   Number($('f-maxTokens')?.value || 8192) || 0,
+        enabled:     ($('f-enabled')?.value || 'true') === 'true',
+        isDefault:   ($('f-isDefault')?.value || 'false') === 'true'
+    };
+    let saved;
+    if (isNew) {
+        const name = ($('f-name')?.value || '').trim();
+        if (!name) { toast('Name is required.', 'error'); return; }
+        if (!/^[a-z][a-z0-9-]{0,99}$/.test(name)) {
+            toast('Name must be lowercase, alpha-start, alphanumeric + dash.', 'error');
+            return;
+        }
+        saved = await post('/connections', { name, ...props });
+    } else {
+        saved = await put('/connections/' + encodeURIComponent(c.name), props);
+    }
+    // Secret write goes through a separate endpoint so it never enters
+    // the regular Save body / audit log.
+    const secretEl = $('f-secret');
+    if (secretEl && secretEl.value) {
+        saved = await post('/connections/' + encodeURIComponent(saved.name) + '/secret', { value: secretEl.value });
+    }
+    state.selected = saved;
+    toast('Saved.', 'success');
+    renderConnectionDetail();
+    if (state.tab === 'connections') loadList();
 }
 
 async function saveTool() {
@@ -781,6 +1594,7 @@ $('btn-delete').addEventListener('click', async () => {
         if (kind === 'mcp') await del('/editor/mcp/' + encodeURIComponent(state.selected.class));
         if (kind === 'toolset') await del('/editor/toolset/' + encodeURIComponent(state.selected.class));
         if (kind === 'tool') await del('/editor/tool/' + encodeURIComponent(state.selected._toolset) + '/' + encodeURIComponent(state.selected._originalName));
+        if (kind === 'connection') await del('/connections/' + encodeURIComponent(state.selected.name));
         toast('Deleted.', 'success');
         $('detail-panel').hidden = true;
         loadList();
@@ -794,33 +1608,47 @@ $('btn-cancel').addEventListener('click', () => {
 
 // -------- new --------
 
+// "+ New" opens an empty editor in the right pane immediately. The class
+// name is collected via the inline Class field (editable when _isNew),
+// not via a browser prompt() — system dialogs interrupt the flow and
+// don't fit a polished admin UI. Validation runs on Save instead.
 $('btn-new').addEventListener('click', async () => {
     const tab = state.tab;
     if (tab === 'agents') {
-        const cls = prompt('Class name (must start with AgenticInterop.User.Agent.):', 'AgenticInterop.User.Agent.MyAgent');
-        if (!cls) return;
-        state.selected = { class: cls, name: '', description: '', instructions: 'You are a helpful assistant.', temperature: '0.3', maxIterations: '10', mcps: [], skills: [], _isNew: true };
+        state.selected = { class: '', name: '', description: '', instructions: 'You are a helpful assistant.', temperature: '0.3', maxIterations: '10', mcps: [], skills: [], userAuthored: true, _isNew: true };
         state.detailKind = 'agent';
         await loadRegistries(true);
-        renderAgentDetail();
         $('detail-panel').hidden = false;
-    }
-    if (tab === 'mcps') {
-        const cls = prompt('Class name (must start with AgenticInterop.User.MCP.):', 'AgenticInterop.User.MCP.MyMCP');
-        if (!cls) return;
-        state.selected = { class: cls, name: '', shortDescription: '', description: '', userAuthored: true, toolsets: [], _isNew: true };
+        renderAgentDetail();
+        markListSelected('');
+        const f = $('f-class'); if (f) f.focus();
+    } else if (tab === 'mcps') {
+        state.selected = { class: '', name: '', shortDescription: '', description: '', userAuthored: true, toolsets: [], _isNew: true };
         state.detailKind = 'mcp';
         await loadRegistries(true);
+        $('detail-panel').hidden = false;
         renderMCPDetail();
-        $('detail-panel').hidden = false;
-    }
-    if (tab === 'toolsets') {
-        const cls = prompt('Class name (must start with AgenticInterop.User.ToolSet.):', 'AgenticInterop.User.ToolSet.MyToolSet');
-        if (!cls) return;
-        state.selected = { class: cls, name: '', description: '', userAuthored: true, tools: [], definitionRaw: '', _isNew: true };
+        markListSelected('');
+        const f = $('f-class'); if (f) f.focus();
+    } else if (tab === 'toolsets') {
+        state.selected = { class: '', name: '', description: '', userAuthored: true, tools: [], definitionRaw: '', _isNew: true };
         state.detailKind = 'toolset';
-        renderToolSetDetail();
         $('detail-panel').hidden = false;
+        renderToolSetDetail();
+        markListSelected('');
+        const f = $('f-class'); if (f) f.focus();
+    } else if (tab === 'connections') {
+        state.selected = {
+            name: '', displayName: '', description: '', provider: 'bedrock',
+            model: 'global.anthropic.claude-sonnet-4-20250514-v1:0', region: 'us-east-1',
+            baseURL: '', maxTokens: 8192, enabled: true, isDefault: false, core: false,
+            hasSecret: false, _isNew: true
+        };
+        state.detailKind = 'connection';
+        $('detail-panel').hidden = false;
+        renderConnectionDetail();
+        markListSelected('');
+        const f = $('f-name'); if (f) f.focus();
     }
 });
 
@@ -927,6 +1755,48 @@ function sourcePanelHtml(className) {
     `;
 }
 
+// Grow every textarea in the form to fit its content so long descriptions
+// and instructions are not truncated behind an internal scrollbar. The
+// CSS min-height still acts as a floor for empty fields, and `resize:
+// vertical` still lets the user shrink it manually. We use rAF so the
+// measurement runs after the panel is visible (openXxx unhides AFTER
+// render in some flows).
+function bindAutoSizeTextareas(formEl) {
+    if (!formEl) return;
+    // box-sizing: border-box is set globally, so el.style.height sets the
+    // OUTER box. scrollHeight reports content+padding only, so we have to
+    // add the border widths back — otherwise the last line is clipped by
+    // the border (2px) and an internal scrollbar appears. Caller must
+    // ensure the form's containing panel is visible BEFORE invoking us
+    // (openXxx unhides the detail panel first), otherwise scrollHeight
+    // reads 0 on a display:none textarea.
+    const fit = el => {
+        if (!el.isConnected) return;
+        el.style.height = 'auto';
+        const cs = getComputedStyle(el);
+        const border = (parseFloat(cs.borderTopWidth) || 0) + (parseFloat(cs.borderBottomWidth) || 0);
+        el.style.height = (el.scrollHeight + border) + 'px';
+    };
+    formEl.querySelectorAll('textarea').forEach(el => {
+        fit(el);                                 // sync, panel is visible
+        requestAnimationFrame(() => fit(el));    // safety net for late layout
+        el.addEventListener('input', () => fit(el));
+        el.addEventListener('focus', () => fit(el));
+    });
+}
+
+// Toggle the .list-item.selected class so the user can see which row is
+// currently open in the right pane. Called from every openXxx() with the
+// item's stable identity (class name for Agent/MCP/ToolSet/Skill, the
+// "toolset|name" pair for Tool).
+function markListSelected(id) {
+    const list = document.getElementById('list');
+    if (!list) return;
+    list.querySelectorAll('.list-item').forEach(it => {
+        it.classList.toggle('selected', it.dataset.id === id);
+    });
+}
+
 // Wire up toggle / copy / reload listeners after a detail is rendered.
 function bindSourcePanel(formEl) {
     if (!formEl) return;
@@ -990,6 +1860,15 @@ function shortName(cls) { return cls.split('.').slice(-1)[0]; }
 function firstLine(s) { if (!s) return ''; return s.split(/\r?\n/)[0]; }
 function escapeHtml(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function escapeAttr(s) { return escapeHtml(s); }
+// Description text in the source classes is hard-wrapped at ~60 chars
+// (a side-effect of how the original ObjectScript comments / XData were
+// authored). When we drop that into a wide textarea, the \n's force the
+// text to break at column 60 and leave the right two-thirds of the box
+// empty. reflowProse collapses every run of whitespace into a single
+// space so the prose wraps at the textarea's own width — like a normal
+// paragraph editor. Code fields (XML/JSON/code) keep their original
+// formatting because they don't go through this helper.
+function reflowProse(s) { return String(s == null ? '' : s).replace(/\s+/g, ' ').trim(); }
 function toJsonString(v) { try { return JSON.stringify(v == null ? {} : v, null, 2); } catch { return ''; } }
 function parseJson(s) { try { return s ? JSON.parse(s) : {}; } catch { return {}; } }
 

@@ -27,10 +27,15 @@ Parameter TOOLSETS = "";
 /// Register this MCP's ToolSets onto the agent's ToolManager. Called by
 /// AgenticInterop.Agent.Manager.Build for each MCP listed in the Agent's
 /// Parameter MCPS.
+///
+/// Reads TOOLSETS through AgenticInterop.Editor.Overlay so user
+/// customizations (saved into AgenticInterop.Data.MCPOverride) win
+/// over the .cls Parameter default. `..#TOOLSETS` (compile-time
+/// macro) ignores overrides — DON'T use it here.
 ClassMethod RegisterToAgent(pAgent As %AI.Agent) As %Status
 {
     Set tSC = $$$OK
-    Set toolsets = ..#TOOLSETS
+    Set toolsets = ##class(AgenticInterop.Editor.Overlay).GetEffectiveTOOLSETS($CLASSNAME())
     If toolsets = "" { Quit tSC }
     For i=1:1:$LENGTH(toolsets, ",") {
         Set cls = $ZSTRIP($PIECE(toolsets, ",", i), "<>W")

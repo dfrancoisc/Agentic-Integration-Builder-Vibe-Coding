@@ -15,12 +15,15 @@ ClassMethod ListAgents(pResponse As %CSP.Response, pRequest As %CSP.Request) As 
         "ORDER BY Name")
     Set arr = []
     While rs.%Next() {
+        Set cls = rs.%Get("Name")
+        Set effective = ##class(AgenticInterop.Editor.Overlay).GetEffectiveAgent(cls)
         Set row = {
-            "class": (rs.%Get("Name")),
-            "description": (rs.%Get("Description")),
-            "abstract": (rs.%Get("Abstract"))
+            "class": (cls),
+            "description": (effective.description),
+            "abstract": (rs.%Get("Abstract")),
+            "name":        (effective.name),
+            "customized":  (effective.customized)
         }
-        Set row.name = ##class(AgenticInterop.Editor.Util).ParamDefault(rs.%Get("Name"), "NAME")
         Do arr.%Push(row)
     }
     Quit ##class(AgenticInterop.Editor.Util).WriteJSON(pResponse, {"agents": (arr)})
@@ -37,15 +40,21 @@ ClassMethod ListMCPs(pResponse As %CSP.Response, pRequest As %CSP.Request) As %S
     Set arr = []
     While rs.%Next() {
         Set cls = rs.%Get("Name")
+        // Use the overlay-aware view so the list reflects what the
+        // chat runtime actually sees. The shipped .cls Description
+        // and Abstract still come from the dictionary row above —
+        // they're not user-overridable.
+        Set effective = ##class(AgenticInterop.Editor.Overlay).GetEffectiveMCP(cls)
         Set row = {
             "class": (cls),
-            "description": (rs.%Get("Description")),
+            "description": (effective.description),
             "abstract": (rs.%Get("Abstract")),
-            "name":        (##class(AgenticInterop.Editor.Util).ParamDefault(cls, "NAME")),
-            "shortDescription": (##class(AgenticInterop.Editor.Util).ParamDefault(cls, "DESCRIPTION")),
-            "toolsetsCsv": (##class(AgenticInterop.Editor.Util).ParamDefault(cls, "TOOLSETS"))
+            "name":        (effective.name),
+            "shortDescription": (effective.shortDescription),
+            "toolsetsCsv": (effective.toolsetsCsv),
+            "toolsets":    (effective.toolsets),
+            "customized":  (effective.customized)
         }
-        Set row.toolsets = ##class(AgenticInterop.Editor.Util).CsvToArray(row.toolsetsCsv)
         Do arr.%Push(row)
     }
     Quit ##class(AgenticInterop.Editor.Util).WriteJSON(pResponse, {"mcps": (arr)})
@@ -62,10 +71,12 @@ ClassMethod ListToolSets(pResponse As %CSP.Response, pRequest As %CSP.Request) A
     Set arr = []
     While rs.%Next() {
         Set cls = rs.%Get("Name")
+        Set effective = ##class(AgenticInterop.Editor.Overlay).GetEffectiveToolSet(cls)
         Set row = {
             "class": (cls),
-            "description": (rs.%Get("Description")),
-            "name": (##class(AgenticInterop.Editor.Util).ParamDefault(cls, "NAME"))
+            "description": (effective.description),
+            "name":        (effective.name),
+            "customized":  (effective.customized)
         }
         // Count tools in XData Definition (best-effort — empty stub yields 0).
         Set toolCount = 0

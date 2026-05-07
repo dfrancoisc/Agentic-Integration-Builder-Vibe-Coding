@@ -71,7 +71,17 @@ body { display: flex; flex-direction: column; }
   display: flex; flex-direction: column; gap: 4px; margin-bottom: 4px;
 }
 .list-item:hover { background: var(--panel-2); border-color: var(--border); }
-.list-item.selected { background: var(--panel-2); border-color: var(--primary); }
+/* Selected row gets a strong left accent bar + tinted background so the
+ * user can immediately see which item the right-pane editor is showing.
+ * Border-color alone (the previous styling) was nearly invisible against
+ * the panel-2 hover background. */
+.list-item.selected {
+    background: rgba(99, 132, 255, 0.10);
+    border-color: var(--primary);
+    box-shadow: inset 3px 0 0 0 var(--primary);
+}
+.list-item.selected:hover { background: rgba(99, 132, 255, 0.14); }
+.list-item.selected .row1 { color: var(--primary); }
 .list-item .row1 { display: flex; align-items: center; gap: 8px; font-weight: 600; }
 .list-item .row2 { color: var(--muted); font-size: 12px; line-height: 1.4; }
 /* Description rows wrap up to ~3 lines and ellipsize cleanly instead of
@@ -85,6 +95,40 @@ body { display: flex; flex-direction: column; }
 .badge.shipped { background: rgba(245, 158, 11, 0.15); color: var(--warn); }
 .badge.user { background: rgba(34, 197, 94, 0.15); color: var(--success); }
 .badge.abstract { background: rgba(139, 149, 166, 0.15); color: var(--muted); }
+.badge.mut { background: rgba(239, 68, 68, 0.12); color: var(--danger); border: 1px solid rgba(239, 68, 68, 0.30); }
+.badge.ro { background: rgba(99, 132, 255, 0.10); color: var(--primary); border: 1px solid rgba(99, 132, 255, 0.30); }
+
+/* Provider connection semaphore. The colored dot doubles as a list-item
+ * leading icon and a detail-form indicator. Green = last healthcheck
+ * succeeded; red = failed (LastError shown in .err-block); unknown =
+ * never tested or config edited since last test. Per the
+ * InterSystems-internal "no icons" preference, we use a colored dot +
+ * label instead of an iconic glyph. */
+.status-dot {
+    display: inline-block; width: 9px; height: 9px; border-radius: 50%;
+    flex: 0 0 auto;
+}
+.status-dot.green   { background: #22c55e; box-shadow: 0 0 0 2px rgba(34,197,94,0.18); }
+.status-dot.red     { background: #ef4444; box-shadow: 0 0 0 2px rgba(239,68,68,0.18); }
+.status-dot.unknown { background: #8b95a6; box-shadow: 0 0 0 2px rgba(139,149,166,0.18); }
+
+.semaphore {
+    display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+    border: 1px solid var(--border); border-radius: 4px; background: var(--code);
+    margin-bottom: 14px;
+}
+.semaphore .status-label { text-transform: uppercase; font-size: 11px; letter-spacing: 0.06em; }
+.semaphore.status-green .status-label   { color: #22c55e; }
+.semaphore.status-red   .status-label   { color: #ef4444; }
+.semaphore.status-unknown .status-label { color: var(--muted); }
+.semaphore .status-time { color: var(--muted); font-size: 11px; margin-left: 4px; }
+.semaphore button { margin-left: auto; }
+.err-block {
+    margin: -6px 0 14px 0; padding: 10px 12px; border-radius: 4px;
+    background: rgba(239, 68, 68, 0.10); border: 1px solid rgba(239, 68, 68, 0.35);
+    color: #fecaca; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12px; white-space: pre-wrap;
+}
 
 .form { flex: 1; min-height: 0; padding: 16px; overflow: auto; }
 .field { margin-bottom: 14px; }
@@ -101,7 +145,74 @@ body { display: flex; flex-direction: column; }
 .field textarea.tall { min-height: 240px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; line-height: 1.5; }
 .field textarea.short { min-height: 70px; }
 .field .hint { font-size: 11px; color: var(--muted); margin-top: 4px; }
+.field .hint code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10.5px; color: var(--text); background: var(--code); padding: 1px 4px; border-radius: 3px; border: 1px solid var(--border); }
+.field .hint-inline { font-size: 11px; color: var(--muted); font-weight: 400; margin-left: 4px; }
 .field.readonly input, .field.readonly textarea { color: var(--muted); }
+
+/* ToolSet tool selector — checkboxes for each tool from the provider. */
+.tool-select-head {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 6px;
+}
+.tool-select-count {
+  font-weight: 400; font-size: 11px; color: var(--muted);
+  margin-left: 8px; text-transform: none; letter-spacing: normal;
+}
+.tool-select-actions { display: flex; gap: 12px; }
+.tool-select-list {
+  border: 1px solid var(--border); border-radius: 4px;
+  background: var(--code); max-height: 420px; overflow: auto;
+}
+.tool-select-list .empty {
+  padding: 18px; color: var(--muted); font-size: 12px; text-align: center;
+}
+.tool-select-row {
+  display: flex; align-items: flex-start; gap: 8px;
+  padding: 8px 12px; border-bottom: 1px solid var(--border);
+  cursor: pointer; transition: background 0.12s;
+}
+.tool-select-row:last-child { border-bottom: none; }
+.tool-select-row:hover { background: rgba(59, 130, 246, 0.06); }
+.tool-select-row.is-selected { background: rgba(59, 130, 246, 0.08); }
+.tool-select-row input[type="checkbox"] {
+  flex: 0 0 auto; margin-top: 2px; accent-color: var(--primary);
+}
+.tool-select-name {
+  font-weight: 600; font-size: 13px; color: var(--text); white-space: nowrap;
+}
+.tool-select-desc {
+  flex: 1; font-size: 11px; color: var(--muted); line-height: 1.4;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.tool-select-row .badge { flex: 0 0 auto; font-size: 9px; padding: 1px 5px; }
+/* Inline code-styled block (read-only signatures, source code preview).
+ * Matches .field textarea.tall sizing so the side-by-side flow with
+ * editable textareas reads consistently. */
+.field pre.code-block, .field textarea.code-block {
+  background: var(--code); color: var(--text);
+  border: 1px solid var(--border); border-radius: 4px;
+  padding: 10px 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px; line-height: 1.5;
+}
+.field pre.code-block { margin: 0; max-height: 200px; overflow: auto; white-space: pre-wrap; word-break: break-word; }
+.field textarea.code-block { min-height: 280px; }
+.field textarea[readonly].code-block { color: var(--text); }
+
+/* Subtle text-link-like button for in-form actions (reset-to-sample,
+ * etc.). Visually less heavy than a primary button so it doesn't
+ * compete with Run / Save. */
+.link-btn {
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: var(--primary);
+  cursor: pointer;
+  font: 12px ui-sans-serif, system-ui, sans-serif;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.link-btn:hover { color: var(--text); }
 .field-row { display: flex; gap: 12px; }
 .field-row > .field { flex: 1; }
 
@@ -112,6 +223,198 @@ body { display: flex; flex-direction: column; }
 .source-panel {
   margin-top: 18px; border-top: 1px solid var(--border); padding-top: 14px;
 }
+/* Phase 6 — Dry Run panel inside the Tool detail form. */
+.dryrun-panel {
+    margin-top: 18px; border: 1px solid var(--border); border-radius: 4px;
+    padding: 14px; background: var(--code);
+}
+.dryrun-head {
+    color: var(--primary);
+    font-size: 11px;
+    text-transform: uppercase; letter-spacing: 0.06em;
+    font-weight: 600;
+    margin-bottom: 8px;
+}
+.dryrun-output {
+    margin: 0; padding: 10px; min-height: 80px; max-height: 320px;
+    background: var(--bg); border: 1px solid var(--border); border-radius: 4px;
+    font: 12px ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: var(--text); white-space: pre-wrap; word-break: break-word;
+    overflow: auto;
+}
+.dryrun-output:empty::before {
+    content: '(no output yet — paste input JSON above and click Run)';
+    color: var(--muted); font-style: italic;
+}
+/* Phase 7 audit row coloring. Errors get a soft red border + status
+ * badge in danger color; successes use the default. */
+.list-item.audit-error { border-color: rgba(239, 68, 68, 0.5); }
+.list-item.audit-error:hover { background: rgba(239, 68, 68, 0.08); }
+.audit-status {
+    display: inline-block; padding: 1px 8px; border-radius: 3px;
+    font: 600 11px ui-monospace, SFMono-Regular, Menlo, monospace;
+    background: rgba(34, 197, 94, 0.10); color: var(--success);
+    border: 1px solid rgba(34, 197, 94, 0.4);
+}
+.audit-status.err {
+    background: rgba(239, 68, 68, 0.12); color: var(--danger);
+    border-color: rgba(239, 68, 68, 0.45);
+}
+
+/* Full-width layout for tabs that don't have a per-row detail pane.
+ * The split-pane Agent/MCP/etc. layout becomes full-width when
+ * body[data-layout=full]; #detail-panel hides and #list-panel grows. */
+/* In full-width mode the right detail-panel hides and #main collapses
+ * its grid to a single 1fr column so the list-panel actually expands.
+ * Without overriding grid-template-columns the 320px first track
+ * stays put and the panel never widens. */
+body[data-layout="full"] #main { grid-template-columns: minmax(0, 1fr); }
+body[data-layout="full"] #detail-panel { display: none !important; }
+
+/* Audit tab table layout. Replaces the old vertical list-item cards
+ * with a dense, scannable table that uses the wide canvas. */
+.audit-wrap { padding: 16px; height: 100%; display: flex; flex-direction: column; gap: 12px; }
+.audit-controls {
+    display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap;
+    padding: 10px 12px;
+    background: var(--code); border: 1px solid var(--border); border-radius: 4px;
+    flex: 0 0 auto;
+}
+.audit-control { display: flex; flex-direction: column; gap: 4px; }
+.audit-control label {
+    color: var(--muted); font-size: 11px;
+    text-transform: uppercase; letter-spacing: 0.04em;
+}
+.audit-control input, .audit-control select {
+    background: var(--bg); color: var(--text);
+    border: 1px solid var(--border); border-radius: 4px;
+    padding: 6px 10px; font: inherit; font-size: 13px;
+    min-width: 140px;
+}
+.audit-control.audit-actions { flex-direction: row; align-items: center; gap: 12px; margin-left: auto; }
+.audit-summary { color: var(--muted); font-size: 12px; }
+
+.audit-table {
+    width: 100%; border-collapse: collapse;
+    table-layout: fixed; font-size: 12px;
+}
+.audit-table thead th {
+    text-align: left; padding: 8px 10px;
+    color: var(--muted); font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.04em; font-size: 11px;
+    border-bottom: 1px solid var(--border);
+    background: var(--panel-2);
+    position: sticky; top: 0; z-index: 1;
+}
+.audit-table .t-status { width: 70px; }
+.audit-table .t-method { width: 80px; }
+.audit-table .t-path   { width: auto; }
+.audit-table .t-kind   { width: 130px; }
+.audit-table .t-when   { width: 170px; }
+.audit-table .t-user   { width: 120px; }
+.audit-table .t-ns     { width: 130px; }
+.audit-table .t-ms     { width: 90px; text-align: right; }
+.audit-table .t-size   { width: 120px; text-align: right; }
+.audit-table tbody tr.audit-row { border-bottom: 1px solid var(--border); }
+.audit-table tbody tr.audit-row:hover { background: var(--panel-2); }
+.audit-table tbody tr.audit-row.audit-error { background: rgba(239, 68, 68, 0.06); }
+.audit-table tbody tr.audit-row.audit-error:hover { background: rgba(239, 68, 68, 0.10); }
+.audit-table td { padding: 8px 10px; vertical-align: top; line-height: 1.4; }
+.audit-table .t-path code {
+    background: transparent; padding: 0; color: var(--text);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    word-break: normal;
+    overflow-wrap: anywhere;        /* break long path tokens at boundaries, not every char */
+}
+/* Allow horizontal scroll on narrow viewports rather than mangling
+ * the columns; the table-layout: fixed widths above set a sane
+ * minimum. */
+.audit-wrap { overflow-x: auto; }
+.audit-table .t-when {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: var(--muted);
+}
+.audit-table .t-method { font-weight: 600; color: var(--muted); }
+.audit-table .t-ms, .audit-table .t-size { color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.audit-table .audit-empty { padding: 20px; text-align: center; color: var(--muted); }
+.audit-detail td { background: var(--code); padding: 12px; }
+.audit-detail-body {
+    display: flex; flex-wrap: wrap; gap: 16px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11px; color: var(--text);
+}
+.audit-detail-body .dim { color: var(--muted); }
+.audit-detail-body pre { width: 100%; }
+
+/* Phase 4.5 / overlay — banner shown on the MCP detail form when a
+ * shipped class has a saved override. Calls out the persistence
+ * model so the operator knows the customization survives upgrade,
+ * and surfaces the "Reset to shipping defaults" action. */
+.customized-banner {
+    display: flex; align-items: center; gap: 14px;
+    padding: 10px 14px;
+    background: rgba(34, 197, 94, 0.08);
+    border: 1px solid rgba(34, 197, 94, 0.4);
+    border-radius: 4px;
+    margin-bottom: 14px;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--text);
+}
+.customized-banner code {
+    background: var(--code); padding: 1px 6px; border-radius: 3px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11px;
+}
+.customized-banner button {
+    flex: 0 0 auto; margin-left: auto;
+    padding: 6px 14px; border-radius: 4px;
+    font: 600 11px ui-sans-serif, system-ui, sans-serif;
+    text-transform: uppercase; letter-spacing: 0.04em;
+    background: var(--code); color: var(--danger);
+    border: 1px solid rgba(239, 68, 68, 0.45);
+    cursor: pointer;
+    transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+.customized-banner button:hover {
+    background: rgba(239, 68, 68, 0.10); border-color: var(--danger);
+}
+
+/* Connection list rows. Two-column header (dot + name on the left,
+ * status badges flush right). The name truncates on narrow widths
+ * so it never wraps mid-word. Three subordinate rows stay aligned to
+ * the dot's column for a consistent left edge. */
+.conn-item .conn-row1 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: nowrap;          /* badges stay on the same line */
+    overflow: hidden;
+}
+.conn-item .conn-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-weight: 600;
+}
+.conn-item .conn-badges {
+    flex: 0 0 auto;
+    display: flex;
+    gap: 4px;
+    align-items: center;
+}
+.conn-item .conn-id,
+.conn-item .conn-meta,
+.conn-item .conn-status {
+    margin-left: 17px;          /* dot (9px) + gap (8px) */
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.5;
+}
+.conn-item .conn-meta { color: var(--text); }
+.conn-item .conn-meta em { color: var(--warn); font-style: normal; }
 .source-toggle {
   display: flex; align-items: center; gap: 8px; cursor: pointer;
   color: var(--muted); font-size: 12px; text-transform: uppercase;

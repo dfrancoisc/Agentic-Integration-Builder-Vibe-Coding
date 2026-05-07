@@ -20,18 +20,12 @@ ClassMethod Get(pResponse As %CSP.Response, pClass As %String) As %Status
     If '$classmethod(util, "ExtendsClass", pClass, "%AI.ToolSet") {
         Quit $classmethod(util, "WriteError", pResponse, "400 Bad Request", "Class is not a %AI.ToolSet subclass", pClass)
     }
-    Set body = {
-        "class":         (pClass),
-        "userAuthored":  (..IsUserAuthored(pClass)),
-        "description":   ($classmethod(util, "ClassDescription", pClass)),
-        "name":          ($classmethod(util, "ParamDefault", pClass, "NAME"))
-    }
-    // Definition XData = XML (framework-managed). Returned as raw text
-    // for power users; not parsed here.
-    Set body.definitionRaw = $classmethod(util, "XDataBody", pClass, "Definition")
-    // ToolManifest XData = JSON (editor-managed). This is where the UI's
-    // tool list lives.
-    Set rawManifest = $classmethod(util, "XDataBody", pClass, "ToolManifest")
+    // Overlay-aware read — surfaces user customizations on top of
+    // shipped class metadata.
+    Set effective = ##class(AgenticInterop.Editor.Overlay).GetEffectiveToolSet(pClass)
+    Set body = effective
+    Set body.userAuthored = ..IsUserAuthored(pClass)
+    Set rawManifest = body.toolManifest
     Set tools = []
     If rawManifest '= "" {
         Try {
@@ -43,21 +37,41 @@ ClassMethod Get(pResponse As %CSP.Response, pClass As %String) As %Status
             Set body.manifestParseError = ex.DisplayString()
         }
     }
+    // If ToolManifest yielded nothing, fall back to parsing tool
+    // names out of Definition XML — `<Tool Name="..." Method="..."/>`.
+    // Shipped toolsets have only the XML; Phase 4 generators will
+    // eventually keep the JSON manifest in sync.
+    If $isobject(tools), tools.%Size() = 0, body.definitionRaw '= "" {
+        Set tools = ..%ParseDefinitionTools(body.definitionRaw, pClass)
+        Set body.toolSource = "definition-xml"
+    } Else {
+        Set body.toolSource = "tool-manifest"
+    }
     Set body.tools = tools
-    Set body.toolCount = $S($isobject(tools):tools.%Size(), 1:0)
+    Set body.toolCount = $select($isobject(tools):tools.%Size(), 1:0)
+    ; Extract the included %AI.Tool provider class from the Definition XData
+    Set defRaw = body.definitionRaw
+    If defRaw '= "" {
+        Set body.includedClass = ..%ExtractIncludedClass(defRaw)
+    }
     Quit $classmethod(util, "WriteJSON", pResponse, body)
 }
 
 /// PUT /api/agentic/editor/toolset/:class
 /// Body: { name, description, definitionRaw }
-/// Tools are typically edited via the Tool service, but this endpoint
-/// accepts a full definitionRaw replacement for power users.
+///
+/// Save routing:
+///   - User-authored classes (AgenticInterop.User.ToolSet.*) write
+///     to .cls dictionary as before.
+///   - Shipped classes write to AgenticInterop.Data.ToolSetOverride.
+///     Caveat: definitionRaw / toolManifest customizations
+///     round-trip through the editor but do NOT change runtime tool
+///     dispatch — the framework parses Definition XData at compile
+///     time. UI shows the override; runtime sees the shipped class.
+///     Name + description ARE used at request time via GetEffectiveToolSet.
 ClassMethod Save(pResponse As %CSP.Response, pClass As %String, pBodyStream) As %Status
 {
     Set util = "AgenticInterop.Editor.Util"
-    If '..IsUserAuthored(pClass) {
-        Quit $classmethod(util, "WriteError", pResponse, "403 Forbidden", "Only user-authored ToolSets can be edited", pClass)
-    }
     Set req = $classmethod(util, "ParseBody", pBodyStream)
     If '$isobject(req) {
         Quit $classmethod(util, "WriteError", pResponse, "400 Bad Request", "Invalid JSON body")
@@ -65,9 +79,37 @@ ClassMethod Save(pResponse As %CSP.Response, pClass As %String, pBodyStream) As 
     If '##class(%Dictionary.CompiledClass).%ExistsId(pClass) {
         Quit $classmethod(util, "WriteError", pResponse, "404 Not Found", "ToolSet class does not exist", pClass)
     }
-    Set tSC = ..ApplyEdits(pClass, req)
+    ; Tool selection changes MUST write to the actual class (not just
+    ; the overlay) because the framework reads XData Definition at
+    ; compile time. Overlay-only writes round-trip through the editor
+    ; but do NOT affect runtime tool dispatch.
+    If req.%IsDefined("includedClass") || req.%IsDefined("selectedTools") {
+        ; Write directly to class source + recompile
+        Set tSC = ..ApplyEdits(pClass, req)
+    } ElseIf ..IsUserAuthored(pClass) {
+        Set tSC = ..ApplyEdits(pClass, req)
+    } Else {
+        Set tSC = ##class(AgenticInterop.Editor.Overlay).SaveToolSetOverride(pClass, req, $username)
+    }
     If 'tSC {
         Quit $classmethod(util, "WriteError", pResponse, "500 Internal Server Error", "Save failed", $system.Status.GetErrorText(tSC))
+    }
+    Quit ..Get(pResponse, pClass)
+}
+
+/// POST /api/agentic/editor/toolset/:class/reset — drops the override.
+ClassMethod Reset(pResponse As %CSP.Response, pClass As %String) As %Status
+{
+    Set util = "AgenticInterop.Editor.Util"
+    If '##class(%Dictionary.CompiledClass).%ExistsId(pClass) {
+        Quit $classmethod(util, "WriteError", pResponse, "404 Not Found", "ToolSet class does not exist", pClass)
+    }
+    If ..IsUserAuthored(pClass) {
+        Quit $classmethod(util, "WriteError", pResponse, "400 Bad Request", "User-authored ToolSets do not use overrides — edits already write to .cls.", pClass)
+    }
+    Set tSC = ##class(AgenticInterop.Editor.Overlay).ResetToolSet(pClass)
+    If 'tSC {
+        Quit $classmethod(util, "WriteError", pResponse, "500 Internal Server Error", "Reset failed", $system.Status.GetErrorText(tSC))
     }
     Quit ..Get(pResponse, pClass)
 }
@@ -141,6 +183,319 @@ ClassMethod Delete(pResponse As %CSP.Response, pClass As %String) As %Status
     Quit $classmethod(util, "WriteJSON", pResponse, {"ok": 1, "deleted": (pClass)})
 }
 
+/// Parse the Definition XData and produce the list of tools the
+/// editor should render. Three patterns are supported:
+///
+///   (a) Pattern 1 — inline tools on the ToolSet itself:
+///       `<Tool Name="..." Method="..."/>` — the Method is a
+///       ClassMethod on pClass. Used by user-authored toolsets the
+///       UI manages.
+///
+///   (b) Pattern 5 — included %AI.Tool subclass (all tools):
+///       `<Include Class="..."/>` — every public ClassMethod on the
+///       included class is a tool, auto-discovered by the framework.
+///       Used by shipped AgenticInterop.ToolSet.* which wrap
+///       AgenticInterop.Tool.* %AI.Tool providers.
+///
+///   (c) Pattern 5 with Filter — selective inclusion:
+///       `<Include Class="..."><Filter Tool="X"/>...</Include>`
+///       Only the listed tools are active. Other tools from the
+///       provider appear with enabled=0 so the editor can show them
+///       as unchecked.
+///
+/// In all cases each tool entry carries the real method Description
+/// (the leading /// block, what the framework feeds the LLM) and the
+/// Implementation (method body source) pulled from
+/// %Dictionary.CompiledMethod. Each tool entry also carries an
+/// `enabled` flag (1 or 0) reflecting the filter state.
+///
+/// pXml:   the XData Definition body.
+/// pClass: the ToolSet class — needed for Pattern 1 (where Methods
+///         live on pClass). For Pattern 5 we read from the Include's
+///         Class attribute instead.
+ClassMethod %ParseDefinitionTools(pXml As %String, pClass As %String = "") As %DynamicArray [ Internal ]
+{
+    Set arr = []
+    Set lines = $LENGTH(pXml, $char(10))
+    Set inInclude = 0
+    Set includeClass = ""
+    Set filterCSV = ""
+    For i=1:1:lines {
+        Set line = $PIECE(pXml, $char(10), i)
+        ; Inside an <Include>...</Include> block — collect Filter elements
+        If inInclude {
+            If line [ "</Include>" {
+                ; End of Include block — append tools with filter applied
+                If filterCSV '= "" {
+                    Do ..%AppendFilteredTools(arr, includeClass, filterCSV)
+                } Else {
+                    Do ..%AppendDiscoveredTools(arr, includeClass)
+                }
+                Set inInclude = 0
+                Set includeClass = ""
+                Set filterCSV = ""
+                Continue
+            }
+            If line [ "<Filter " {
+                Set toolName = ..%XmlAttr(line, "Tool")
+                If toolName '= "" {
+                    Set filterCSV = filterCSV _ $select(filterCSV'="":",", 1:"") _ toolName
+                }
+            }
+            Continue
+        }
+        ; Pattern 5 — <Include Class="..."/>  or  <Include Class="...">
+        If line [ "<Include " {
+            Set incCls = ..%XmlAttr(line, "Class")
+            If incCls = "" { Continue }
+            If line [ "/>" {
+                ; Self-closing — all tools enabled
+                Do ..%AppendDiscoveredTools(arr, incCls)
+            } Else {
+                ; Opening tag — collect Filter children until </Include>
+                Set inInclude = 1
+                Set includeClass = incCls
+                Set filterCSV = ""
+            }
+            Continue
+        }
+        ; Pattern 1 — <Tool Name="..." Method="..."/>
+        If line [ "<Tool " {
+            Set name = ..%XmlAttr(line, "Name")
+            Set method = ..%XmlAttr(line, "Method")
+            If name = "" { Continue }
+            Do ..%AppendInlineTool(arr, pClass, name, method)
+            Continue
+        }
+    }
+    Quit arr
+}
+
+/// Discovery helper for Pattern 5 — walks every public ClassMethod on
+/// pIncludedClass and pushes one tool entry per method. Skips methods
+/// flagged `[Internal]`, methods named with leading `%`, and inherited
+/// methods from %AI.Tool / %Library.RegisteredObject (which would
+/// otherwise leak into the catalog). All tools are marked enabled=1
+/// (no filter). Internal helper.
+ClassMethod %AppendDiscoveredTools(pArr As %DynamicArray, pIncludedClass As %String) [ Internal ]
+{
+    Set sql = "SELECT Name, Description, FormalSpec, ReturnType, ClassMethod, Internal "
+    Set sql = sql _ "FROM %Dictionary.CompiledMethod "
+    Set sql = sql _ "WHERE Parent = ? AND Origin = ? "
+    Set sql = sql _ "ORDER BY Name"
+    Set rs = ##class(%SQL.Statement).%ExecDirect(, sql, pIncludedClass, pIncludedClass)
+    While rs.%Next() {
+        Set methodName = rs.%Get("Name")
+        ; Skip framework / system methods.
+        If $extract(methodName, 1, 1) = "%" { Continue }
+        If +rs.%Get("Internal") { Continue }
+        Set entry = {}
+        Set entry.name = methodName
+        Set entry.method = methodName
+        Set entry.providerClass = pIncludedClass
+        Set entry.description = rs.%Get("Description")
+        Set entry.formalSpec = rs.%Get("FormalSpec")
+        Set entry.returnType = rs.%Get("ReturnType")
+        Set entry.classMethod = ''+rs.%Get("ClassMethod")
+        Set entry.enabled = 1
+        Set entry.implementation = {}
+        Set entry.implementation.kind = "objectscript"
+        Try {
+            Set cm = ##class(%Dictionary.CompiledMethod).%OpenId(pIncludedClass _ "||" _ methodName)
+            If $isobject(cm), $isobject(cm.Implementation) {
+                Set src = ""
+                Do cm.Implementation.Rewind()
+                While 'cm.Implementation.AtEnd { Set src = src _ cm.Implementation.Read(8192) }
+                Set entry.implementation.body = src
+            }
+        } Catch  {}
+        Do pArr.%Push(entry)
+    }
+    Quit
+}
+
+/// Discovery helper for Pattern 5 with Filter — walks every public
+/// ClassMethod on pIncludedClass, marks each tool with enabled=1 if
+/// its name appears in the comma-separated pFilterCSV, enabled=0
+/// otherwise. This lets the editor show all available tools with
+/// checked/unchecked state. Internal helper.
+ClassMethod %AppendFilteredTools(pArr As %DynamicArray, pIncludedClass As %String, pFilterCSV As %String) [ Internal ]
+{
+    ; Build a lookup of enabled tool names from the filter CSV
+    For fi=1:1:$length(pFilterCSV, ",") {
+        Set enabledLookup($zstrip($piece(pFilterCSV, ",", fi), "<>W")) = 1
+    }
+    Set sql = "SELECT Name, Description, FormalSpec, ReturnType, ClassMethod, Internal "
+    Set sql = sql _ "FROM %Dictionary.CompiledMethod "
+    Set sql = sql _ "WHERE Parent = ? AND Origin = ? "
+    Set sql = sql _ "ORDER BY Name"
+    Set rs = ##class(%SQL.Statement).%ExecDirect(, sql, pIncludedClass, pIncludedClass)
+    While rs.%Next() {
+        Set methodName = rs.%Get("Name")
+        If $extract(methodName, 1, 1) = "%" { Continue }
+        If +rs.%Get("Internal") { Continue }
+        Set entry = {}
+        Set entry.name = methodName
+        Set entry.method = methodName
+        Set entry.providerClass = pIncludedClass
+        Set entry.description = rs.%Get("Description")
+        Set entry.formalSpec = rs.%Get("FormalSpec")
+        Set entry.returnType = rs.%Get("ReturnType")
+        Set entry.classMethod = ''+rs.%Get("ClassMethod")
+        Set entry.enabled = $select($data(enabledLookup(methodName)):1, 1:0)
+        Set entry.implementation = {}
+        Set entry.implementation.kind = "objectscript"
+        Try {
+            Set cm = ##class(%Dictionary.CompiledMethod).%OpenId(pIncludedClass _ "||" _ methodName)
+            If $isobject(cm), $isobject(cm.Implementation) {
+                Set src = ""
+                Do cm.Implementation.Rewind()
+                While 'cm.Implementation.AtEnd { Set src = src _ cm.Implementation.Read(8192) }
+                Set entry.implementation.body = src
+            }
+        } Catch  {}
+        Do pArr.%Push(entry)
+    }
+    Quit
+}
+
+/// Pattern-1 helper — read description + body for an inline tool's
+/// backing ClassMethod. Internal helper.
+ClassMethod %AppendInlineTool(pArr As %DynamicArray, pClass As %String, pName As %String, pMethod As %String) [ Internal ]
+{
+    Set entry = {}
+    Set entry.name = pName
+    Set entry.method = pMethod
+    Set entry.implementation = {}
+    Set entry.implementation.kind = "objectscript"
+    Set found = 0
+    If pClass '= "", pMethod '= "" {
+        Try {
+            Set cm = ##class(%Dictionary.CompiledMethod).%OpenId(pClass _ "||" _ pMethod)
+            If $isobject(cm) {
+                Set entry.description = cm.Description
+                Set entry.formalSpec = cm.FormalSpec
+                Set entry.returnType = cm.ReturnType
+                Set entry.classMethod = ''(cm.ClassMethod)
+                If $isobject(cm.Implementation) {
+                    Set src = ""
+                    Do cm.Implementation.Rewind()
+                    While 'cm.Implementation.AtEnd { Set src = src _ cm.Implementation.Read(8192) }
+                    Set entry.implementation.body = src
+                }
+                Set found = 1
+            }
+        } Catch  {}
+    }
+    If 'found {
+        Set entry.description = "(method " _ pMethod _ " not found in %Dictionary; recompile the ToolSet class)"
+        Set entry.implementation.body = "ClassMethod " _ pMethod
+    }
+    Do pArr.%Push(entry)
+    Quit
+}
+
+/// Extract the %AI.Tool provider class name from the first <Include>
+/// element in the XData Definition. Returns "" if no Include found.
+ClassMethod %ExtractIncludedClass(pXml As %String) As %String [ Internal ]
+{
+    Set lines = $length(pXml, $char(10))
+    For i=1:1:lines {
+        Set line = $piece(pXml, $char(10), i)
+        If line [ "<Include " {
+            Set cls = ..%XmlAttr(line, "Class")
+            If cls '= "" Return cls
+        }
+    }
+    Quit ""
+}
+
+/// Build the ToolSet Definition XData XML from tool selection state.
+/// When pSelectedCSV is empty or "*", a plain <Include Class="..."/>
+/// is emitted (all tools active). Otherwise <Filter Tool="..."/>
+/// children restrict the active set while leaving deselected tools
+/// visible-but-unchecked in the editor.
+///
+/// pName:         ToolSet display name (for the Name attribute).
+/// pDescription:  ToolSet description (for the <Description> element).
+/// pIncludedClass: fully-qualified %AI.Tool provider class.
+/// pSelectedCSV:  comma-separated list of selected tool names, or ""/"*" for all.
+ClassMethod BuildDefinitionXml(pName As %String, pDescription As %String, pIncludedClass As %String, pSelectedCSV As %String = "") As %String [ Internal ]
+{
+    Set descEsc = $replace(pDescription, """", "&quot;")
+    Set xml = "<ToolSet Name="""_pName_""">"_$char(10)
+    Set xml = xml _ "    <Description>"_descEsc_"</Description>"_$char(10)
+    If pSelectedCSV = "" || (pSelectedCSV = "*") {
+        ; All tools — simple self-closing Include
+        Set xml = xml _ "    <Include Class="""_pIncludedClass_"""/>"_$char(10)
+    } Else {
+        ; Filtered — Include with Filter children
+        Set xml = xml _ "    <Include Class="""_pIncludedClass_""">"_$char(10)
+        For pi=1:1:$length(pSelectedCSV, ",") {
+            Set toolName = $zstrip($piece(pSelectedCSV, ",", pi), "<>W")
+            If toolName '= "" {
+                Set xml = xml _ "        <Filter Tool="""_toolName_"""/>"_$char(10)
+            }
+        }
+        Set xml = xml _ "    </Include>"_$char(10)
+    }
+    Set xml = xml _ "</ToolSet>"
+    Quit xml
+}
+
+/// GET /api/agentic/editor/tool-providers
+/// Returns all %AI.Tool subclasses available in the system with their
+/// discoverable public ClassMethods. Used by the ToolSet editor to let
+/// the user select a provider when creating or editing a ToolSet.
+ClassMethod ListProviders(pResponse As %CSP.Response) As %Status
+{
+    Set util = "AgenticInterop.Editor.Util"
+    Set arr = []
+    Set sql = "SELECT Name FROM %Dictionary.CompiledClass "
+    Set sql = sql _ "WHERE Name %STARTSWITH 'AgenticInterop.Tool.' "
+    Set sql = sql _ "OR Name %STARTSWITH 'AgenticInterop.User.Tool.' "
+    Set sql = sql _ "ORDER BY Name"
+    Set rs = ##class(%SQL.Statement).%ExecDirect(, sql)
+    While rs.%Next() {
+        Set cls = rs.%Get("Name")
+        ; Only include classes that extend %AI.Tool
+        If '$classmethod(util, "ExtendsClass", cls, "%AI.Tool") { Continue }
+        Set entry = {}
+        Set entry.class = cls
+        Set entry.shortName = $piece(cls, ".", $length(cls, "."))
+        ; Discover public ClassMethods (same logic as %AppendDiscoveredTools)
+        Set methods = []
+        Set msql = "SELECT Name, Description, Internal FROM %Dictionary.CompiledMethod "
+        Set msql = msql _ "WHERE Parent = ? AND Origin = ? ORDER BY Name"
+        Set mrs = ##class(%SQL.Statement).%ExecDirect(, msql, cls, cls)
+        While mrs.%Next() {
+            Set mName = mrs.%Get("Name")
+            If $extract(mName, 1, 1) = "%" { Continue }
+            If +mrs.%Get("Internal") { Continue }
+            Set m = {}
+            Set m.name = mName
+            Set m.description = mrs.%Get("Description")
+            Do methods.%Push(m)
+        }
+        Set entry.methods = methods
+        Set entry.methodCount = methods.%Size()
+        Do arr.%Push(entry)
+    }
+    Quit $classmethod(util, "WriteJSON", pResponse, {"providers": (arr)})
+}
+
+/// Pluck `Name="value"` out of a fragment. Empty if not present.
+ClassMethod %XmlAttr(pLine As %String, pAttr As %String) As %String [ Internal ]
+{
+    Set marker = pAttr _ "="""
+    Set p = $FIND(pLine, marker)
+    If p = 0 { Quit "" }
+    Set rest = $EXTRACT(pLine, p, *)
+    Set q = $FIND(rest, """")
+    If q = 0 { Quit "" }
+    Quit $EXTRACT(rest, 1, q - 2)
+}
+
 ClassMethod ApplyEdits(pClass As %String, pReq As %DynamicObject) As %Status
 {
     Set util = "AgenticInterop.Editor.Util"
@@ -150,16 +505,47 @@ ClassMethod ApplyEdits(pClass As %String, pReq As %DynamicObject) As %Status
         If $isobject(cdef) {
             Set cdef.Description = pReq.description
             Set tSC = cdef.%Save()
-            If 'tSC { Quit tSC }
+            If 'tSC Quit tSC
         }
     }
     If pReq.%IsDefined("name") {
         Set tSC = $classmethod(util, "SetParameter", pClass, "NAME", pReq.name)
-        If 'tSC { Quit tSC }
+        If 'tSC Quit tSC
     }
-    If pReq.%IsDefined("definitionRaw") {
-        Set tSC = $classmethod(util, "SetXData", pClass, "Definition", pReq.definitionRaw, "application/json")
-        If 'tSC { Quit tSC }
+    ; Tool selection — build Definition XData from includedClass + selectedTools.
+    ; This takes priority over raw definitionRaw because it represents the
+    ; structured tool-selector state from the editor UI.
+    If pReq.%IsDefined("includedClass"), pReq.includedClass '= "" {
+        Set incCls = pReq.includedClass
+        ; Collect selected tool names from the DynamicArray
+        Set selCSV = ""
+        If pReq.%IsDefined("selectedTools"), $isobject(pReq.selectedTools) {
+            Set iter = pReq.selectedTools.%GetIterator()
+            While iter.%GetNext(.key, .val) {
+                Set selCSV = selCSV _ $select(selCSV'="":",", 1:"") _ val
+            }
+        }
+        ; Resolve display name for the XData ToolSet Name attribute
+        Set tsName = ""
+        If pReq.%IsDefined("name"), pReq.name '= "" {
+            Set tsName = pReq.name
+        } Else {
+            Set tsName = $piece(pClass, ".", $length(pClass, "."))
+        }
+        ; Resolve description for the <Description> element
+        Set tsDesc = ""
+        If pReq.%IsDefined("toolsetDescription") {
+            Set tsDesc = pReq.toolsetDescription
+        } ElseIf pReq.%IsDefined("description") {
+            Set tsDesc = pReq.description
+        }
+        Set xml = ..BuildDefinitionXml(tsName, tsDesc, incCls, selCSV)
+        Set tSC = $classmethod(util, "SetXData", pClass, "Definition", xml, "application/xml")
+        If 'tSC Quit tSC
+    } ElseIf pReq.%IsDefined("definitionRaw") {
+        ; Fallback: raw XData editing (advanced mode)
+        Set tSC = $classmethod(util, "SetXData", pClass, "Definition", pReq.definitionRaw, "application/xml")
+        If 'tSC Quit tSC
     }
     Quit $classmethod(util, "Recompile", pClass)
 }

@@ -1,15 +1,16 @@
-/// Stub. The Catalog toolset wraps the two FastEmbed-backed
-/// %AI.RAG.KnowledgeBase instances (catalog.ens for HL7+Production,
-/// catalog.hs for FHIR+Transformation) plus describe_class. Phase 5 wires
-/// the real RAG; this stub returns empty results so Phase 2-3 development
-/// is not blocked. See docs/PLAN.md "Catalogs" + docs/TOOLS.md
-/// "ToolSet.Catalog".
-Class AgenticInterop.ToolSet.Catalog Extends %AI.ToolSet
+/// %AI.ToolSet wrapper for the Catalog tool family. Composes the
+/// AgenticInterop.Tool.Catalog %AI.Tool subclass via <Include> so the
+/// framework's auto-discovery picks up every public ClassMethod as a
+/// tool. The two RAG tools (SearchEns / SearchHs) are registered
+/// separately at runtime by AgenticInterop.Catalog.Attach.
+Class AgenticInterop.ToolSet.Catalog Extends %AI.ToolSet [ DependsOn = AgenticInterop.Tool.Catalog ]
 {
 
 XData Definition [ MimeType = application/xml ]
 {
-<ToolSet Name="Catalog" Description="Vector search across the Ens.* and HS.* class catalogs plus %Dictionary metadata (stub — populated in Phase 5).">
+<ToolSet Name="Catalog">
+    <Description>Cross-cutting introspection: %Dictionary metadata, IRIS namespace context, %Status decoding, error-code lookup, glossary, and API-index search. Read-only.</Description>
+    <Include Class="AgenticInterop.Tool.Catalog"/>
 </ToolSet>
 }
 
