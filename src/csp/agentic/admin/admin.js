@@ -1363,7 +1363,7 @@ function renderToolDetail() {
                 : '<div class="hint">Pulled from <code>%Dictionary.CompiledMethod.Implementation</code>. To edit, modify the <code>.cls</code> file in the source tree and recompile.</div>'}
         </div>
         ${t._toolset && t._originalName ? renderToolDryRunHtml(t) : ''}
-        ${t._toolset ? sourcePanelHtml(t._toolset) : ''}
+        ${t.providerClass ? sourcePanelHtml(t.providerClass) : (t._toolset ? sourcePanelHtml(t._toolset) : '')}
     `;
     bindSourcePanel($('form'));
     bindAutoSizeTextareas($('form'));

@@ -92,6 +92,107 @@ const SLASH_COMMANDS = {
     '/whoami':   { desc: 'Show the authenticated user + session info.',run: cmdWhoami }
 };
 
+// Visible (non-alias) commands for the autocomplete menu.
+const SLASH_MENU_ITEMS = Object.entries(SLASH_COMMANDS)
+    .filter(([k]) => k !== '/example')   // hide alias
+    .map(([cmd, info]) => ({ cmd, desc: info.desc }));
+
+// ============================================================
+// Slash-command autocomplete menu
+// ============================================================
+let slashMenuEl = null;
+let slashActiveIdx = -1;
+let slashFiltered = [];
+
+function buildSlashMenu() {
+    if (slashMenuEl) return;
+    slashMenuEl = document.createElement('div');
+    slashMenuEl.className = 'slash-menu';
+    slashMenuEl.id = 'slash-menu';
+    slashMenuEl.hidden = true;
+    // Insert inside composer-shell so it positions relative to it.
+    document.querySelector('.composer-shell').appendChild(slashMenuEl);
+
+    // Two handlers for click: mousedown prevents the textarea blur
+    // from hiding the menu prematurely, and click actually runs the
+    // command. Both are needed because some browsers (and Playwright)
+    // fire blur between mousedown and click.
+    slashMenuEl.addEventListener('mousedown', (e) => {
+        if (e.target.closest('.slash-menu-item')) e.preventDefault();
+    });
+    slashMenuEl.addEventListener('click', (e) => {
+        const item = e.target.closest('.slash-menu-item');
+        if (!item) return;
+        const cmd = item.dataset.cmd;
+        $('input').value = '';
+        hideSlashMenu();
+        maybeRunSlashCommand(cmd);
+        $('input').focus();
+    });
+
+    // Click outside both input and menu dismisses the menu.
+    document.addEventListener('click', (e) => {
+        if (!slashMenuVisible()) return;
+        if (slashMenuEl.contains(e.target)) return;
+        if (e.target === $('input')) return;
+        hideSlashMenu();
+    });
+}
+
+function showSlashMenu(filter) {
+    if (!slashMenuEl) buildSlashMenu();
+    const q = (filter || '').toLowerCase();
+    slashFiltered = SLASH_MENU_ITEMS.filter(it => it.cmd.startsWith(q));
+    if (slashFiltered.length === 0) {
+        hideSlashMenu();
+        return;
+    }
+    slashActiveIdx = 0;
+    slashMenuEl.innerHTML =
+        '<div class="slash-menu-head">Commands</div>' +
+        slashFiltered.map((it, i) =>
+            '<div class="slash-menu-item' + (i === 0 ? ' active' : '') +
+            '" data-cmd="' + it.cmd + '" data-idx="' + i + '">' +
+            '<span class="slash-cmd">' + it.cmd + '</span>' +
+            '<span class="slash-desc">' + it.desc + '</span>' +
+            '</div>'
+        ).join('');
+    slashMenuEl.hidden = false;
+}
+
+function hideSlashMenu() {
+    if (!slashMenuEl) return;
+    slashMenuEl.hidden = true;
+    slashActiveIdx = -1;
+    slashFiltered = [];
+}
+
+function slashMenuVisible() {
+    return slashMenuEl && !slashMenuEl.hidden;
+}
+
+function slashMenuNav(dir) {
+    if (!slashMenuVisible() || slashFiltered.length === 0) return;
+    const items = slashMenuEl.querySelectorAll('.slash-menu-item');
+    if (items[slashActiveIdx]) items[slashActiveIdx].classList.remove('active');
+    slashActiveIdx = (slashActiveIdx + dir + slashFiltered.length) % slashFiltered.length;
+    if (items[slashActiveIdx]) {
+        items[slashActiveIdx].classList.add('active');
+        items[slashActiveIdx].scrollIntoView({ block: 'nearest' });
+    }
+}
+
+function slashMenuSelect() {
+    if (!slashMenuVisible() || slashActiveIdx < 0) return false;
+    const chosen = slashFiltered[slashActiveIdx];
+    if (!chosen) return false;
+    $('input').value = '';
+    hideSlashMenu();
+    maybeRunSlashCommand(chosen.cmd);
+    $('input').focus();
+    return true;
+}
+
 function renderEmptyState(target) {
     target = target || $('messages');
     target.innerHTML = '';
@@ -592,6 +693,7 @@ $('composer').addEventListener('submit', (e) => {
     const txt = $('input').value.trim();
     if (!txt) return;
     $('input').value = '';
+    hideSlashMenu();
     // Slash commands run side-channel — they must NOT round-trip
     // through send(), the LLM, or the conversation history. The
     // dispatcher below renders a synthetic system card and returns.
@@ -599,7 +701,46 @@ $('composer').addEventListener('submit', (e) => {
     send(txt);
 });
 
+// Show / filter the slash-command autocomplete when the user types
+// a "/" at the start of a line. Hides when the text doesn't match.
+$('input').addEventListener('input', () => {
+    const val = $('input').value;
+    if (val.startsWith('/') && val.indexOf('\n') === -1) {
+        showSlashMenu(val);
+    } else {
+        hideSlashMenu();
+    }
+});
+// Blur hides the menu after a brief delay — long enough for the
+// mousedown preventDefault on the menu to cancel the blur when the
+// user is clicking an item, short enough to feel instant otherwise.
+$('input').addEventListener('blur', () => { setTimeout(hideSlashMenu, 200); });
+
 $('input').addEventListener('keydown', (e) => {
+    // When the slash menu is visible, arrow keys navigate and
+    // Enter / Tab select the highlighted command.
+    if (slashMenuVisible()) {
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            slashMenuNav(1);
+            return;
+        }
+        if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            slashMenuNav(-1);
+            return;
+        }
+        if (e.key === 'Enter' || e.key === 'Tab') {
+            e.preventDefault();
+            slashMenuSelect();
+            return;
+        }
+        if (e.key === 'Escape') {
+            e.preventDefault();
+            hideSlashMenu();
+            return;
+        }
+    }
     if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
         $('composer').dispatchEvent(new Event('submit', { cancelable: true }));
@@ -1083,6 +1224,9 @@ function maybeRunSlashCommand(message) {
     // tiles + intro copy live in JS so EXAMPLES is the single source
     // of truth.
     renderEmptyState();
+    // Pre-build the slash-command autocomplete menu so it's ready
+    // the instant the user types "/".
+    buildSlashMenu();
     // Wire the history rail (toggle button + click delegation) and
     // paint the saved-conversations list. Past chats are localStorage-
     // scoped to this browser; the audit trail still captures every

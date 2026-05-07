@@ -50,15 +50,46 @@ ClassMethod WidenInteropCookiePath() As %Status
     Quit tSC
 }
 
+/// Disable the CSP gateway's static-file Expires cache on /agentic
+/// so that every page load fetches the current chat.js / chat.css /
+/// admin.js from disk. Without this IRIS sets Expires: +1h and the
+/// user's browser silently serves a stale JS bundle after deploys,
+/// breaking features that were just shipped (slash commands, etc.).
+/// Idempotent.
+ClassMethod DisableStaticFileCache() As %Status
+{
+    Set tSC = $$$OK
+    Try {
+        New $namespace
+        Set $namespace = "%SYS"
+        If '##class(Security.Applications).Exists("/agentic") { Quit }
+        Do ##class(Security.Applications).Get("/agentic", .props)
+        If $get(props("ServeFilesTimeout")) = 0 {
+            Write !,"  DisableStaticFileCache: already 0",!
+            Quit
+        }
+        Set props("ServeFilesTimeout") = 0
+        Set tSC = ##class(Security.Applications).Modify("/agentic", .props)
+        If 'tSC { Quit }
+        Write !,"  DisableStaticFileCache: /agentic ServeFilesTimeout -> 0",!
+    } Catch ex {
+        Set tSC = ex.AsStatus()
+    }
+    Quit tSC
+}
+
 ClassMethod Apply() As %Status
 {
     Set tSC = ..WidenInteropCookiePath()
+    If 'tSC { Quit tSC }
+    Set tSC = ..DisableStaticFileCache()
     If 'tSC { Quit tSC }
     Set tSC = $$$OK
     Try {
         Set path = ..#EDITORHTML
         If '##class(%File).Exists(path) {
-            Quit $$$ERROR($$$GeneralError, "Interop editor index.html not found at " _ path _ ". Is this an IRIS for Health install?")
+            Set tSC = $$$ERROR($$$GeneralError, "Interop editor index.html not found at " _ path _ ". Is this an IRIS for Health install?")
+            Quit
         }
 
         // Read full body
@@ -91,7 +122,8 @@ ClassMethod Apply() As %Status
         // Inject right before </body>
         Set newBody = $replace(body, "</body>", tagWithVersion _ "</body>")
         If newBody = body {
-            Quit $$$ERROR($$$GeneralError, "</body> not found in " _ path _ "; manual review required")
+            Set tSC = $$$ERROR($$$GeneralError, "</body> not found in " _ path _ "; manual review required")
+            Quit
         }
 
         // Write back

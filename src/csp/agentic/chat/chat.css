@@ -566,6 +566,65 @@ body[data-rail="closed"] .history-rail { transform: translateX(-100%); pointer-e
     filter: none;
 }
 
+/* ----- slash-command autocomplete ------------------------------ */
+
+.slash-menu {
+    position: absolute;
+    bottom: 100%;
+    left: 0; right: 0;
+    margin-bottom: 6px;
+    background: #161a21;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    box-shadow: 0 -8px 32px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.04);
+    padding: 6px 0;
+    z-index: 1000;
+    max-height: 320px;
+    overflow-y: auto;
+    animation: slash-in 120ms ease;
+}
+@keyframes slash-in {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+.slash-menu-head {
+    padding: 6px 14px 4px;
+    color: var(--muted);
+    font: 600 10px ui-monospace, SFMono-Regular, Menlo, monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.10em;
+}
+.slash-menu-item {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    padding: 8px 14px;
+    cursor: pointer;
+    transition: background 80ms ease;
+}
+.slash-menu-item:hover,
+.slash-menu-item.active {
+    background: rgba(99,102,241,0.12);
+}
+.slash-menu-item.active .slash-cmd {
+    color: #818cf8;
+}
+.slash-menu-item .slash-cmd {
+    color: var(--accent);
+    font: 600 13px ui-monospace, SFMono-Regular, Menlo, monospace;
+    white-space: nowrap;
+    min-width: 110px;
+}
+.slash-menu-item .slash-desc {
+    color: var(--muted);
+    font: 400 12.5px ui-sans-serif, system-ui, sans-serif;
+}
+.slash-menu:empty,
+.slash-menu[hidden] { display: none; }
+
+/* composer-shell needs relative positioning for the menu */
+.composer-shell { position: relative; }
+
 /* ----- toast -------------------------------------------------- */
 
 .toast {
