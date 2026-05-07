@@ -788,8 +788,14 @@ async function cmdTools() {
             '<tr><td><code>UpdateDTL</code>' + mut + '</td><td>Replace the body of a DTL\'s &lt;transform&gt; XData and recompile.</td></tr>' +
             '<tr><td><code>CreateBPL</code>' + mut + '</td><td>Create a BPL skeleton.</td></tr>' +
             '<tr><td><code>ValidateBPL</code>' + mut + '</td><td>Compile a BPL class to verify the &lt;process&gt; XML.</td></tr>' +
+            head + 'Monitoring (AgenticInterop.Tool.Monitoring)</td></tr>' +
+            '<tr><td><code>QueryEventLog</code></td><td>Query Ens.Util.Log for errors/warnings/info by time and host.</td></tr>' +
+            '<tr><td><code>TopErrors</code></td><td>Top N most frequent errors grouped by host and text.</td></tr>' +
+            '<tr><td><code>QueryMessageStatus</code></td><td>Find messages by status (Error, Suspended, Queued, Deferred).</td></tr>' +
+            '<tr><td><code>MessageSummary</code></td><td>Message counts by status and by host (dashboard view).</td></tr>' +
+            '<tr><td><code>QueueStatus</code></td><td>Queue depths for all active business hosts.</td></tr>' +
         '</tbody></table>' +
-        '<p class="muted" style="margin-top:10px;">31 tools across 4 <code>%AI.Tool</code> providers, plus 9 Skills as sub-agent tools and 2 vector-search tools. Catalog tools backed by the seeded IRIS reference PDFs (~4900 records). Browse the registry with descriptions, schemas, and dry-run under <strong>Configuration &rarr; Tools</strong>.</p>'
+        '<p class="muted" style="margin-top:10px;">36 tools across 5 <code>%AI.Tool</code> providers, plus 9 Skills as sub-agent tools and 2 vector-search tools. Catalog tools backed by the seeded IRIS reference PDFs (~4900 records). Browse the registry with descriptions, schemas, and dry-run under <strong>Configuration &rarr; Tools</strong>.</p>'
     );
 }
 

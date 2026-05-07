@@ -300,6 +300,12 @@ ClassMethod ChatStream(pResponse As %CSP.Response, pBodyStream) As %Status
         Set done.namespace = $namespace
         Set done.agentClass = agentClass
         Set done.turnsReplayed = turnsReplayed
+        // Emit tool lifecycle events retroactively. StreamChat handles
+        // tool dispatch internally (no lifecycle callbacks exposed), so
+        // we walk the session transcript AFTER the stream completes and
+        // emit tool_start + tool_result for every tool that fired. The
+        // frontend renders these as cards above the response text.
+        Do ..EmitToolEventsFromSession(session)
         // Capture tool calls from the session transcript so the
         // streamed `done` event can surface them too. StreamChat
         // doesn't take a Monitor object; we walk the session
@@ -344,6 +350,98 @@ ClassMethod SessionToolTrace(pSession As %AI.Agent.Session) As %String
         }
     } Catch  {}
     Quit trace
+}
+
+/// Walk a completed session and emit tool_start + tool_result SSE events
+/// for every tool the framework dispatched during StreamChat. Called after
+/// the stream completes so tool cards render in the frontend even though
+/// StreamChat doesn't expose tool lifecycle callbacks.
+///
+/// Session message structure (for tool-using conversations):
+///   [0] system (prompt)
+///   [1..N] user/assistant replay
+///   [N+1] user (current message)
+///   [N+2] assistant with tool_calls: [{id, name, arguments}, ...]
+///   [N+3] tool with tool_call_id + content (the result)
+///   [N+4] assistant (final text response)
+///
+/// We skip messages from the replay portion (indices up to the current
+/// turn's user message) so tool cards only appear for THIS turn's calls.
+ClassMethod EmitToolEventsFromSession(pSession As %AI.Agent.Session)
+{
+    If '$isobject(pSession) Quit
+    Try {
+        Set count = pSession.MessageCount()
+        ; Find the index of the LAST user message — that's the current turn.
+        ; Everything before it is replay.
+        Set lastUserIdx = -1
+        For i=0:1:count-1 {
+            Set m = pSession.GetMessage(i)
+            If '$isobject(m) Continue
+            Set role = "" Try { Set role = m.role } Catch {}
+            If role = "user" Set lastUserIdx = i
+        }
+        If lastUserIdx < 0 Quit
+        ; Walk from lastUserIdx+1 onward — these are the current turn's
+        ; assistant + tool messages.
+        ; Build a map of tool_call_id → name from assistant frames, then
+        ; match tool result frames by id.
+        Set toolNames = {}  ; tool_call_id → name
+        Set toolArgs = {}   ; tool_call_id → arguments JSON
+        For i=lastUserIdx+1:1:count-1 {
+            Set m = pSession.GetMessage(i)
+            If '$isobject(m) Continue
+            Set role = "" Try { Set role = m.role } Catch {}
+            If role = "assistant" {
+                Set tcs = "" Try { Set tcs = m."tool_calls" } Catch {}
+                If '$isobject(tcs) Continue
+                Set iter = tcs.%GetIterator()
+                While iter.%GetNext(.k, .call) {
+                    If '$isobject(call) Continue
+                    Set id = "" Try { Set id = call.id } Catch {}
+                    Set name = "" Try { Set name = call.name } Catch {}
+                    If id = "" Continue
+                    Do toolNames.%Set(id, name)
+                    ; Capture arguments
+                    Set args = "" Try { Set args = call.arguments } Catch {}
+                    If $isobject(args) {
+                        Do toolArgs.%Set(id, args.%ToJSON())
+                    } ElseIf args '= "" {
+                        Do toolArgs.%Set(id, args)
+                    }
+                    ; Emit tool_start immediately
+                    Set startEv = {}
+                    Set startEv.name = name
+                    If $isobject(args) {
+                        Set startEv.args = args
+                    } ElseIf args '= "" {
+                        Try { Set startEv.args = ##class(%DynamicAbstractObject).%FromJSON(args) } Catch {}
+                    }
+                    Do ..SSEEvent("tool_start", startEv)
+                }
+            } ElseIf role = "tool" {
+                ; Tool result frame — match to name via tool_call_id
+                Set callId = "" Try { Set callId = m."tool_call_id" } Catch {}
+                Set name = ""
+                If callId '= "" {
+                    Try { Set name = toolNames.%Get(callId) } Catch {}
+                }
+                If name = "" Set name = "(tool)"
+                Set content = "" Try { Set content = m.content } Catch {}
+                ; Emit tool_result
+                Set resultEv = {}
+                Set resultEv.name = name
+                ; Try to parse the result as JSON for the card; fall back to string
+                Set resultEv.result = content
+                Try {
+                    If content '= "", $extract(content) = "{" {
+                        Set resultEv.result = ##class(%DynamicAbstractObject).%FromJSON(content)
+                    }
+                } Catch {}
+                Do ..SSEEvent("tool_result", resultEv)
+            }
+        }
+    } Catch {}
 }
 
 /// Write one SSE event to the open response. Each event format is:
