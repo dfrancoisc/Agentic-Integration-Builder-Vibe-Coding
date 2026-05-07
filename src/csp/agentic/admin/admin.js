@@ -308,20 +308,11 @@ function renderAgentList() {
     if (!state.list.length) { list.innerHTML = '<div class="empty-state">No agents.</div>'; return; }
     list.innerHTML = '';
     for (const a of state.list) {
-        const isUser = a.class.indexOf('AgenticInterop.User.Agent.') === 0;
-        const customizedBadge = a.customized
-            ? '<span class="badge user" title="Edits saved as override row that survives zpm load.">customized</span>'
-            : '';
         const div = document.createElement('div');
         div.className = 'list-item';
         div.dataset.id = a.class;
         div.innerHTML = `
-            <div class="row1">
-                ${escapeHtml(a.name || shortName(a.class))}
-                <span class="badge ${isUser ? 'user' : 'shipped'}">${isUser ? 'user' : 'shipped'}</span>
-                ${a.abstract ? '<span class="badge abstract">abstract</span>' : ''}
-                ${customizedBadge}
-            </div>
+            <div class="row1">${escapeHtml(a.name || shortName(a.class))}</div>
             <div class="row2"><code>${escapeHtml(a.class)}</code></div>
             <div class="row2 desc">${escapeHtml((a.description || '').replace(/\s+/g, ' ').trim() || '—')}</div>
         `;
@@ -335,19 +326,11 @@ function renderMCPList() {
     if (!state.list.length) { list.innerHTML = '<div class="empty-state">No MCPs.</div>'; return; }
     list.innerHTML = '';
     for (const m of state.list) {
-        const isUser = m.class.indexOf('AgenticInterop.User.MCP.') === 0;
-        const customizedBadge = m.customized
-            ? '<span class="badge user" title="Edits saved as an override row that survives zpm load.">customized</span>'
-            : '';
         const div = document.createElement('div');
         div.className = 'list-item';
         div.dataset.id = m.class;
         div.innerHTML = `
-            <div class="row1">
-                ${escapeHtml(m.name || shortName(m.class))}
-                <span class="badge ${isUser ? 'user' : 'shipped'}">${isUser ? 'user' : 'shipped'}</span>
-                ${customizedBadge}
-            </div>
+            <div class="row1">${escapeHtml(m.name || shortName(m.class))}</div>
             <div class="row2"><code>${escapeHtml(m.class)}</code></div>
             <div class="row2 desc">${escapeHtml((m.shortDescription || m.description || '').replace(/\s+/g, ' ').trim() || '—')}</div>
             <div class="row2">${m.toolsets.length} toolset(s)</div>
@@ -362,18 +345,11 @@ function renderToolSetList() {
     if (!state.list.length) { list.innerHTML = '<div class="empty-state">No ToolSets.</div>'; return; }
     list.innerHTML = '';
     for (const t of state.list) {
-        const isUser = t.class.indexOf('AgenticInterop.User.ToolSet.') === 0;
-        const customizedBadge = t.customized
-            ? '<span class="badge user" title="Edits saved as override row that survives zpm load.">customized</span>'
-            : '';
         const div = document.createElement('div');
         div.className = 'list-item';
         div.dataset.id = t.class;
         div.innerHTML = `
-            <div class="row1">
-                ${escapeHtml(t.name || shortName(t.class))}
-                ${customizedBadge}
-            </div>
+            <div class="row1">${escapeHtml(t.name || shortName(t.class))}</div>
             <div class="row2"><code>${escapeHtml(t.class)}</code></div>
             <div class="row2">${t.toolCount || 0} tool(s)</div>
         `;
@@ -391,7 +367,7 @@ function renderSkillList() {
         div.className = 'list-item';
         div.dataset.id = s.class;
         div.innerHTML = `
-            <div class="row1">${escapeHtml(shortName(s.class))} <span class="badge shipped">shipped</span></div>
+            <div class="row1">${escapeHtml(shortName(s.class))}</div>
             <div class="row2"><code>${escapeHtml(s.class)}</code></div>
             <div class="row2 desc">${escapeHtml((s.description || '').replace(/\s+/g, ' ').trim() || '—')}</div>
             <div class="row2">${s.toolsets.length} toolset(s)</div>
@@ -781,9 +757,8 @@ function renderAuditList(rows, kinds) {
 async function renderToolList() {
     // Tools across ALL toolsets — both shipped (AgenticInterop.ToolSet.*)
     // and user-authored (AgenticInterop.User.ToolSet.*). Shipped tools
-    // show as read-only when opened (the detail view already handles
-    // that via isUser branching). Each row gets a SHIPPED / USER badge
-    // so the operator can scan at a glance which ones are editable.
+    // show as read-only when opened (the detail view handles that via
+    // isUser branching).
     const list = $('list');
     list.innerHTML = '<div class="empty-state">Loading tools…</div>';
     if (!state.list.length) {
@@ -796,22 +771,12 @@ async function renderToolList() {
         try {
             const detail = await get('/editor/toolset/' + encodeURIComponent(ts.class));
             const tools = detail.tools || [];
-            const isUser = (ts.class || '').indexOf('AgenticInterop.User.ToolSet.') === 0;
-            const sourceBadge = isUser
-                ? '<span class="badge user">USER</span>'
-                : '<span class="badge shipped">SHIPPED</span>';
             for (const t of tools) {
-                const isMutating = /^(Start|Stop|Delete|Remove|Purge|Drop|Reset|Clear|Truncate|Kill|Unmount|Deploy|Uninstall|Compile|Create|Update|Send|Patch|Put|Post|Enable|Disable|Restart|Add)[A-Z]/.test(t.name || '');
-                const mutBadge = isMutating ? '<span class="badge mut">MUTATING</span>' : '<span class="badge ro">READ-ONLY</span>';
                 const div = document.createElement('div');
                 div.className = 'list-item';
                 div.dataset.id = ts.class + '|' + t.name;
-                // Left-nav stays terse: name + badges + class. The full
-                // description is only shown in the detail / Edit panel
-                // and in the Class Source XData — the user requested the
-                // listing not be cluttered by long descriptions.
                 div.innerHTML = `
-                    <div class="row1">${escapeHtml(t.name)} ${sourceBadge} ${mutBadge}</div>
+                    <div class="row1">${escapeHtml(t.name)}</div>
                     <div class="row2"><code>${escapeHtml(ts.class)}</code></div>
                 `;
                 div.addEventListener('click', () => openTool(ts.class, t.name));
@@ -1298,10 +1263,7 @@ function renderToolDetail() {
     const t = state.selected;
     const isUser = (t._toolset || '').indexOf('AgenticInterop.User.ToolSet.') === 0;
     const ro = isUser ? '' : 'readonly';
-    const sourceBadge = isUser
-        ? '<span class="badge user">USER</span>'
-        : '<span class="badge shipped">SHIPPED</span>';
-    $('detail-title').innerHTML = `${escapeHtml(t._toolset)} &middot; ${escapeHtml(t.name || 'New Tool')} ${sourceBadge}`;
+    $('detail-title').innerHTML = `${escapeHtml(t._toolset)} &middot; ${escapeHtml(t.name || 'New Tool')}`;
     $('btn-delete').style.display = isUser && t._originalName ? 'inline-block' : 'none';
     $('btn-save').disabled = !isUser;
     // Build the formal-spec line ("(arg As %String, ...)") if known.
