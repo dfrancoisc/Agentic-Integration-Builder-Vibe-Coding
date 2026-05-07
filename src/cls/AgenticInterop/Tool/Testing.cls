@@ -376,7 +376,17 @@ ClassMethod SendHL7(message As %String, targetHost As %String) As %DynamicObject
             Quit
         }
         Set response = ""
-        Set scProc = svc.ProcessInput(msg, .response)
+        ; HL7 TCP/File/HTTP services override OnProcessInput to handle
+        ; raw adapter data ($LIST for TCP, stream for file). Calling
+        ; ProcessInput with an EnsLib.HL7.Message causes <LIST> errors.
+        ; Use standardOnProcessInput which accepts an HL7.Message
+        ; directly and dispatches through the production's routing
+        ; chain — same path as adapter-driven messages, minus the wire.
+        If svc.%IsA("EnsLib.HL7.Service.Standard") {
+            Set scProc = svc.standardOnProcessInput(msg, .response)
+        } Else {
+            Set scProc = svc.ProcessInput(msg, .response)
+        }
         If $$$ISERR(scProc) {
             Set out.ok = 0
             Set out.error = "ProcessInput failed: " _ $system.Status.GetErrorText(scProc)
