@@ -4,12 +4,24 @@ Internal AI Copilot for InterSystems IRIS for Health. A configuration-driven cha
 
 ## Status
 
-Pre-alpha. See:
+Phase 5 (monitoring tools). The agent has 36 tools across 5 ToolSets, streaming chat with tool-call approval cards, vector catalog search, and a configuration-driven admin UI with cross-provider ToolSet editing. See:
 
 - [docs/PLAN.md](docs/PLAN.md) — architecture decisions, restrictions, build phases
 - [docs/MIGRATION.md](docs/MIGRATION.md) — class-by-class build map
 - [docs/SKILLS.md](docs/SKILLS.md) — INSTRUCTIONS markdown for each `AgenticInterop.Skill.*` class, distilled from the IRIS for Health PDFs (grows batch-by-batch as PDFs are read)
 - [docs/TOOLS.md](docs/TOOLS.md) — full catalog of agent tools, each one mapped to its IRIS API and source citation
+
+## Tools
+
+The agent's capabilities are organized into 5 ToolSet families (36 tools total). Each ToolSet is a `%AI.ToolSet` subclass that composes one or more `%AI.Tool` provider classes. The ToolSet editor in the admin UI supports cross-provider tool selection — any tool from any `%AI.Tool` class can be added to any ToolSet.
+
+| ToolSet | Tools | Purpose |
+|---|---|---|
+| Catalog | 7 | Vector search over the Ens.* and HS.* class catalogs (powered by `%AI.RAG.KnowledgeBase`). Find the right Business Host, adapter, DTL, or HS utility for a given requirement. |
+| Monitoring | 5 | Read-only queries against `Ens.Util.Log` and `Ens.MessageHeader`. Event log search, top-error grouping, message-status queries, per-host throughput summaries, and queue-depth checks. |
+| Production | 9 | CRUD on productions, business host lifecycle (add/remove/enable/disable/start/stop), production start/stop/recover, and configuration reads. |
+| Testing | 6 | Send and validate HL7 v2, FHIR R4, and SDA messages. Structure and semantic validation, message comparison, sample message retrieval. Sandbox-isolated by default. |
+| Transform | 9 | CRUD on DTL transformations, BPL processes, business rules, and routing rules. Includes dry-run execution, static analysis, lookup table management, and compilation. |
 
 ## Requirements
 

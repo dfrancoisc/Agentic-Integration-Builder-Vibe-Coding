@@ -12,6 +12,19 @@
 <!-- ObjectScript classes -->
 <Resource Name="AgenticInterop.PKG"/>
 
+<!-- Reference seed data (error codes, glossary, API topics).
+     Deployed to /tmp/agentic-seed/reference/ where
+     AgenticInterop.Reference.Loader reads them. -->
+<FileCopy Name="src/seed/glossary.json"     Target="/tmp/agentic-seed/reference/glossary.json" />
+<FileCopy Name="src/seed/error_codes.json"  Target="/tmp/agentic-seed/reference/error_codes.json" />
+<FileCopy Name="src/seed/api_topics.json"   Target="/tmp/agentic-seed/reference/api_topics.json" />
+
+<!-- Curated class catalog XLS for vector-search KB ingestion.
+     Deployed to /opt/agentic_interop/seeds/ where
+     AgenticInterop.Catalog.Builder reads it. -->
+<FileCopy Name="seeds/InterSystems_IRIS_Health_Complete_Class_Catalog.xlsx"
+          Target="/opt/agentic_interop/seeds/catalog.xlsx" />
+
 <!-- Static UI bundle (HTML/CSS/JS for /agentic/ and /agentic/admin/).
      Authenticated only — no anonymous access. The user must already
      have an IRIS session before any agentic_interop asset is served

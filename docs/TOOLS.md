@@ -800,3 +800,57 @@ Reference utilities sourced from Configuration_Parameter_File_Reference.pdf, Det
 - Input schema: `{ term: { type: "string", required: true }, fuzzyMatch: { type: "boolean", default: true, description: "Allow approximate matching" } }`.
 - Output schema: `{ term, category: "Objects | InterSystems SQL | System | ObjectScript | UNIX | Java | Network | etc.", definition, relatedTerms: [...] }`.
 - Timeout: 5 seconds. RequiresConfirmation: false.
+
+---
+
+## ToolSet.Monitoring  [BATCH 6 — production diagnostics]
+
+Read-only tools for querying production event logs, message headers, error summaries, and queue depths. Source class: `AgenticInterop.Tool.Monitoring`. All tools execute SQL against `Ens.Util.Log` and `Ens.MessageHeader` in the active namespace.
+
+### QueryEventLog
+
+- Description: Query the Ens.Util.Log (Event Log) for recent errors, warnings, or info entries. Call this when the user asks about errors, warnings, event log, "what went wrong", "why is my message failing", or any production troubleshooting question.
+- Implementation: SQL against `Ens_Util.Log`.
+- Body: parameterised query with type filter (mapped to numeric Type column: 1=error, 2=warning, 3=info, 4=trace, 5=assert), time window, optional configName filter. Returns up to `maxRows` entries ordered by TimeLogged DESC.
+- Input schema: `{ type: { type: "string", enum: ["error","warning","info","trace","assert","all"], default: "error" }, hours: { type: "integer", default: 2, minimum: 1, maximum: 168 }, configName: { type: "string", description: "Optional business host name filter (exact match)" }, maxRows: { type: "integer", default: 50, minimum: 1, maximum: 200 } }`.
+- Output schema: `{ ok, namespace, type, hours, rows: [ { id, timeLogged, type, configName, sourceConfigName, text, sessionId, job } ], total, truncated }`.
+- Timeout: 10 seconds.
+- RequiresConfirmation: false (read-only).
+
+### TopErrors
+
+- Description: Get the top N most frequent errors from Ens.Util.Log grouped by business host and error text. Call this when the user asks "top errors", "most common failures", "error summary", or "group errors by host".
+- Implementation: SQL against `Ens_Util.Log` with GROUP BY ConfigName, Text and COUNT(*).
+- Body: filters to Type=1 (error), groups by ConfigName + Text, orders by count descending.
+- Input schema: `{ hours: { type: "integer", default: 2, minimum: 1, maximum: 168 }, topN: { type: "integer", default: 10, minimum: 1, maximum: 50 } }`.
+- Output schema: `{ ok, namespace, hours, groups: [ { configName, text, count, firstSeen, lastSeen } ], totalErrors }`.
+- Timeout: 10 seconds.
+- RequiresConfirmation: false (read-only).
+
+### QueryMessageStatus
+
+- Description: Query Ens.MessageHeader for messages in a specific status. Call this when the user asks about "stuck messages", "suspended messages", "errored messages", "message status", "what messages failed", or message-level troubleshooting.
+- Implementation: SQL against `Ens.MessageHeader`.
+- Body: parameterised query filtering by Status and time window. Returns up to `maxRows` headers ordered by TimeCreated DESC.
+- Input schema: `{ status: { type: "string", enum: ["Error","Suspended","Deferred","Queued","all"], default: "Error" }, hours: { type: "integer", default: 2, minimum: 1, maximum: 168 }, maxRows: { type: "integer", default: 50, minimum: 1, maximum: 200 } }`.
+- Output schema: `{ ok, namespace, status, hours, rows: [ { id, timeCreated, status, sourceConfigName, targetConfigName, sourceBusinessType, targetBusinessType, messageBodyClassName, isError, errorStatus, sessionId, priority } ], total, truncated }`.
+- Timeout: 10 seconds.
+- RequiresConfirmation: false (read-only).
+
+### MessageSummary
+
+- Description: Summarize message counts by status and business host for the given time window. Call this for "message summary", "how many messages processed", "production throughput", "message volume", or dashboard-style overview queries.
+- Implementation: SQL against `Ens.MessageHeader` (two queries: one grouped by Status, one grouped by TargetConfigName with Completed/Errored/Total breakdown).
+- Input schema: `{ hours: { type: "integer", default: 2, minimum: 1, maximum: 168 } }`.
+- Output schema: `{ ok, namespace, hours, byStatus: [ { status, count } ], byHost: [ { configName, completed, errored, total } ], grandTotal }`.
+- Timeout: 10 seconds.
+- RequiresConfirmation: false (read-only).
+
+### QueueStatus
+
+- Description: Check queue depths for all active business hosts. Call this when the user asks "are queues backing up", "queue depth", "is anything stuck", or production health checks.
+- Implementation: SQL against `Ens.MessageHeader` filtering Status='Queued', grouped by TargetConfigName.
+- Input schema: `{}` (no inputs; namespace comes from request).
+- Output schema: `{ ok, namespace, queues: [ { configName, count } ], totalQueued }`.
+- Timeout: 5 seconds.
+- RequiresConfirmation: false (read-only).

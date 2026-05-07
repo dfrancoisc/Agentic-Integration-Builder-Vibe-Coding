@@ -25,7 +25,10 @@ Class AgenticInterop.Policy.ConfirmationGate Extends %AI.Policy.Authorization
 /// Tool-name prefixes that we treat as mutating regardless of the
 /// definition's requires_confirmation flag. Catches the case where a
 /// tool author forgets to mark a destructive op.
-Parameter MUTATINGPREFIXES = "start_,stop_,delete_,remove_,purge_,drop_,reset_,clear_,truncate_,kill_,unmount_,deploy_,uninstall_";
+/// PascalCase prefixes match the auto-discovered method names from
+/// %AI.Tool subclasses (e.g. StartProduction, DeleteProduction).
+/// Also includes snake_case variants for any manually-registered tools.
+Parameter MUTATINGPREFIXES = "Start,Stop,Delete,Remove,Create,Add,Update,Send,Compile,Purge,Drop,Reset,Clear,start_,stop_,delete_,remove_,create_,add_,update_,send_,compile_,purge_,drop_,reset_,clear_";
 
 /// Comma-separated list of approval tokens the user has already
 /// granted in this conversation turn. Set by the chat service
