@@ -7,6 +7,6 @@ Parameter NAME = "production";
 
 Parameter DESCRIPTION = "Tools for Ens.Production lifecycle, business hosts, queues, messages, alerts, routing rules, and REST-in-Productions.";
 
-Parameter TOOLSETS = "AgenticInterop.ToolSet.Production";
+Parameter TOOLSETS = "AgenticInterop.ToolSet.Production,AgenticInterop.ToolSet.Monitoring";
 
 }

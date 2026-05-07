@@ -78,13 +78,32 @@ ClassMethod ListToolSets(pResponse As %CSP.Response, pRequest As %CSP.Request) A
             "name":        (effective.name),
             "customized":  (effective.customized)
         }
-        // Count tools in XData Definition (best-effort — empty stub yields 0).
+        ; Count tools from XData Definition (XML, not JSON).
+        ; Self-closing <Include Class="X"/> means all tools from that provider;
+        ; <Filter Tool="Y"/> counts as one tool; <Tool Name="Z"/> counts as one.
         Set toolCount = 0
         Try {
-            Set body = ##class(AgenticInterop.Editor.Util).XDataBody(cls, "Definition")
-            If body '= "" {
-                Set obj = ##class(%DynamicAbstractObject).%FromJSON(body)
-                If $isobject(obj), $isobject(obj.tools) { Set toolCount = obj.tools.%Size() }
+            Set defXml = ##class(AgenticInterop.Editor.Util).XDataBody(cls, "Definition")
+            If defXml '= "" {
+                Set lines = $length(defXml, $char(10))
+                Set inFiltered = 0
+                For li=1:1:lines {
+                    Set ln = $piece(defXml, $char(10), li)
+                    If ln [ "<Include " {
+                        If ln [ "/>" {
+                            ; Self-closing — all tools from that provider class
+                            Set incCls = ##class(AgenticInterop.Editor.ToolSetService).%XmlAttr(ln, "Class")
+                            If incCls '= "" {
+                                Set toolCount = toolCount + ##class(AgenticInterop.Editor.ToolSetService).%CountProviderTools(incCls)
+                            }
+                        } Else {
+                            Set inFiltered = 1
+                        }
+                    }
+                    ElseIf inFiltered, ln [ "</Include>" { Set inFiltered = 0 }
+                    ElseIf inFiltered, ln [ "<Filter " { Set toolCount = toolCount + 1 }
+                    ElseIf ln [ "<Tool " { Set toolCount = toolCount + 1 }
+                }
             }
         } Catch {}
         Set row.toolCount = toolCount
