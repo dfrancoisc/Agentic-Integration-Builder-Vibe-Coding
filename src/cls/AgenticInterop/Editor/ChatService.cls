@@ -297,6 +297,7 @@ ClassMethod ChatStream(pResponse As %CSP.Response, pBodyStream) As %Status
         Set monitor.SSEEnabled = 1
         Set response = ""
         Set iteration = 0
+        Set fabricationRetried = 0
         While iteration < maxIter {
             Set iteration = iteration + 1
             Do monitor.OnIterationStart(iteration, maxIter, session)
@@ -305,9 +306,31 @@ ClassMethod ChatStream(pResponse As %CSP.Response, pBodyStream) As %Status
             Do monitor.OnIterationComplete(iteration, response, session)
             If '$isobject(response) Quit
             Try { Set hasCalls = response.HasToolCalls() } Catch { Set hasCalls = 0 }
-            If 'hasCalls Quit
+            If 'hasCalls {
+                ; FABRICATION GUARD: if the model returned text-only on the
+                ; FIRST iteration AND the text contains build/create claims
+                ; but NO tools were called, this is fabrication. Force the
+                ; model to try again with an explicit instruction to use tools.
+                ; Only retry once to avoid infinite loops.
+                If iteration = 1, 'fabricationRetried {
+                    Set checkText = ..ExtractText(response)
+                    If ..LooksLikeFabrication(checkText, monitor.ToolCallTrace) {
+                        Set fabricationRetried = 1
+                        ; Don't break out of loop — continue with a corrective message
+                        Set iteration = iteration + 1
+                        Do monitor.OnIterationStart(iteration, maxIter, session)
+                        Set response = agent.Chat(session, "STOP. You just wrote text claiming you built something, but you did NOT call any tools. Text is not action. You MUST call CreateProduction, AddBusinessHost, and the other tools to actually build the production. Do it now — call the tools.")
+                        Do monitor.OnIterationComplete(iteration, response, session)
+                        If '$isobject(response) Quit
+                        Try { Set hasCalls = response.HasToolCalls() } Catch { Set hasCalls = 0 }
+                        If 'hasCalls Quit
+                        Continue
+                    }
+                }
+                Quit
+            }
         }
-        // Emit any remaining tool_result events for the final iteration
+        ; Emit any remaining tool_result events for the final iteration
         Do monitor.EmitFinalToolResults(session)
         Do monitor.CaptureFromSession(session)
         // Extract final text from the response
@@ -485,6 +508,42 @@ ClassMethod CountToolMessages(pSession As %AI.Agent.Session) As %Integer
         }
     } Catch {}
     Quit n
+}
+
+/// Detect fabrication: the model returned text that CLAIMS to have built
+/// or created something, but the tool trace is empty (no tools were called).
+/// This catches the most common hallucination pattern: the LLM writes a
+/// narrative like "Production created successfully" without actually
+/// calling CreateProduction. Returns true if the text looks like fabrication.
+ClassMethod LooksLikeFabrication(pText As %String, pToolTrace As %String) As %Boolean
+{
+    ; If tools were called, it is not fabrication — the model did actual work
+    If pToolTrace '= "" Quit 0
+    ; If the text is empty or very short, not fabrication (just a question or plan)
+    If $length(pText) < 50 Quit 0
+    ; Check for build/create/success claim patterns in the response text.
+    ; Case-insensitive via $zconvert.
+    Set lower = $zconvert(pText, "L")
+    ; Strong fabrication signals: claiming to have built/created artifacts
+    If lower [ "created successfully" Quit 1
+    If lower [ "production created" Quit 1
+    If lower [ "what i built" Quit 1
+    If lower [ "hosts properly configured" Quit 1
+    If lower [ "hosts configured" Quit 1
+    If lower [ "built and running" Quit 1
+    If lower [ "production is running" Quit 1
+    If lower [ "all three hosts" Quit 1
+    If lower [ "all hosts" Quit 1
+    If lower [ "fully built" Quit 1
+    If lower [ "interface is fully built" Quit 1
+    If lower [ "pipeline is configured" Quit 1
+    ; Moderate signal: claiming build + using past-tense creation verbs
+    If (lower [ "i built") || (lower [ "i created") || (lower [ "i configured") {
+        If (lower [ "production") || (lower [ "business host") || (lower [ "dtl") || (lower [ "routing rule") {
+            Quit 1
+        }
+    }
+    Quit 0
 }
 
 /// Write one SSE event to the open response. Each event format is:
