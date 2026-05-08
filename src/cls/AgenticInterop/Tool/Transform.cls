@@ -804,7 +804,7 @@ ClassMethod DescribeTransformationPipeline(sourceFormat As %String, targetFormat
             Set step1.step = 1
             Set step1.class = "HS.Gateway.HL7.HL7ToSDA3"
             Set step1.role = "HL7 v2 to SDA3 conversion"
-            Set step1.notes = "Call HS.Gateway.HL7.HL7ToSDA3.GetSDA(request, .sdaContainer) inside a custom BPL <code> block. Input: EnsLib.HL7.Message. Output: HS.SDA3.Container."
+            Set step1.notes = "UTILITY CLASS (%RegisteredObject, NOT a business process — do NOT add as a production host). Call ##class(HS.Gateway.HL7.HL7ToSDA3).GetSDA(request, .sdaContainer) inside a custom BPL <code> block. Input: EnsLib.HL7.Message. Output: HS.SDA3.Container. The custom BPL wraps the SDA container into an HS.Message.XMLMessage and routes it to the SDA-to-FHIR process."
             Do out.pipeline.%Push(step1)
             Set step2 = {}
             Set step2.step = 2
@@ -837,11 +837,11 @@ ClassMethod DescribeTransformationPipeline(sourceFormat As %String, targetFormat
             Do out.pipeline.%Push(step1)
             Set step2 = {}
             Set step2.step = 2
-            Set step2.class = "HS.Gateway.SDA3.SDA3ToHL7v2"
+            Set step2.class = "HS.Gateway.SDA3.SDA3ToHL7.* (per-message-type DTLs)"
             Set step2.role = "SDA3 to HL7 v2 conversion"
-            Set step2.notes = "Business process. Converts SDA container to HL7 v2 message(s)."
+            Set step2.notes = "Per-message-type DTL classes: HS.Gateway.SDA3.SDA3ToHL7.ADTA0N (ADT), .ORUR01 (ORU), .VXUV04 (VXU). Use in a custom BPL code block or Ens.DataTransform host. Sub-transforms exist for individual segments (PID, PV1, OBR, OBX, etc.)."
             Do out.pipeline.%Push(step2)
-            Set out.summary = "FHIR to HL7 v2 uses: FHIR to SDA3 (via HS.FHIR.DTL.Util.HC.FHIR.SDA3.Process) then SDA3 to HL7 v2 (via HS.Gateway.SDA3.SDA3ToHL7v2)."
+            Set out.summary = "FHIR to HL7 v2 uses two stages: FHIR to SDA3 (via HS.FHIR.DTL.Util.HC.FHIR.SDA3.Process) then SDA3 to HL7 v2 (via per-message-type DTLs under HS.Gateway.SDA3.SDA3ToHL7.* — pick the DTL matching your target HL7 message type, e.g., ADTA0N for ADT, ORUR01 for ORU)."
         }
         ; SDA3 -> FHIR
         ElseIf (src = "sda3") && (tgt = "fhir") {
@@ -869,29 +869,29 @@ ClassMethod DescribeTransformationPipeline(sourceFormat As %String, targetFormat
             Set step1.step = 1
             Set step1.class = "HS.Gateway.HL7.HL7ToSDA3"
             Set step1.role = "HL7 v2 to SDA3 conversion"
-            Set step1.notes = "Business process, or call programmatically: HS.Gateway.HL7.HL7ToSDA3.GetSDA(request, .sdaContainer)."
+            Set step1.notes = "UTILITY CLASS (%RegisteredObject, NOT a business process — do NOT add as a production host). Call programmatically inside a custom BPL code block: Set sc = ##class(HS.Gateway.HL7.HL7ToSDA3).GetSDA(request, .sdaContainer). Input: EnsLib.HL7.Message. Output: HS.SDA3.Container (returned by reference)."
             Do out.pipeline.%Push(step1)
-            Set out.summary = "HL7 v2 to SDA3 is a single-step conversion via HS.Gateway.HL7.HL7ToSDA3."
+            Set out.summary = "HL7 v2 to SDA3: call ##class(HS.Gateway.HL7.HL7ToSDA3).GetSDA(request, .sdaContainer) inside a custom BPL code block. This is a utility class, NOT a business process — cannot be added as a production host."
         }
         ; SDA3 -> HL7 v2
         ElseIf (src = "sda3") && (tgt = "hl7v2") {
             Set step1 = {}
             Set step1.step = 1
-            Set step1.class = "HS.Gateway.SDA3.SDA3ToHL7v2"
+            Set step1.class = "HS.Gateway.SDA3.SDA3ToHL7.* (per-message-type DTLs)"
             Set step1.role = "SDA3 to HL7 v2 conversion"
-            Set step1.notes = "Business process. Converts SDA container to one or more HL7 v2 messages."
+            Set step1.notes = "Per-message-type DTL classes — there is NO single SDA3-to-HL7v2 converter. Available DTLs: HS.Gateway.SDA3.SDA3ToHL7.ADTA0N (ADT A01/A02/A04/etc.), .ADTA0NA03 (ADT A03), .ORUR01 (ORU R01), .VXUV04 (VXU V04). Sub-transforms exist for individual segments under HS.Gateway.SDA3.SDA3ToHL7.SubTransform.* (PatientToPID, EncounterToPV1, LabResultToOBX, etc.). Use the appropriate DTL in a custom BPL or Ens.DataTransform host."
             Do out.pipeline.%Push(step1)
-            Set out.summary = "SDA3 to HL7 v2 is a single-step conversion via HS.Gateway.SDA3.SDA3ToHL7v2."
+            Set out.summary = "SDA3 to HL7 v2: use per-message-type DTLs under HS.Gateway.SDA3.SDA3ToHL7.* — e.g., .ADTA0N for ADT, .ORUR01 for ORU, .VXUV04 for VXU. There is NO single SDA3-to-HL7v2 converter class."
         }
         ; CDA -> FHIR (via SDA)
         ElseIf (src = "cda") && (tgt = "fhir") {
-            Set step1 = {} Set step1.step = 1 Set step1.class = "HS.Gateway.CDA.CDAToSDA3" Set step1.role = "CDA to SDA3"
-            Set step1.notes = "Parses CDA document into SDA3 container."
+            Set step1 = {} Set step1.step = 1 Set step1.class = "HS.Doc.Mapping.CDAToSDAMapper" Set step1.role = "CDA to SDA3"
+            Set step1.notes = "Utility mapper class — parses CDA document into SDA3 container. Call programmatically or wrap in a custom BPL."
             Do out.pipeline.%Push(step1)
             Set step2 = {} Set step2.step = 2 Set step2.class = "HS.FHIR.DTL.Util.HC.SDA3.FHIR.Process" Set step2.role = "SDA3 to FHIR R4"
             Set step2.notes = "Standard SDA-to-FHIR business process."
             Do out.pipeline.%Push(step2)
-            Set out.summary = "CDA to FHIR goes through SDA: CDA to SDA3 (HS.Gateway.CDA.CDAToSDA3) then SDA3 to FHIR (HS.FHIR.DTL.Util.HC.SDA3.FHIR.Process)."
+            Set out.summary = "CDA to FHIR goes through SDA: CDA to SDA3 (HS.Doc.Mapping.CDAToSDAMapper) then SDA3 to FHIR (HS.FHIR.DTL.Util.HC.SDA3.FHIR.Process)."
         }
         ; Same format
         ElseIf src = tgt {

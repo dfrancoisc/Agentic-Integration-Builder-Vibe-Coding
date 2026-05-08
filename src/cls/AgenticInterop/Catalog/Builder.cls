@@ -207,6 +207,64 @@ ClassMethod %ReadXLSRows(path As %String) As %String [ Internal, Language = pyth
     return json.dumps(out)
 }
 
+/// Add curated entries for critical HL7/SDA/FHIR/CDA pipeline classes
+/// that are missing from the catalog or have weak %Dictionary
+/// descriptions. These are the classes the agent MUST find when
+/// building data conversion pipelines. Non-destructive — does not
+/// delete existing rows; the KB deduplicates by source key.
+///
+/// Call once after initial catalog build: do ##class(Builder).PatchPipelineClasses()
+ClassMethod PatchPipelineClasses() As %DynamicObject
+{
+    Set out = {}
+    Set start = $zhorolog
+    Try {
+        Set rows = []
+        ; --- HL7-to-SDA utility ---
+        Set m1 = {} Set m1.className = "HS.Gateway.HL7.HL7ToSDA3" Set m1.kind = "Gateway" Set m1.source = "HS.Gateway.HL7.HL7ToSDA3"
+        Do rows.%Push([("HS.Gateway.HL7.HL7ToSDA3 — Gateway (HL7 v2 to SDA3 converter). UTILITY CLASS (%RegisteredObject), NOT a business process — do NOT add as a production host. Convert HL7 v2 messages to SDA3 clinical containers. Call via classmethod: ##class(HS.Gateway.HL7.HL7ToSDA3).GetSDA(request, .sdaContainer). Input: EnsLib.HL7.Message. Output: HS.SDA3.Container (by reference). Must be called inside a custom BPL <code> block in the HL7-to-SDA-to-FHIR production pipeline. This is the FIRST stage of HL7-to-FHIR conversion."), (m1)])
+        ; --- SDA3-to-HL7 DTLs ---
+        Set m2 = {} Set m2.className = "HS.Gateway.SDA3.SDA3ToHL7.ADTA0N" Set m2.kind = "Gateway" Set m2.source = "HS.Gateway.SDA3.SDA3ToHL7.ADTA0N"
+        Do rows.%Push([("HS.Gateway.SDA3.SDA3ToHL7.ADTA0N — Gateway (SDA3 to HL7 v2 ADT DTL). Data Transformation Language class that converts SDA3 clinical container to HL7 v2 ADT A01/A02/A04/A05/A06/A07/A08 messages. Use for SDA3-to-HL7v2 conversion when the target is an ADT message type. Part of the HS.Gateway.SDA3.SDA3ToHL7.* per-message-type DTL package. Leverages SubTransform classes for PID, PV1, PD1, NK1 segments."), (m2)])
+        Set m3 = {} Set m3.className = "HS.Gateway.SDA3.SDA3ToHL7.ADTA0NA03" Set m3.kind = "Gateway" Set m3.source = "HS.Gateway.SDA3.SDA3ToHL7.ADTA0NA03"
+        Do rows.%Push([("HS.Gateway.SDA3.SDA3ToHL7.ADTA0NA03 — Gateway (SDA3 to HL7 v2 ADT A03 DTL). Data Transformation Language class for converting SDA3 to HL7 v2 ADT A03 (discharge) messages. Part of the per-message-type SDA3-to-HL7 DTL package."), (m3)])
+        Set m4 = {} Set m4.className = "HS.Gateway.SDA3.SDA3ToHL7.ORUR01" Set m4.kind = "Gateway" Set m4.source = "HS.Gateway.SDA3.SDA3ToHL7.ORUR01"
+        Do rows.%Push([("HS.Gateway.SDA3.SDA3ToHL7.ORUR01 — Gateway (SDA3 to HL7 v2 ORU R01 DTL). Data Transformation Language class for converting SDA3 lab results/observations to HL7 v2 ORU R01 messages. Maps LabOrder to OBR, LabResult to OBX segments. Part of the per-message-type SDA3-to-HL7 DTL package."), (m4)])
+        Set m5 = {} Set m5.className = "HS.Gateway.SDA3.SDA3ToHL7.VXUV04" Set m5.kind = "Gateway" Set m5.source = "HS.Gateway.SDA3.SDA3ToHL7.VXUV04"
+        Do rows.%Push([("HS.Gateway.SDA3.SDA3ToHL7.VXUV04 — Gateway (SDA3 to HL7 v2 VXU V04 DTL). Data Transformation Language class for converting SDA3 vaccination records to HL7 v2 VXU V04 immunization messages. Maps Vaccination to ORC and RXA segments. Part of the per-message-type SDA3-to-HL7 DTL package."), (m5)])
+        ; --- CDA mappers ---
+        Set m6 = {} Set m6.className = "HS.Doc.Mapping.CDAToSDAMapper" Set m6.kind = "CDA-Mapping" Set m6.source = "HS.Doc.Mapping.CDAToSDAMapper"
+        Do rows.%Push([("HS.Doc.Mapping.CDAToSDAMapper — CDA-Mapping (CDA to SDA3 mapper). Utility class that converts CDA (Clinical Document Architecture) documents to SDA3 containers. Use this for CDA-to-SDA3 conversion — the first stage of a CDA-to-FHIR pipeline. Reads CDA XML and produces SDA3 clinical data. Inverse: HS.Doc.Mapping.SDAToCDAMapper."), (m6)])
+        Set m7 = {} Set m7.className = "HS.Doc.Mapping.SDAToCDAMapper" Set m7.kind = "CDA-Mapping" Set m7.source = "HS.Doc.Mapping.SDAToCDAMapper"
+        Do rows.%Push([("HS.Doc.Mapping.SDAToCDAMapper — CDA-Mapping (SDA3 to CDA mapper). Utility class that converts SDA3 containers to CDA (Clinical Document Architecture) documents. Use for SDA3-to-CDA conversion. Inverse: HS.Doc.Mapping.CDAToSDAMapper."), (m7)])
+        ; --- FHIR production hosts ---
+        Set m8 = {} Set m8.className = "HS.FHIRServer.Interop.HTTPOperation" Set m8.kind = "FHIR-Interop" Set m8.source = "HS.FHIRServer.Interop.HTTPOperation"
+        Do rows.%Push([("HS.FHIRServer.Interop.HTTPOperation — BO (Business Operations, FHIR-Interop). Sends FHIR R4 resources to an external FHIR server over HTTP/HTTPS. Use this when the target FHIR endpoint is a remote system. Key settings: HTTPServer (hostname), URL (/fhir/r4 path), SSLConfig. Input: HS.FHIRServer.Interop.Request. Contrast with HS.FHIRServer.Interop.Operation which targets the LOCAL IRIS FHIR repository."), (m8)])
+        ; --- SDA-FHIR processes (enhance existing entries) ---
+        Set m9 = {} Set m9.className = "HS.FHIR.DTL.Util.HC.FHIR.SDA3.Process" Set m9.kind = "FHIR-DTL" Set m9.source = "HS.FHIR.DTL.Util.HC.FHIR.SDA3.Process"
+        Do rows.%Push([("HS.FHIR.DTL.Util.HC.FHIR.SDA3.Process — BP (Business Processes, FHIR-to-SDA3 converter). Transforms FHIR R4 resources/bundles into SDA3 containers. The REVERSE pipeline — FHIR to SDA3. Input: FHIR resource or bundle. Output: HS.Message.XMLMessage with SDA3 stream. Use as step 1 when converting FHIR to HL7 v2 or FHIR to CDA. Key settings: TargetConfigName, TransformClass, FHIRMetadataSet, OutputToQuickStream. The standard DTLs under HS.FHIR.DTL.vR4.SDA3.* handle the per-resource mapping."), (m9)])
+        ; --- HS.Message.XMLMessage ---
+        Set m10 = {} Set m10.className = "HS.Message.XMLMessage" Set m10.kind = "HS-Message" Set m10.source = "HS.Message.XMLMessage"
+        Do rows.%Push([("HS.Message.XMLMessage — HS-Message (SDA3 wrapper message). Production message class that wraps an SDA3 XML stream for routing between business hosts. Used as the intermediary message between HL7-to-SDA conversion (HS.Gateway.HL7.HL7ToSDA3.GetSDA) and the SDA-to-FHIR process (HS.FHIR.DTL.Util.HC.SDA3.FHIR.Process). The custom BPL must wrap the SDA container into this message class."), (m10)])
+        ; --- SDA-to-FHIR API classes ---
+        Set m11 = {} Set m11.className = "HS.FHIR.DTL.Util.API.Transform.SDA3ToFHIR" Set m11.kind = "FHIR-DTL" Set m11.source = "HS.FHIR.DTL.Util.API.Transform.SDA3ToFHIR"
+        Do rows.%Push([("HS.FHIR.DTL.Util.API.Transform.SDA3ToFHIR — FHIR-DTL (SDA3-to-FHIR programmatic API). Use for programmatic SDA3-to-FHIR conversion outside a production. TransformStream(stream, SDAClassname, fhirVersion, patientId, encounterId) or TransformObject(source, fhirVersion). Returns object with .bundle (%DynamicObject). When you need production-based conversion, use HS.FHIR.DTL.Util.HC.SDA3.FHIR.Process instead."), (m11)])
+        Set m12 = {} Set m12.className = "HS.FHIR.DTL.Util.API.Transform.FHIRToSDA3" Set m12.kind = "FHIR-DTL" Set m12.source = "HS.FHIR.DTL.Util.API.Transform.FHIRToSDA3"
+        Do rows.%Push([("HS.FHIR.DTL.Util.API.Transform.FHIRToSDA3 — FHIR-DTL (FHIR-to-SDA3 programmatic API). Use for programmatic FHIR-to-SDA3 conversion outside a production. TransformStream(stream, fhirVersion, fhirFormat) or TransformObject(source, fhirVersion). Returns object with .container (HS.SDA3.Container). When you need production-based conversion, use HS.FHIR.DTL.Util.HC.FHIR.SDA3.Process instead."), (m12)])
+        ; Add to catalog
+        Set kb = ..%EnsureKB(..#HSKBNAME, ..#HSTABLE, "Vector search across HealthShare HS.* transformation and gateway classes.")
+        Set added = kb.AddDocuments(rows)
+        Set out.ok = 1
+        Set out.added = added
+        Set out.message = "Patched " _ added _ " critical pipeline classes into the HS catalog."
+    } Catch ex {
+        Set out.ok = 0
+        Set out.error = $extract(ex.DisplayString(), 1, 800)
+    }
+    Set out.elapsedMs = $fnumber(($zhorolog - start) * 1000, "", 0)
+    Quit out
+}
+
 /// Snapshot per-catalog stats without rebuilding. Used by the admin
 /// status endpoint.
 ClassMethod Status() As %DynamicObject
@@ -273,7 +331,9 @@ ClassMethod ReadHsRows(pSourceNamespace As %String, pCap As %Integer) As %Dynami
     Set sql = "SELECT TOP ? Name, Description FROM %Dictionary.CompiledClass "
         _ "WHERE (Name LIKE 'HS.FHIR.DTL.%' OR Name LIKE 'HS.Gateway.%' "
         _ "  OR Name LIKE 'HS.Util.HC.HL7.%' OR Name LIKE 'HS.SDA3.%' "
-        _ "  OR Name LIKE 'HS.HC.HL7.%') "
+        _ "  OR Name LIKE 'HS.HC.HL7.%' OR Name LIKE 'HS.Doc.Mapping.%' "
+        _ "  OR Name LIKE 'HS.FHIRServer.Interop.%' OR Name LIKE 'HS.FHIRServer.HC.%' "
+        _ "  OR Name LIKE 'HS.Message.%') "
         _ "  AND Deprecated = 0 AND Abstract = 0 "
         _ "  AND Description IS NOT NULL AND Description <> '' "
         _ "ORDER BY Name"
@@ -345,6 +405,10 @@ ClassMethod %HsKind(pName As %String) As %String [ Internal ]
     If $extract(pName, 1, 16) = "HS.Util.HC.HL7." Quit "HL7-Util"
     If $extract(pName, 1, 8)  = "HS.SDA3." Quit "SDA3"
     If $extract(pName, 1, 10) = "HS.HC.HL7." Quit "HL7"
+    If $extract(pName, 1, 15) = "HS.Doc.Mapping." Quit "CDA-Mapping"
+    If $extract(pName, 1, 22) = "HS.FHIRServer.Interop." Quit "FHIR-Interop"
+    If $extract(pName, 1, 17) = "HS.FHIRServer.HC." Quit "FHIR-Adapter"
+    If $extract(pName, 1, 11) = "HS.Message." Quit "HS-Message"
     Quit "HS"
 }
 

@@ -309,7 +309,7 @@ HL7 routing:
 - EnsLib.HL7.MsgRouter.RoutingEngine — HL7 content-based router. REQUIRES a compiled routing rule class (CreateRoutingRule) and BusinessRuleName setting. Without these, every message crashes with <LIST>OnProcessInput.
 
 HL7 to FHIR pipeline (SDA is ALWAYS the intermediary — never skip it):
-- HS.Gateway.HL7.HL7ToSDA3 — business process; call GetSDA(request, .sdaContainer) to convert HL7 to SDA3
+- HS.Gateway.HL7.HL7ToSDA3 — UTILITY CLASS (%RegisteredObject), NOT a business host. Do NOT add it to a production as a business process. Call its GetSDA(request, .sdaContainer) classmethod inside a custom BPL code block. The custom BPL wraps the SDA into HS.Message.XMLMessage and routes to the SDA-to-FHIR process below.
 - HS.FHIR.DTL.Util.HC.SDA3.FHIR.Process — business process; converts SDA3 to FHIR R4 bundle. Key settings: TargetConfigName, FHIRMetadataSet, FHIREndpoint, TransmissionMode
 - HS.FHIR.DTL.Util.HC.FHIR.SDA3.Process — business process; converts FHIR R4 to SDA3 (reverse pipeline)
 - HS.FHIR.DTL.SDA3.vR4.* — built-in DTL packages for SDA to FHIR R4 (Patient, Encounter, Observation, etc.). ALWAYS check these exist before writing custom DTLs.

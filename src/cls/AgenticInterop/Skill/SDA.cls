@@ -46,7 +46,7 @@ HealthShare's Streamlet engine deduplicates and applies these actions per Edge G
 
 ## THE HL7-to-SDA PIPELINE (critical knowledge)
 
-The primary HL7 v2 to SDA conversion uses `HS.Gateway.HL7.HL7ToSDA3`, a built-in business process. It exposes a key class method for programmatic use:
+The primary HL7 v2 to SDA conversion uses `HS.Gateway.HL7.HL7ToSDA3`, a utility class (extends %Library.RegisteredObject, NOT a business process — do NOT add it as a production host). It exposes a key class method for programmatic use:
 
   `Set sc = ##class(HS.Gateway.HL7.HL7ToSDA3).GetSDA(request, .sdaContainer)`
 
@@ -124,9 +124,16 @@ SDA-FHIR transformations use lookup tables stored in `dev/fhir/lookup/Lookup.jso
 Use Health > Schema Documentation > FHIR Annotations in the Management Portal to explore how SDA fields map to FHIR fields and vice versa. Shows field-to-field mappings, lookup tables, conditions, and subtransformations used.
 
 ## Other conversion pathways
-- HL7 v2 to SDA3: `HS.Gateway.HL7.HL7ToSDA3` business process
-- SDA3 to HL7 v2: `HS.Gateway.SDA3.SDA3ToHL7v2`
-- CDA to SDA3: `HS.Gateway.CDA.CDAToSDA3` and inverse
+- HL7 v2 to SDA3: `HS.Gateway.HL7.HL7ToSDA3` — utility class (%RegisteredObject, NOT a business process). Call via classmethod: `##class(HS.Gateway.HL7.HL7ToSDA3).GetSDA(request, .sdaContainer)`.
+- SDA3 to HL7 v2: per-message-type DTL classes under `HS.Gateway.SDA3.SDA3ToHL7.*`:
+  - `HS.Gateway.SDA3.SDA3ToHL7.ADTA0N` — SDA3 to ADT A01/A02/A04/etc.
+  - `HS.Gateway.SDA3.SDA3ToHL7.ADTA0NA03` — SDA3 to ADT A03
+  - `HS.Gateway.SDA3.SDA3ToHL7.ORUR01` — SDA3 to ORU R01
+  - `HS.Gateway.SDA3.SDA3ToHL7.VXUV04` — SDA3 to VXU V04
+  - `HS.Gateway.SDA3.SDA3ToHL7.TransformUtil` — utility functions
+  - `HS.Gateway.SDA3.SDA3ToHL7.SubTransform.*` — per-segment transforms (PID, PV1, OBR, OBX, etc.)
+  There is NO single SDA3-to-HL7 converter — pick the DTL matching your target HL7 message type.
+- CDA to SDA3: `HS.Doc.Mapping.CDAToSDAMapper` — utility mapper class. Inverse: `HS.Doc.Mapping.SDAToCDAMapper`.
 
 ## Custom extensions
 Subclass `HS.Local.SDA3.<Type>Extension` to add custom properties without breaking inheritance. The Streamlet engine and the conversion DTLs honor these.
