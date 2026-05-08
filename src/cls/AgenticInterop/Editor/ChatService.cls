@@ -301,7 +301,7 @@ ClassMethod ChatStream(pResponse As %CSP.Response, pBodyStream) As %Status
         While iteration < maxIter {
             Set iteration = iteration + 1
             Do monitor.OnIterationStart(iteration, maxIter, session)
-            Set input = $select(iteration=1:message, 1:"Continue executing tool calls. Do not repeat tools you already called.")
+            Set input = $select(iteration=1:message, 1:"Continue. Call more tools if needed, or write your completion report if all work is done.")
             Set response = ..ChatWithRetry(agent, session, input, monitor)
             Do monitor.OnIterationComplete(iteration, response, session)
             If '$isobject(response) Quit
@@ -335,6 +335,11 @@ ClassMethod ChatStream(pResponse As %CSP.Response, pBodyStream) As %Status
         Do monitor.CaptureFromSession(session)
         // Extract final text from the response
         Set finalText = ..ExtractText(response)
+        // Safety net: if tools ran but the model returned no text, emit
+        // a fallback so the user never sees an empty response.
+        If finalText = "", monitor.ToolCallTrace '= "" {
+            Set finalText = "I executed " _ $length(monitor.ToolCallTrace, ",") _ " tool calls but did not produce a summary. Please ask me to review what was built (e.g. ""review the production"") so I can report the results."
+        }
         // Emit the response text as token events so the frontend renders
         // it in the message bubble. Run() returns the full text at once
         // (no real-time token streaming), but the UI accumulates token

@@ -212,18 +212,19 @@ Not yet built (say so if asked): SendSDA3, SendDICOM, SendMFTFile, UpdateBPL, Up
 
 When building a production with routing, ALWAYS create dependencies first. Skipping a step causes runtime crashes that waste your iteration budget on debugging.
 
-BATCHING GUIDE — call these together in a single response when possible:
-- Iteration 1: GetUserNamespace (always first, alone)
-- Iteration 2: CreateDTL + CreateRoutingRule (independent artifacts, batch them)
-- Iteration 3: UpdateDTL (needs skeleton from step 2)
-- Iteration 4: CreateProduction (needs rule from step 2 for reference)
-- Iteration 5: AddBusinessHost x3 or x4 (all hosts in ONE response — they are independent once the production exists)
-- Iteration 6: GetProduction (verify all hosts and settings)
-- Iteration 7: StartProduction
-- Iteration 8: SendHL7 (test message)
-- Iteration 9: QueryEventLog + MessageSummary (verify test — batch these)
-- Iteration 10: Final text response (completion report)
-That is 10 iterations for a full build+test. NOT 22.
+BATCHING GUIDE — example for a typical production build:
+- Iteration 1: GetUserNamespace
+- Iteration 2: CreateDTL + CreateRoutingRule (batch — independent artifacts)
+- Iteration 3: UpdateDTL + CreateProduction (batch — UpdateDTL needs skeleton from step 2, CreateProduction is independent)
+- Iteration 4: AddBusinessHost x3 or x4 (ALL hosts in ONE response — they are independent once the production exists)
+- Iteration 5: GetProduction (verify all hosts and settings)
+- Iteration 6: StartProduction
+- Iteration 7: SendHL7 (test)
+- Iteration 8: QueryEventLog + MessageSummary (batch — verify test results)
+- Iteration 9: Final text response (completion report)
+That is 9 iterations for a full build+test. NOT 22.
+
+For simple productions (no DTL, no routing rule — e.g., HL7-to-FHIR via built-in pipeline), skip steps 2-3 and go straight to CreateProduction + AddBusinessHost. That is 6-7 iterations.
 
 1. DTL classes (CreateDTL + UpdateDTL with field mappings)
 2. Routing rule classes (CreateRoutingRule / create_routing_rule) — THIS STEP IS MANDATORY for any production that uses a routing engine. A routing engine without a compiled rule class crashes immediately with a <LIST>OnProcessInput error on every message. Do NOT skip this step. The rule must reference the exact host config names you will use later (e.g., send targets "LIS.Outbound" and "DeadLetter.File").
