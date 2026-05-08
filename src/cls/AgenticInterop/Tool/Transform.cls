@@ -127,11 +127,13 @@ ClassMethod CompileDTL(name As %String) As %DynamicObject
     Quit out
 }
 
-/// Create a Data Transformation Language (DTL) class skeleton. The
-/// generated class extends Ens.DataTransformDTL and contains an empty
-/// <transform> XData with the specified source / target classes — the
-/// user (or a follow-up update_dtl call) fills in the field mappings.
+/// Create a Data Transformation Language (DTL) class and compile it.
 /// MUTATING — gated by the create_ prefix.
+///
+/// PREFERRED: pass dtlXml with the COMPLETE transform XML (all assign/
+/// foreach/subtransform elements) so the DTL is fully populated in ONE
+/// call. This avoids multiple update_dtl round-trips that burn tokens
+/// and risk rate limits.
 ///
 /// name:        fully-qualified DTL class name (e.g.,
 ///              "Demo.Transform.ADT_to_SDA").
@@ -141,7 +143,12 @@ ClassMethod CompileDTL(name As %String) As %DynamicObject
 /// sourceDocType: optional HL7 DocType for the source side
 ///              (e.g., "2.5:ADT_A01").
 /// targetDocType: optional HL7 DocType for the target side.
-ClassMethod CreateDTL(name As %String, sourceClass As %String, targetClass As %String, sourceDocType As %String = "", targetDocType As %String = "") As %DynamicObject
+/// dtlXml:      optional COMPLETE transform XML body. If provided, this
+///              replaces the default empty skeleton. Pass the full
+///              "<transform ...>...</transform>" XML with ALL field
+///              mappings. Build ALL mappings in ONE call — do NOT call
+///              update_dtl multiple times for individual fields.
+ClassMethod CreateDTL(name As %String, sourceClass As %String, targetClass As %String, sourceDocType As %String = "", targetDocType As %String = "", dtlXml As %String = "") As %DynamicObject
 {
     Set out = {}
     Set out.tool = "create_dtl"
@@ -163,7 +170,7 @@ ClassMethod CreateDTL(name As %String, sourceClass As %String, targetClass As %S
         If ##class(%Dictionary.ClassDefinition).%ExistsId(name) {
             Set out.ok = 1
             Set out.created = 0
-            Set out.error = "Class already exists: " _ name _ ". Use update_dtl to modify it."
+            Set out.error = "Class already exists: " _ name _ ". Use update_dtl to replace its content."
             Quit
         }
         Set cdef = ##class(%Dictionary.ClassDefinition).%New(name)
@@ -173,13 +180,19 @@ ClassMethod CreateDTL(name As %String, sourceClass As %String, targetClass As %S
         Set xdata = ##class(%Dictionary.XDataDefinition).%New()
         Set xdata.Name = "DTL"
         Set xdata.XMLNamespace = "http://www.intersystems.com/dtl"
-        Set transformOpen = "<transform sourceClass=""" _ sourceClass _ """ targetClass=""" _ targetClass _ """"
-        If sourceDocType '= "" { Set transformOpen = transformOpen _ " sourceDocType=""" _ sourceDocType _ """" }
-        If targetDocType '= "" { Set transformOpen = transformOpen _ " targetDocType=""" _ targetDocType _ """" }
-        Set transformOpen = transformOpen _ " create=""new"" language=""objectscript"">"
-        Do xdata.Data.Write(transformOpen)
-        Do xdata.Data.Write("<assign property='target' value='source' action='set' />")
-        Do xdata.Data.Write("</transform>")
+        If dtlXml '= "" {
+            ; Full DTL body provided — use it directly (one-shot creation)
+            Do xdata.Data.Write(dtlXml)
+        } Else {
+            ; No body — build a minimal skeleton
+            Set transformOpen = "<transform sourceClass=""" _ sourceClass _ """ targetClass=""" _ targetClass _ """"
+            If sourceDocType '= "" { Set transformOpen = transformOpen _ " sourceDocType=""" _ sourceDocType _ """" }
+            If targetDocType '= "" { Set transformOpen = transformOpen _ " targetDocType=""" _ targetDocType _ """" }
+            Set transformOpen = transformOpen _ " create=""new"" language=""objectscript"">"
+            Do xdata.Data.Write(transformOpen)
+            Do xdata.Data.Write("<assign property='target' value='source' action='set' />")
+            Do xdata.Data.Write("</transform>")
+        }
         Do cdef.XDatas.Insert(xdata)
         Set sc = cdef.%Save()
         If 'sc {
@@ -197,7 +210,11 @@ ClassMethod CreateDTL(name As %String, sourceClass As %String, targetClass As %S
         }
         Set out.ok = 1
         Set out.created = 1
-        Set out.message = "DTL '" _ name _ "' created with empty mapping. Use update_dtl to add field mappings."
+        If dtlXml '= "" {
+            Set out.message = "DTL '" _ name _ "' created with full mappings and compiled."
+        } Else {
+            Set out.message = "DTL '" _ name _ "' created with empty mapping. Use update_dtl to add field mappings."
+        }
     } Catch ex {
         Set out.ok = 0
         Set out.error = $extract(ex.DisplayString(), 1, 400)

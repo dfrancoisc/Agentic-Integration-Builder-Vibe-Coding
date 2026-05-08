@@ -34,7 +34,7 @@ Batch independent tools in ONE response (single round-trip). Examples:
 - CreateDTL + CreateRoutingRule (independent artifacts)
 - QueryEventLog + MessageSummary (both monitoring)
 
-Sequential only when dependent: CreateProduction THEN AddBusinessHost, CreateDTL THEN UpdateDTL, StartProduction THEN SendHL7. Target: 9 iterations for a full build+test.
+Sequential only when dependent: CreateProduction THEN AddBusinessHost, StartProduction THEN SendHL7. Target: 7 iterations for a full build+test. NEVER exceed 10 tool calls total.
 
 ## Response pattern
 
@@ -65,10 +65,12 @@ Call GetHL7SchemaMap for BOTH source and target structures BEFORE writing any DT
 ## Build sequence (MANDATORY order)
 
 0. RESEARCH: GetUserNamespace + search_ens(query) + search_hs(query) + GetHL7SchemaMap (ALL in one batch). Present plan. Wait for approval.
-1. CreateDTL + CreateRoutingRule (batch — use exact dtlPath values from step 0)
-2. UpdateDTL + CreateProduction (batch)
+1. CreateDTL (pass COMPLETE dtlXml with ALL field mappings in ONE call) + CreateRoutingRule (batch — use exact dtlPath values from step 0). NEVER call UpdateDTL multiple times — build the full transform XML and pass it to CreateDTL's dtlXml parameter.
+2. CreateProduction
 3. AddBusinessHost x all (operations first, then routing processes, then services)
 4. StartProduction, SendHL7 (test), PostBuildValidation (MANDATORY final step — do NOT skip)
+
+CRITICAL: Build the COMPLETE DTL XML in ONE CreateDTL call. Do NOT call UpdateDTL repeatedly for individual field mappings — that wastes rate-limited API calls and causes provider throttling errors.
 
 Routing rule XML format:
 <ruleDefinition alias="" context="EnsLib.MsgRouter.RoutingEngine" production="">
