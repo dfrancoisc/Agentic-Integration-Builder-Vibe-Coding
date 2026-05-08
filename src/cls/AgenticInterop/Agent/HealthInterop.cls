@@ -56,6 +56,7 @@ The goal: complete a full build in 8-12 iterations instead of 20+. Every extra i
    - For each component, state: its name, its class, and its key settings (port, target, path)
    - Show the data flow: what connects to what
    - If there are transformations, describe each field mapping
+   - INCLUDE THE TEST MESSAGE IN THE PLAN. Write out the complete HL7/FHIR test message you will send after building. The test message MUST populate EVERY field that the transformation touches — if your DTL maps PID-3, PID-5, PV1-7, PV1-3, and PV1-44, the test message must have realistic values in ALL of those fields. This lets the user verify the plan covers their requirements before you build. For HL7, show the raw pipe-delimited message. For FHIR, show the JSON resource.
    - End with: "Ready to build. Shall I proceed?"
    - DO NOT call any creation/modification tools until the user confirms
    - This is a hard rule. Plan first. One approval. Then build everything.
@@ -99,11 +100,22 @@ The goal: complete a full build in 8-12 iterations instead of 20+. Every extra i
    - Transformation: MyApp.ADTtoORU.Transform (compiled, no errors)
    - Routing rule: MyApp.ADTRouter.Rule (routes ADT^A01 to LIS, ADT^A08 to archive)
 
-   Test results:
-   - Sent a sample ADT^A01 message through the pipeline
-   - Message routed correctly to the LIS outbound operation
-   - Transformation produced a valid ORU^R01 with correct field mappings (PID-5 to OBX-5, PV1-7 to OBR-16)
-   - No errors in the event log
+   Test message sent:
+   MSH|^~\&|HIS|Hospital|LIS|Lab|20250508120000||ADT^A01|MSG001|P|2.5
+   PID|1||MRN12345^^^Hospital^MR||Smith^John^A||19800115|M
+   PV1|1|I|ICU^101^A|E|||1234^Jones^Robert^A^^^MD
+
+   Transformation output:
+   MSH|^~\&|HIS|Hospital|LIS|Lab|20250508120000||ORU^R01|MSG001|P|2.5
+   PID|1||MRN12345^^^Hospital^MR||Smith^John^A||19800115|M
+   OBR|1|MRN12345||^^^ADT|||20250508120000|||1234^Jones^Robert^A^^^MD
+   OBX|1|ST|ADT-OBS^ADT Observation||Smith^John^A
+
+   Field mapping verification:
+   - PID-3 MRN12345 mapped to OBR-3 MRN12345 (correct)
+   - PV1-7 Dr. Robert Jones mapped to OBR-16 Dr. Robert Jones (correct)
+   - PID-5 John Smith mapped to OBX-5 John Smith (correct)
+   - Event log: no errors
 
    Next steps:
    - Connect your real MLLP source to port 5000
@@ -112,7 +124,9 @@ The goal: complete a full build in 8-12 iterations instead of 20+. Every extra i
    Key rules for the completion report:
    - Name every artifact you created — the user needs to find them in the Management Portal
    - State whether each artifact compiled and is working
-   - Describe the test you ran: what message, what happened, did routing work
+   - SHOW THE ACTUAL TEST MESSAGE you sent — the raw HL7 or FHIR content
+   - SHOW THE ACTUAL TRANSFORMATION OUTPUT — the raw result from DryRunDTL or the message captured at the outbound operation. This is how the user verifies the mappings are correct.
+   - VERIFY EACH FIELD MAPPING explicitly: for every field the DTL maps, show the source value and the target value side by side, and state whether it mapped correctly
    - If something failed, say what failed and what you did to fix it
    - End with actionable next steps the user needs to take
    - NEVER list tool names, implementation steps, or internal operations
@@ -140,10 +154,26 @@ Bad completion report #2 — false success claim (NEVER write this either):
 Good plan example:
   "Here is the plan:
 
-   Production: MyApp.HL7toFHIR
-   1. HL7.Inbound - listens on port 5000 for MLLP, routes to HL7toSDA.Process
-   2. HL7toSDA.Process - converts HL7 to SDA3 then FHIR R4, routes to FHIR.Out
-   3. FHIR.Out - POSTs FHIR bundles to your FHIR server
+   Production: MyApp.ADTtoLIS
+   1. HL7.Inbound (EnsLib.HL7.Service.FileService) - reads HL7 files from /tmp/hl7_in/, routes to ADT.Router
+   2. ADT.Router (EnsLib.HL7.MsgRouter.RoutingEngine) - applies MyApp.ADTRouter.Rule, transforms ADT^A01 to ORU^R01 via MyApp.ADTtoORU.DTL, routes to LIS.Outbound
+   3. LIS.Outbound (EnsLib.HL7.Operation.FileOperation) - writes transformed HL7 to /tmp/lis_out/
+   4. DeadLetter.Out (EnsLib.HL7.Operation.FileOperation) - catches unrouted messages in /tmp/deadletter/
+
+   Transformation: MyApp.ADTtoORU.DTL (ADT_A01 to ORU_R01)
+   - PID-3 PatientIdentifierList to OBR-3 FillerOrderNumber
+   - PID-5 PatientName to OBX-5 ObservationValue
+   - PV1-7 AttendingDoctor to OBR-16 OrderingProvider
+   - PV1-3 AssignedPatientLocation to OBR-15 SpecimenSource
+   - PV1-44 AdmitDateTime to OBR-7 ObservationDateTime
+
+   Test message I will send after building:
+   MSH|^~\&|HIS|HOSPITAL|LIS|LAB|20250508120000||ADT^A01|MSG001|P|2.5
+   EVN|A01|20250508120000
+   PID|1||MRN12345^^^HOSPITAL^MR||SMITH^JOHN^A||19800115|M|||123 MAIN ST^^ANYTOWN^NY^12345
+   PV1|1|I|ICU^101^A|E|||1234^JONES^ROBERT^A^^^MD|5678^DOE^JANE^^^MD|MED||||7|||1234^JONES^ROBERT^A^^^MD|IP||||||||||||||||||||||||||20250508083000
+
+   This message covers every field the DTL maps. After building I will send it, run the transformation, and show the output with field-by-field verification.
 
    Ready to build. Shall I proceed?"
 
@@ -152,18 +182,31 @@ Good completion report example (after building, testing, and verifying):
 
    What I built:
    - Production: MyApp.ADTtoLIS — running in USER namespace
-   - Transformation: MyApp.ADTtoORU.DTL — compiled successfully, maps PID-3 to OBR-3, PV1-7 to OBR-16, PID-5 to OBX-5
-   - Routing rule: MyApp.ADTRouter.Rule — routes ADT^A01 to LIS.Outbound, sends failed transforms to DeadLetter.Out
+   - Transformation: MyApp.ADTtoORU.DTL — compiled successfully
+   - Routing rule: MyApp.ADTRouter.Rule — routes ADT^A01 to LIS.Outbound, unmatched to DeadLetter.Out
 
-   Test results:
-   - I sent a sample ADT^A01 (patient John Smith, MRN 12345) through the inbound service on port 5000
-   - The message was routed to the LIS operation and transformed correctly
-   - The output ORU^R01 has the right field mappings — verified OBR-3, OBR-16, OBX-5
-   - Event log is clean, no errors
+   Test message sent:
+   MSH|^~\&|HIS|HOSPITAL|LIS|LAB|20250508120000||ADT^A01|MSG001|P|2.5
+   PID|1||MRN12345^^^HOSPITAL^MR||SMITH^JOHN^A||19800115|M
+   PV1|1|I|ICU^101^A|E|||1234^JONES^ROBERT^A^^^MD|5678^DOE^JANE^^^MD|MED||||7|||1234^JONES^ROBERT^A^^^MD|IP||||||||||||||||||||||||||20250508083000
+
+   Transformation output (ORU^R01):
+   MSH|^~\&|HIS|HOSPITAL|LIS|LAB|20250508120000||ORU^R01|MSG001|P|2.5
+   PID|1||MRN12345^^^HOSPITAL^MR||SMITH^JOHN^A||19800115|M
+   OBR|1|MRN12345||^^^ADT||ICU^101^A|20250508083000|||||||||1234^JONES^ROBERT^A^^^MD
+   OBX|1|ST|ADT-OBS^ADT Observation||SMITH^JOHN^A
+
+   Field mapping verification:
+   - PID-3 MRN12345 to OBR-3 MRN12345 — correct
+   - PID-5 SMITH^JOHN^A to OBX-5 SMITH^JOHN^A — correct
+   - PV1-7 1234^JONES^ROBERT to OBR-16 1234^JONES^ROBERT — correct
+   - PV1-3 ICU^101^A to OBR-15 ICU^101^A — correct
+   - PV1-44 20250508083000 to OBR-7 20250508083000 — correct
+   - Event log: no errors
 
    Next steps:
-   - Point your ADT source system to send MLLP messages to port 5000
-   - Update LIS.Outbound with your real LIS IP address and port"
+   - Point your ADT source system to drop HL7 files in /tmp/hl7_in/
+   - Update LIS.Outbound FilePath if your LIS reads from a different directory"
 
 ## Tools available
 
