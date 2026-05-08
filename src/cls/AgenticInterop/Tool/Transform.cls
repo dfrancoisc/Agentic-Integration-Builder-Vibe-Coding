@@ -992,7 +992,12 @@ ClassMethod GetHL7SchemaMap(category As %String, messageStructure As %String) As
             }
             Quit
         }
-        ; Walk the map sub-node — each entry is a segment path
+        ; Walk the map sub-node — each entry is a segment path.
+        ; DEDUP: only emit the full field list the FIRST time a
+        ; segment type is seen. Later occurrences just get dtlPath
+        ; + a "fieldsRef" pointer. This cuts ORU_R01 from 122K chars
+        ; to ~15K by eliminating the 30-40 fields × N occurrences
+        ; explosion that was blowing the token budget.
         Set segCount = 0
         Set key = ""
         For {
@@ -1000,33 +1005,34 @@ ClassMethod GetHL7SchemaMap(category As %String, messageStructure As %String) As
             Quit:key=""
             If key = "leftoversegs" Continue
             Set mapVal = $get(^EnsHL7.Schema(category, "MS", messageStructure, "map", key))
-            ; mapVal format: "=pos|cat:segType" e.g. "=3,*,1,1|2.5:PID"
             Set segType = $piece($piece(mapVal, "|", 2), ":", 2)
             Set entry = {}
             Set entry.path = key
             Set entry.segmentType = segType
-            ; Build the DTL-ready path with (1) index for repeating groups
             Set dtlPath = $replace(key, "()", "(1)")
             Set entry.dtlPath = dtlPath
-            ; List fields for this segment type
-            Set entry.fields = []
-            Set fld = "", fldCount = 0
-            For {
-                Set fld = $order(^EnsHL7.Schema(category, "SS", segType, "map", fld))
-                Quit:fld=""
-                Set fldCount = fldCount + 1
-                Set fldEntry = {}
-                Set fldEntry.name = fld
-                Set fldEntry.fullPath = dtlPath _ ":" _ fld
-                Do entry.fields.%Push(fldEntry)
-                Quit:fldCount>40
+            ; First occurrence: emit field names (no fullPath — agent
+            ; derives it as dtlPath:fieldName). Later: just a reference.
+            If '$data(seenSeg(segType)) {
+                Set seenSeg(segType) = dtlPath
+                Set entry.fields = []
+                Set fld = "", fldCount = 0
+                For {
+                    Set fld = $order(^EnsHL7.Schema(category, "SS", segType, "map", fld))
+                    Quit:fld=""
+                    Set fldCount = fldCount + 1
+                    Do entry.fields.%Push(fld)
+                    Quit:fldCount>40
+                }
+            } Else {
+                Set entry.fieldsRef = "Same fields as " _ segType _ " at " _ seenSeg(segType)
             }
             Do out.segments.%Push(entry)
             Set segCount = segCount + 1
         }
         Set out.segmentCount = segCount
         Set out.ok = 1
-        Set out.hint = "Use the dtlPath values in DTL <assign> elements. For repeating groups, increment the index: (1), (2), etc. For repeating fields within a segment, append (1) to the field name: e.g. dtlPath:PatientIdentifierList(1). ALWAYS look up BOTH source and target schemas before writing a DTL."
+        Set out.hint = "Use dtlPath:fieldName in DTL <assign> elements. For repeating groups, increment the index: (1), (2). For repeating fields, append (1) to the field name: dtlPath:PatientIdentifierList(1). Segments with fieldsRef share the same fields as the referenced path."
     } Catch ex {
         Set out.ok = 0
         Set out.error = $extract(ex.DisplayString(), 1, 400)

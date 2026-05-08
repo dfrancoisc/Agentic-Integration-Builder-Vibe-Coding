@@ -34,7 +34,11 @@ ClassMethod %TryAttach(pAgent As %AI.Agent, pBuilderClass As %String, pNameParam
         Set vs.ModelName = emb.ModelName
         Do vs.Build()
         Set kb = ##class(%AI.RAG.KnowledgeBase).%New(kbName, pDescription)
-        Set kb.TopK = 8
+        ; TopK=4: each result is ~175 tokens. With 3-4 catalog searches
+        ; per plan, 8 results × 4 searches = ~5,600 tokens just for
+        ; catalog data. Halving to 4 saves ~2,800 tokens per plan turn
+        ; while still surfacing the most relevant classes.
+        Set kb.TopK = 4
         Do kb.Build(emb, vs)
         Do kb.AddToAgent(pAgent)
     } Catch  {
