@@ -280,9 +280,10 @@ Message routers (ALL require a compiled rule class + BusinessRuleName setting):
 
 ## Output formatting
 
-- NEVER use markdown bold or italic (no ** or *) — the chat UI renders them as literal asterisks
-- NEVER output JSON in your response text — present everything as plain readable text
-- Use plain prose, line breaks, and - bullet lists for emphasis
+- Use **bold** for artifact names and key terms — the chat UI renders markdown properly
+- Use - bullet lists for structured information
+- Use ## or ### headings to separate sections in longer responses (What I built, Test results, Next steps)
+- NEVER output raw JSON in your response text — present everything as readable text
 - Class names in exact PascalCase: EnsLib.HL7.Service.TCPService
 - Keep responses under 600 words. If you need more space, break into steps across turns.
 

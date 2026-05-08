@@ -26,7 +26,18 @@ let approvedTokens = [];
 // `cat` is a short uppercase category label (BUILD / TRANSFORM /
 // OPERATE / etc.) shown in tiny accent text above the title — gives
 // the user a fast visual scan of what kind of work the prompt is.
-const EXAMPLES = [
+//
+// User-defined examples are stored in localStorage under
+// AGENTIC_USER_EXAMPLES and merged after the built-in set.
+const USER_EXAMPLES_KEY = 'AGENTIC_USER_EXAMPLES';
+function loadUserExamples() {
+    try { return JSON.parse(localStorage.getItem(USER_EXAMPLES_KEY) || '[]'); }
+    catch { return []; }
+}
+function saveUserExamples(arr) {
+    try { localStorage.setItem(USER_EXAMPLES_KEY, JSON.stringify(arr)); } catch {}
+}
+const BUILTIN_EXAMPLES = [
     {
         cat: 'BUILD',
         title: "ADT-to-ORU transformation with custom mappings",
@@ -78,12 +89,16 @@ const EXAMPLES = [
         prompt: "We're migrating a Health Connect 2022.1 production from an on-prem instance to Health Connect Cloud 2025.1. Generate the deployment artifacts: (1) export the production class, all DTLs, BPLs, custom message classes, lookup tables, and credentials as a single deployment package using $system.OBJ.Export with the right qualifiers, (2) flag any deprecated APIs or settings that won't carry forward (e.g., obsolete adapters, ENSDEMO references, removed SSL config keys), (3) produce a smoke-test checklist covering inbound connectivity, message routing, transformation correctness, and outbound delivery for the first 24 hours post-cutover."
     }
 ];
+// Merged list: built-in + user-defined. Rebuilt on add/remove.
+let EXAMPLES = BUILTIN_EXAMPLES.concat(loadUserExamples());
+function rebuildExamples() { EXAMPLES = BUILTIN_EXAMPLES.concat(loadUserExamples()); }
 
 // Slash commands. Each runs a side-channel action (no LLM call) and
 // renders a synthetic message into the chat. `/help` lists them all.
 const SLASH_COMMANDS = {
     '/examples': { desc: 'Show all suggested prompts.', run: cmdExamples },
     '/example':  { desc: 'Alias for /examples.',         run: cmdExamples },
+    '/addexample':{ desc: 'Add a custom prompt to /examples.', run: cmdAddExample },
     '/help':     { desc: 'List slash commands.',         run: cmdHelp },
     '/clear':    { desc: 'Start a new conversation (clears history).', run: cmdClear },
     '/namespace':{ desc: 'Show the active IRIS namespace and access.', run: cmdNamespace },
@@ -311,10 +326,35 @@ function showLoginOverlay(message) {
 
 async function bootstrapAuth() {
     if (authValidated) return;
+    // 1. Try existing bridge bearer
     if (bridgeBearer && await probeAuth(bridgeBearer)) { authValidated = true; return; }
     bridgeBearer = '';
+    // 2. Trust stored Basic auth without re-probing (transient 401s
+    //    from the CSP gateway would cause a false negative)
     const stored = getStoredAuth();
-    if (stored && await probeAuth(stored)) { authValidated = true; return; }
+    if (stored) { authValidated = true; return; }
+    // 3. Re-fetch bridge bearer from parent SPA — the old one expired
+    //    but the parent may have a fresh JWT. This is the critical path
+    //    for users who opened the chatbot via the Interop Editor and
+    //    never manually logged in (no stored Basic auth).
+    if (isViaInterop()) {
+        const bridge = await fetchBridgeAuth();
+        if (bridge.bearer) {
+            bridgeBearer = bridge.bearer;
+            if (await probeAuth(bridgeBearer)) { authValidated = true; return; }
+            bridgeBearer = '';
+        }
+    }
+    // 4. Nothing worked.
+    //    Bridge users (via Interop Editor) should NEVER see a login
+    //    form — they authenticated in the parent SPA. If the parent
+    //    session expired, a manual login creates conflicting
+    //    credentials. Show an inline error instead.
+    if (isViaInterop()) {
+        authValidated = true;  // suppress further bootstrap attempts
+        return;                // caller detects auth failure via 401
+    }
+    // Standalone users (direct URL, no parent SPA) get the login form
     await showLoginOverlay();
     authValidated = true;
 }
@@ -381,6 +421,94 @@ function newAssistantBubble() {
     $('messages').appendChild(wrap);
     $('messages').scrollTop = $('messages').scrollHeight;
     return { wrap, toolGroup, toolSummary, toolDot, toolLabel, tools, text, cursor, meta };
+}
+
+// Post-process a streamed text div: convert markdown-style formatting
+// to real HTML. Runs once after the stream finishes so it doesn't slow
+// down token rendering. Handles: **bold**, *italic*, `code`, headings
+// (## / ###), bullet lists (- item / * item), and numbered lists.
+function formatBubbleText(textDiv) {
+    const raw = textDiv.textContent || '';
+    if (!raw.trim()) return;
+    // Collapse runs of 3+ blank lines down to one paragraph gap
+    const lines = raw.split('\n');
+    const parts = [];
+    let inList = false;
+    let listType = '';
+    let lastWasBreak = false;
+
+    for (let i = 0; i < lines.length; i++) {
+        let line = lines[i];
+
+        // Headings: ## or ### at start of line
+        if (/^###\s+(.+)/.test(line)) {
+            if (inList) { parts.push(listType === 'ul' ? '</ul>' : '</ol>'); inList = false; }
+            parts.push('<h4 class="chat-h">' + fmtInline(line.replace(/^###\s+/, '')) + '</h4>');
+            lastWasBreak = false;
+            continue;
+        }
+        if (/^##\s+(.+)/.test(line)) {
+            if (inList) { parts.push(listType === 'ul' ? '</ul>' : '</ol>'); inList = false; }
+            parts.push('<h3 class="chat-h">' + fmtInline(line.replace(/^##\s+/, '')) + '</h3>');
+            lastWasBreak = false;
+            continue;
+        }
+
+        // Bullet list: - item or * item (but not **bold**)
+        if (/^\s*[-*]\s+(.+)/.test(line) && !/^\s*\*\*/.test(line)) {
+            if (!inList || listType !== 'ul') {
+                if (inList) parts.push(listType === 'ul' ? '</ul>' : '</ol>');
+                parts.push('<ul class="chat-list">');
+                inList = true; listType = 'ul';
+            }
+            parts.push('<li>' + fmtInline(line.replace(/^\s*[-*]\s+/, '')) + '</li>');
+            lastWasBreak = false;
+            continue;
+        }
+
+        // Numbered list: 1. item
+        if (/^\s*\d+\.\s+(.+)/.test(line)) {
+            if (!inList || listType !== 'ol') {
+                if (inList) parts.push(listType === 'ul' ? '</ul>' : '</ol>');
+                parts.push('<ol class="chat-list">');
+                inList = true; listType = 'ol';
+            }
+            parts.push('<li>' + fmtInline(line.replace(/^\s*\d+\.\s+/, '')) + '</li>');
+            lastWasBreak = false;
+            continue;
+        }
+
+        // Empty line — close list, emit at most one paragraph gap
+        if (line.trim() === '') {
+            if (inList) { parts.push(listType === 'ul' ? '</ul>' : '</ol>'); inList = false; }
+            if (!lastWasBreak) { parts.push('<div class="chat-gap"></div>'); lastWasBreak = true; }
+            continue;
+        }
+
+        // Regular line with inline formatting
+        lastWasBreak = false;
+        parts.push('<p class="chat-p">' + fmtInline(line) + '</p>');
+    }
+
+    if (inList) parts.push(listType === 'ul' ? '</ul>' : '</ol>');
+
+    // Join without newlines — the CSS controls spacing, not whitespace.
+    // The .text div switches to white-space:normal once formatted.
+    textDiv.innerHTML = parts.join('');
+    textDiv.classList.add('formatted');
+}
+
+// Inline formatting: **bold**, *italic*, `code`, and bare class names
+function fmtInline(text) {
+    // Escape HTML first
+    let s = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    // `code` spans
+    s = s.replace(/`([^`]+)`/g, '<code class="chat-code">$1</code>');
+    // **bold**
+    s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    // *italic* (but not inside already-processed tags)
+    s = s.replace(/(?<!\w)\*([^*]+)\*(?!\w)/g, '<em>$1</em>');
+    return s;
 }
 
 function appendUserMessage(content) {
@@ -648,18 +776,60 @@ async function send(message) {
             headers,
             body: JSON.stringify({ message, history, approvedTokens: tokensThisTurn })
         });
-        // 401 recovery: a stale CSP session cookie (from the /agentic
-        // static-file app or the parent Interop Editor) can cause the
-        // gateway to reject the request even though our Basic auth
-        // header is valid. Re-authenticate and retry once before giving
-        // up. This self-heals the leaked-cookie scenario.
+        // 401 recovery: the CSP session or bridge bearer expired.
+        // Try increasingly aggressive recovery before showing the
+        // login modal. The user must NEVER see a sign-in prompt for
+        // a transient auth failure during an active conversation.
         if (res.status === 401) {
-            authValidated = false;
-            await bootstrapAuth();
+            // Retry 1: re-send same auth on a fresh TCP connection
             headers['Authorization'] = authHeader();
             res = await fetch(API + '/chat/stream', {
-                method: 'POST',
-                headers,
+                method: 'POST', headers,
+                body: JSON.stringify({ message, history, approvedTokens: tokensThisTurn })
+            });
+        }
+        if (res.status === 401) {
+            // Retry 2: re-fetch bridge bearer from parent SPA
+            if (isViaInterop()) {
+                const bridge = await fetchBridgeAuth();
+                if (bridge.bearer) {
+                    bridgeBearer = bridge.bearer;
+                    headers['Authorization'] = bridgeBearer;
+                    res = await fetch(API + '/chat/stream', {
+                        method: 'POST', headers,
+                        body: JSON.stringify({ message, history, approvedTokens: tokensThisTurn })
+                    });
+                }
+            }
+        }
+        if (res.status === 401) {
+            // Retry 3: try stored Basic auth with a /whoami warmup
+            const stored = getStoredAuth();
+            if (stored) {
+                await fetch(API + '/whoami', {
+                    headers: { Authorization: stored }, cache: 'no-store'
+                });
+                headers['Authorization'] = stored;
+                res = await fetch(API + '/chat/stream', {
+                    method: 'POST', headers,
+                    body: JSON.stringify({ message, history, approvedTokens: tokensThisTurn })
+                });
+            }
+        }
+        if (res.status === 401) {
+            // All silent retries exhausted.
+            if (isViaInterop()) {
+                // Bridge users: NEVER show a login modal — the parent
+                // SPA owns auth. Tell the user to refresh that page.
+                throw new Error('Your session has expired. Please refresh the Interop Editor page (Ctrl+Shift+R or Cmd+Shift+R) and re-open the chatbot.');
+            }
+            // Standalone users: one last chance via the login form
+            authValidated = false;
+            await showLoginOverlay();
+            authValidated = true;
+            headers['Authorization'] = authHeader();
+            res = await fetch(API + '/chat/stream', {
+                method: 'POST', headers,
                 body: JSON.stringify({ message, history, approvedTokens: tokensThisTurn })
             });
         }
@@ -759,6 +929,10 @@ async function send(message) {
             }
         }
         bubble.cursor.remove();
+        // Post-process: convert markdown-style formatting in the
+        // streamed text into real HTML so the user sees proper bold,
+        // headings, and bullets instead of raw asterisks.
+        formatBubbleText(bubble.text);
         // Persist the turn for replay on the next message.
         history.push({ role: 'user', content: message });
         history.push({ role: 'assistant', content: assistantText });
@@ -900,6 +1074,23 @@ function loadExampleByIdx(idx) {
     inp.selectionStart = inp.selectionEnd = inp.value.length;
 }
 $('messages').addEventListener('click', (e) => {
+    // Delete button on user-defined examples
+    const delBtn = e.target.closest('[data-delete-user-idx]');
+    if (delBtn) {
+        e.stopPropagation();
+        const userIdx = +delBtn.dataset.deleteUserIdx;
+        const userList = loadUserExamples();
+        if (userIdx >= 0 && userIdx < userList.length) {
+            userList.splice(userIdx, 1);
+            saveUserExamples(userList);
+            rebuildExamples();
+            toast('Prompt removed.');
+            // Re-render /examples if the card is still visible
+            const card = delBtn.closest('.system-card');
+            if (card) { card.remove(); cmdExamples(); }
+        }
+        return;
+    }
     const tile = e.target.closest('[data-example-idx]');
     if (!tile) return;
     loadExampleByIdx(+tile.dataset.exampleIdx);
@@ -942,7 +1133,26 @@ async function api(path, init) {
     }, init.headers || {});
     if (bridgeNamespace) init.headers['X-IRIS-Namespace'] = bridgeNamespace;
     init.cache = 'no-store';
-    const r = await fetch(API + path, init);
+    let r = await fetch(API + path, init);
+    // Silent 401 retry — same pattern as send(). Never show login
+    // modal for transient CSP session expiry during slash commands.
+    if (r.status === 401) {
+        // Try stored Basic auth first
+        const stored = getStoredAuth();
+        if (stored) {
+            init.headers['Authorization'] = stored;
+            r = await fetch(API + path, init);
+        }
+    }
+    if (r.status === 401 && isViaInterop()) {
+        // Re-fetch bridge bearer from parent SPA
+        const bridge = await fetchBridgeAuth();
+        if (bridge.bearer) {
+            bridgeBearer = bridge.bearer;
+            init.headers['Authorization'] = bridgeBearer;
+            r = await fetch(API + path, init);
+        }
+    }
     if (!r.ok) {
         let body = '';
         try { body = await r.text(); } catch {}
@@ -963,18 +1173,75 @@ function cmdHelp() {
 }
 
 function cmdExamples() {
-    const tile = (e, i) =>
-        `<button class="example" data-example-idx="${i}" type="button">` +
+    const userExamples = loadUserExamples();
+    const tile = (e, i) => {
+        const isUser = i >= BUILTIN_EXAMPLES.length;
+        const userIdx = i - BUILTIN_EXAMPLES.length;
+        return `<button class="example${isUser ? ' user-example' : ''}" data-example-idx="${i}" type="button">` +
             `<span class="ex-cat">${escapeHtml(e.cat || '')}</span>` +
+            (isUser ? `<span class="ex-delete" data-delete-user-idx="${userIdx}" title="Remove this prompt">x</span>` : '') +
             `<span class="ex-arrow">&rarr;</span>` +
             `<span class="ex-title">${escapeHtml(e.title)}</span>` +
         `</button>`;
+    };
     const tiles = EXAMPLES.map(tile).join('');
     appendSystemCard(
-        '<div class="system-card-head">' + EXAMPLES.length + ' starter prompts</div>' +
-        '<p class="muted">Click any tile to load it into the composer.</p>' +
+        '<div class="system-card-head">' + EXAMPLES.length + ' starter prompts' +
+            (userExamples.length ? ' (' + userExamples.length + ' custom)' : '') +
+        '</div>' +
+        '<p class="muted">Click a tile to load it. Use <code class="kbd">/addexample</code> to save your own prompts.</p>' +
         '<div class="example-grid example-grid-wide">' + tiles + '</div>'
     );
+}
+
+// /addexample — show a modal form where the user types a category,
+// title, and prompt. Saves to localStorage and rebuilds EXAMPLES.
+function cmdAddExample() {
+    const existing = document.getElementById('agentic-addex-overlay');
+    if (existing) existing.remove();
+    const overlay = document.createElement('div');
+    overlay.id = 'agentic-addex-overlay';
+    overlay.style.cssText =
+        'position:fixed;inset:0;background:rgba(15,17,21,0.85);z-index:9999;' +
+        'display:flex;align-items:center;justify-content:center;color:#e6e8eb;';
+    const formStyle = 'background:#161a21;border:1px solid #2a313c;border-radius:6px;padding:24px;width:480px;max-width:90vw;display:flex;flex-direction:column;gap:12px;';
+    const inputStyle = 'width:100%;background:#0b0d11;color:#e6e8eb;border:1px solid #2a313c;border-radius:4px;padding:8px;font:inherit;margin-top:4px;';
+    const labelStyle = 'color:#8b95a6;font-size:11px;text-transform:uppercase;letter-spacing:0.04em;';
+    overlay.innerHTML =
+        `<form id="agentic-addex-form" style="${formStyle}">` +
+        '<div style="font-weight:600;font-size:14px;">Add a custom prompt</div>' +
+        '<div style="color:#8b95a6;font-size:12px;line-height:1.4;">This prompt will appear in /examples and the home screen. Stored in your browser.</div>' +
+        `<label style="${labelStyle}">Category (e.g. BUILD, TRANSFORM, REVIEW)` +
+          `<input id="addex-cat" type="text" maxlength="20" placeholder="BUILD" style="${inputStyle}">` +
+        '</label>' +
+        `<label style="${labelStyle}">Title (short description)` +
+          `<input id="addex-title" type="text" maxlength="120" placeholder="My custom integration" style="${inputStyle}" required>` +
+        '</label>' +
+        `<label style="${labelStyle}">Prompt (the full text sent to the agent)` +
+          `<textarea id="addex-prompt" rows="6" placeholder="Build a production that..." style="${inputStyle}resize:vertical;min-height:80px;" required></textarea>` +
+        '</label>' +
+        '<div style="display:flex;gap:8px;justify-content:flex-end;">' +
+          '<button type="button" id="addex-cancel" style="background:transparent;border:1px solid #2a313c;color:#8b95a6;padding:8px 16px;border-radius:4px;cursor:pointer;font:13px system-ui;">Cancel</button>' +
+          '<button type="submit" style="background:#3b82f6;border:1px solid #3b82f6;color:#fff;padding:8px 16px;border-radius:4px;cursor:pointer;font:600 13px system-ui;">Save</button>' +
+        '</div>' +
+        '</form>';
+    document.body.appendChild(overlay);
+    overlay.querySelector('#addex-cancel').addEventListener('click', () => overlay.remove());
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+    overlay.querySelector('#addex-title').focus();
+    overlay.querySelector('#agentic-addex-form').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const cat = (overlay.querySelector('#addex-cat').value || 'CUSTOM').trim().toUpperCase();
+        const title = overlay.querySelector('#addex-title').value.trim();
+        const prompt = overlay.querySelector('#addex-prompt').value.trim();
+        if (!title || !prompt) return;
+        const userList = loadUserExamples();
+        userList.push({ cat, title, prompt, userDefined: true });
+        saveUserExamples(userList);
+        rebuildExamples();
+        overlay.remove();
+        toast('Prompt saved. Use /examples to see it.');
+    });
 }
 
 function cmdClear() {
