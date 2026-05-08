@@ -1,0 +1,1115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agentic Interop — Architecture Diagram</title>
+<style>
+  :root {
+    --fw-bg: #1e3a5f;
+    --fw-border: #2a5a8f;
+    --fw-text: #e8f0fe;
+    --ext-bg: #1a4a3a;
+    --ext-border: #2a7a5a;
+    --ext-text: #e0f5ec;
+    --ui-bg: #3a2a5a;
+    --ui-border: #5a3a8a;
+    --ui-text: #f0e8fe;
+    --data-bg: #4a3a1a;
+    --data-border: #7a6a2a;
+    --data-text: #fef5e0;
+    --ref-bg: #3a1a1a;
+    --ref-border: #6a2a2a;
+    --ref-text: #fee0e0;
+    --surface: #0f1419;
+    --surface-2: #1a1f26;
+    --surface-3: #242b34;
+    --text: #e1e4e8;
+    --text-dim: #8b949e;
+    --accent: #58a6ff;
+    --line: #30363d;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+    background: var(--surface);
+    color: var(--text);
+    padding: 32px;
+    min-height: 100vh;
+  }
+  h1 {
+    font-size: 28px;
+    font-weight: 600;
+    margin-bottom: 4px;
+    color: #fff;
+  }
+  .subtitle {
+    font-size: 14px;
+    color: var(--text-dim);
+    margin-bottom: 32px;
+  }
+  .legend {
+    display: flex;
+    gap: 24px;
+    margin-bottom: 28px;
+    flex-wrap: wrap;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--text-dim);
+  }
+  .legend-swatch {
+    width: 14px;
+    height: 14px;
+    border-radius: 3px;
+    border: 1px solid rgba(255,255,255,0.15);
+  }
+
+  /* --- Diagram container --- */
+  .diagram {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    max-width: 1400px;
+    margin: 0 auto;
+  }
+
+  /* --- Layer rows --- */
+  .layer {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .layer-label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+    color: var(--text-dim);
+    padding-left: 4px;
+    margin-bottom: 4px;
+  }
+  .layer-content {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  /* --- Card base --- */
+  .card {
+    border-radius: 8px;
+    padding: 14px 16px;
+    border: 1px solid var(--line);
+    position: relative;
+    transition: transform 0.15s, box-shadow 0.15s;
+  }
+  .card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 24px rgba(0,0,0,0.4);
+    z-index: 10;
+  }
+  .card-title {
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 4px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .card-extends {
+    font-size: 11px;
+    opacity: 0.7;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    margin-bottom: 8px;
+  }
+  .card-body {
+    font-size: 12px;
+    line-height: 1.5;
+    opacity: 0.85;
+  }
+  .card-body ul {
+    list-style: none;
+    padding-left: 0;
+  }
+  .card-body li {
+    padding: 1px 0;
+  }
+  .card-body li::before {
+    content: "- ";
+    opacity: 0.4;
+  }
+  .badge {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 10px;
+    background: rgba(255,255,255,0.12);
+    vertical-align: middle;
+  }
+
+  /* --- Theme variants --- */
+  .card-fw {
+    background: var(--fw-bg);
+    border-color: var(--fw-border);
+    color: var(--fw-text);
+  }
+  .card-fw .badge { background: rgba(88,166,255,0.25); color: #8cc4ff; }
+
+  .card-ext {
+    background: var(--ext-bg);
+    border-color: var(--ext-border);
+    color: var(--ext-text);
+  }
+  .card-ext .badge { background: rgba(63,185,120,0.25); color: #7be0a4; }
+
+  .card-ui {
+    background: var(--ui-bg);
+    border-color: var(--ui-border);
+    color: var(--ui-text);
+  }
+  .card-ui .badge { background: rgba(150,100,220,0.25); color: #c8a8f0; }
+
+  .card-data {
+    background: var(--data-bg);
+    border-color: var(--data-border);
+    color: var(--data-text);
+  }
+  .card-data .badge { background: rgba(200,170,60,0.25); color: #e8d080; }
+
+  .card-ref {
+    background: var(--ref-bg);
+    border-color: var(--ref-border);
+    color: var(--ref-text);
+  }
+  .card-ref .badge { background: rgba(200,80,80,0.25); color: #f0a0a0; }
+
+  /* --- Specific widths --- */
+  .card-wide { flex: 1 1 100%; }
+  .card-half { flex: 1 1 calc(50% - 6px); min-width: 300px; }
+  .card-third { flex: 1 1 calc(33.3% - 8px); min-width: 260px; }
+  .card-quarter { flex: 1 1 calc(25% - 9px); min-width: 220px; }
+  .card-fifth { flex: 1 1 calc(20% - 10px); min-width: 200px; }
+  .card-auto { flex: 0 1 auto; }
+
+  /* --- Flow arrows --- */
+  .flow-arrow {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 4px 0;
+    color: var(--text-dim);
+    font-size: 18px;
+    user-select: none;
+  }
+  .flow-arrow .arrow-label {
+    font-size: 11px;
+    margin: 0 12px;
+    letter-spacing: 0.5px;
+  }
+
+  /* --- Nested group inside a card --- */
+  .inner-group {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 8px;
+  }
+  .inner-card {
+    background: rgba(0,0,0,0.2);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-size: 11px;
+    flex: 1 1 auto;
+    min-width: 140px;
+  }
+  .inner-card-title {
+    font-weight: 600;
+    font-size: 12px;
+    margin-bottom: 3px;
+  }
+
+  /* --- Tool pills --- */
+  .tool-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 6px;
+  }
+  .tool-pill {
+    font-size: 10px;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 4px;
+    padding: 2px 6px;
+    white-space: nowrap;
+  }
+
+  /* --- Connector lines (pure CSS) --- */
+  .connector-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 2px 0;
+  }
+  .connector-v {
+    width: 2px;
+    height: 16px;
+    background: var(--line);
+  }
+  .connector-label {
+    font-size: 10px;
+    color: var(--text-dim);
+    letter-spacing: 0.5px;
+  }
+
+  /* --- Section dividers --- */
+  .section-divider {
+    border: none;
+    border-top: 1px dashed var(--line);
+    margin: 8px 0;
+  }
+
+  /* --- Expand/collapse --- */
+  .expandable { cursor: pointer; }
+  .expandable .expand-icon {
+    display: inline-block;
+    transition: transform 0.2s;
+    font-size: 10px;
+    opacity: 0.6;
+  }
+  .expandable.collapsed .expand-icon { transform: rotate(-90deg); }
+  .expandable.collapsed + .expand-target { display: none; }
+
+  /* --- Stats bar --- */
+  .stats-bar {
+    display: flex;
+    gap: 32px;
+    padding: 16px 20px;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    margin-bottom: 24px;
+    flex-wrap: wrap;
+  }
+  .stat {
+    display: flex;
+    flex-direction: column;
+  }
+  .stat-value {
+    font-size: 24px;
+    font-weight: 700;
+    color: #fff;
+  }
+  .stat-label {
+    font-size: 11px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+  }
+
+  /* --- Responsive --- */
+  @media (max-width: 900px) {
+    .card-third, .card-quarter, .card-fifth { flex: 1 1 100%; }
+    body { padding: 16px; }
+  }
+</style>
+</head>
+<body>
+
+<h1>Agentic Interop for IRIS for Health</h1>
+<p class="subtitle">Architecture diagram — built on the InterSystems %AI Framework (IRIS 2026.2)</p>
+
+<!-- Stats -->
+<div class="stats-bar">
+  <div class="stat"><span class="stat-value">54</span><span class="stat-label">Classes</span></div>
+  <div class="stat"><span class="stat-value">41</span><span class="stat-label">LLM Tools</span></div>
+  <div class="stat"><span class="stat-value">9</span><span class="stat-label">Skills</span></div>
+  <div class="stat"><span class="stat-value">4</span><span class="stat-label">MCP Servers</span></div>
+  <div class="stat"><span class="stat-value">5</span><span class="stat-label">ToolSets</span></div>
+  <div class="stat"><span class="stat-value">2</span><span class="stat-label">RAG Catalogs</span></div>
+  <div class="stat"><span class="stat-value">12</span><span class="stat-label">Packages</span></div>
+</div>
+
+<!-- Legend -->
+<div class="legend">
+  <div class="legend-item"><div class="legend-swatch" style="background:var(--fw-bg);border-color:var(--fw-border)"></div> %AI Framework base class</div>
+  <div class="legend-item"><div class="legend-swatch" style="background:var(--ext-bg);border-color:var(--ext-border)"></div> Our extension / wrapper</div>
+  <div class="legend-item"><div class="legend-swatch" style="background:var(--ui-bg);border-color:var(--ui-border)"></div> REST / Editor services</div>
+  <div class="legend-item"><div class="legend-swatch" style="background:var(--data-bg);border-color:var(--data-border)"></div> Persistence / Data</div>
+  <div class="legend-item"><div class="legend-swatch" style="background:var(--ref-bg);border-color:var(--ref-border)"></div> Reference / Seed data</div>
+</div>
+
+<div class="diagram">
+
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  <!-- LAYER 0: REST / UI Surface -->
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  <div class="layer">
+    <div class="layer-label">REST Surface &amp; Editor Services</div>
+    <div class="layer-content">
+
+      <div class="card card-ui card-third">
+        <div class="card-title">REST.Dispatch <span class="badge">Router</span></div>
+        <div class="card-extends">extends %CSP.REST</div>
+        <div class="card-body">
+          URL map for all /api/agentic/* routes.
+          UseSession=0 (stateless). CORS enabled.
+          OnPreDispatch: namespace switching, audit logging.
+          <hr class="section-divider">
+          Routes to 10 Editor service classes below.
+        </div>
+      </div>
+
+      <div class="card card-ui card-third">
+        <div class="card-title">Editor Services <span class="badge">10 classes</span></div>
+        <div class="card-extends">all extend %RegisteredObject</div>
+        <div class="card-body">
+          <ul>
+            <li>ChatService — SSE streaming + run loop</li>
+            <li>AgentService — CRUD agents</li>
+            <li>MCPService — CRUD MCPs</li>
+            <li>ToolSetService — CRUD toolsets</li>
+            <li>ToolService — CRUD individual tools</li>
+            <li>ConnectionService — LLM connections</li>
+            <li>CatalogService — vector search admin</li>
+            <li>AuditService — audit log queries</li>
+            <li>RegistryService — dropdown listings</li>
+            <li>SourceService — compiled source viewer</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="card card-ui card-third">
+        <div class="card-title">Editor.Overlay <span class="badge">Customization</span></div>
+        <div class="card-extends">extends %RegisteredObject</div>
+        <div class="card-body">
+          Reads user customizations (Data.AgentOverride, Data.MCPOverride, Data.ToolSetOverride) and merges them on top of shipped class defaults.
+          <hr class="section-divider">
+          GetEffectiveSystemPrompt(), GetEffectiveMCPS(), GetEffectiveToolSets(), GetEffectiveMaxIterations()
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="flow-arrow">
+    <span>&#9660;</span>
+    <span class="arrow-label">POST /chat/stream</span>
+    <span>&#9660;</span>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  <!-- LAYER 1: Connection + ChatService run loop -->
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  <div class="layer">
+    <div class="layer-label">Connection &amp; Chat Runtime</div>
+    <div class="layer-content">
+
+      <div class="card card-ext card-half">
+        <div class="card-title">Connections <span class="badge">Facade</span></div>
+        <div class="card-extends">extends %RegisteredObject</div>
+        <div class="card-body">
+          Manages LLM provider connections. Wraps Data.Connection rows + IRIS Secured Wallet secrets.
+          <hr class="section-divider">
+          <ul>
+            <li>GetProvider(name) — returns configured %AI.Provider</li>
+            <li>TestConnection() — minimal completion call</li>
+            <li>SetSecret() / ClearSecret() — wallet ops</li>
+            <li>WALLETCOLLECTION = "AgenticInteropConnections"</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="card card-ext card-half">
+        <div class="card-title">ChatService Run Loop <span class="badge">Custom</span></div>
+        <div class="card-extends">Editor.ChatService (SSE streaming path)</div>
+        <div class="card-body">
+          Custom iteration loop replaces %AI.Agent.Run():
+          <ul>
+            <li>Calls agent.Chat() per iteration (avoids empty-text Bedrock bug)</li>
+            <li>ChatWithRetry: 30/60/90s exponential backoff on rate limit</li>
+            <li>Inter-iteration cooldown: 3-5s to stay under TPM</li>
+            <li>Fabrication guard: detects text-only claims, forces tool use</li>
+            <li>Monitor: 300s wall-clock, 100K token budget, SSE keepalives</li>
+          </ul>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="flow-arrow">
+    <span>&#9660;</span>
+    <span class="arrow-label">Manager.Build(provider) returns configured agent</span>
+    <span>&#9660;</span>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  <!-- LAYER 2: Agent + Manager + Monitor + Skills -->
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  <div class="layer">
+    <div class="layer-label">Agent Layer</div>
+    <div class="layer-content">
+
+      <!-- Agent -->
+      <div class="card card-fw" style="flex: 2 1 380px; min-width: 340px;">
+        <div class="card-title">Agent.HealthInterop <span class="badge">%AI.Agent</span></div>
+        <div class="card-extends">extends %AI.Agent</div>
+        <div class="card-body">
+          The single router agent. MAXITERATIONS=25, TEMPERATURE=0.3.
+          <hr class="section-divider">
+          XData INSTRUCTIONS: system prompt (~7.3K tokens) — plan-then-build workflow, anti-fabrication rules, tool batching guidance, build sequence, GetHL7SchemaMap mandate.
+          <hr class="section-divider">
+          <strong>Parameter MCPS:</strong> Production, Transform, Testing, Catalog<br>
+          <strong>Parameter SKILLS:</strong> 9 specialist skills (below)
+        </div>
+      </div>
+
+      <!-- Manager -->
+      <div class="card card-ext" style="flex: 1 1 250px; min-width: 230px;">
+        <div class="card-title">Agent.Manager <span class="badge">Builder</span></div>
+        <div class="card-extends">extends %RegisteredObject</div>
+        <div class="card-body">
+          ClassMethod Build():
+          <ul>
+            <li>Instantiates HealthInterop agent</li>
+            <li>Attaches %AI.Provider from Connection</li>
+            <li>Reads Overlay for customizations</li>
+            <li>Registers MCPs (RegisterToAgent)</li>
+            <li>Loads Skills (SkillLoader)</li>
+            <li>Attaches Catalog KBs (Catalog.Attach)</li>
+            <li>Sets ConfirmationGate policy</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- Monitor -->
+      <div class="card card-ext" style="flex: 1 1 220px; min-width: 200px;">
+        <div class="card-title">Agent.Monitor <span class="badge">Guard</span></div>
+        <div class="card-extends">extends %RegisteredObject</div>
+        <div class="card-body">
+          Enforces per-turn resource limits:
+          <ul>
+            <li>Wall-clock deadline: 300s</li>
+            <li>Token budget: 100K</li>
+            <li>SSE keepalive emission</li>
+            <li>Real-time tool_start / tool_result events</li>
+            <li>ToolCallTrace for audit</li>
+          </ul>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Skills sub-section -->
+  <div class="layer" style="margin-top: -8px; padding-left: 20px;">
+    <div class="layer-label">Skills (sub-agent tools registered via SkillLoader)</div>
+    <div class="layer-content">
+
+      <div class="card card-fw card-wide" style="padding: 12px 16px;">
+        <div class="card-title">
+          9 Specialist Skills
+          <span class="badge">%AI.Agent.Skill</span>
+          <span class="badge">via Skill.Base workaround</span>
+        </div>
+        <div class="card-extends">all extend AgenticInterop.Skill.Base (fixes $ZF marshal bug in %AI.Agent.Skill.%OnNew)</div>
+        <div class="inner-group">
+          <div class="inner-card">
+            <div class="inner-card-title">Productions</div>
+            ~6,941 tok — BS/BP/BO anatomy, settings wiring reference
+          </div>
+          <div class="inner-card">
+            <div class="inner-card-title">DTL</div>
+            ~3,590 tok — DTL syntax, subtransforms, virtual documents
+          </div>
+          <div class="inner-card">
+            <div class="inner-card-title">RoutingRules</div>
+            ~3,662 tok — rule definition XML, constraints, conditions
+          </div>
+          <div class="inner-card">
+            <div class="inner-card-title">BPL</div>
+            ~3,414 tok — BPL activities, compensation, code blocks
+          </div>
+          <div class="inner-card">
+            <div class="inner-card-title">SDA</div>
+            ~2,287 tok — SDA3 model, SDA-as-hub rule, FHIR mapping
+          </div>
+          <div class="inner-card">
+            <div class="inner-card-title">ESBPattern</div>
+            ~2,155 tok — enterprise service bus patterns in IRIS
+          </div>
+          <div class="inner-card">
+            <div class="inner-card-title">FHIR R4</div>
+            ~2,052 tok — resources, search params, validation
+          </div>
+          <div class="inner-card">
+            <div class="inner-card-title">RestInProductions</div>
+            ~1,459 tok — REST service/operation inside productions
+          </div>
+          <div class="inner-card">
+            <div class="inner-card-title">HL7 v2</div>
+            ~1,266 tok — message types, segments, ACK semantics
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="flow-arrow">
+    <span>&#9660;</span>
+    <span class="arrow-label">agent.UseToolSet() per MCP</span>
+    <span>&#9660;</span>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  <!-- LAYER 3: MCP Servers -->
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  <div class="layer">
+    <div class="layer-label">MCP Servers (internal, configuration-driven)</div>
+    <div class="layer-content">
+
+      <div class="card card-fw card-quarter">
+        <div class="card-title">MCP.Production <span class="badge">%AI.MCP</span></div>
+        <div class="card-extends">extends MCP.Base &larr; %AI.MCP.Service</div>
+        <div class="card-body">
+          Production lifecycle + monitoring.
+          <hr class="section-divider">
+          ToolSets: Production, Monitoring
+        </div>
+      </div>
+
+      <div class="card card-fw card-quarter">
+        <div class="card-title">MCP.Transform <span class="badge">%AI.MCP</span></div>
+        <div class="card-extends">extends MCP.Base &larr; %AI.MCP.Service</div>
+        <div class="card-body">
+          DTL, BPL, routing rule authoring.
+          <hr class="section-divider">
+          ToolSets: Transform
+        </div>
+      </div>
+
+      <div class="card card-fw card-quarter">
+        <div class="card-title">MCP.Testing <span class="badge">%AI.MCP</span></div>
+        <div class="card-extends">extends MCP.Base &larr; %AI.MCP.Service</div>
+        <div class="card-body">
+          HL7 / FHIR message testing + validation.
+          <hr class="section-divider">
+          ToolSets: Testing
+        </div>
+      </div>
+
+      <div class="card card-fw card-quarter">
+        <div class="card-title">MCP.Catalog <span class="badge">%AI.MCP</span></div>
+        <div class="card-extends">extends MCP.Base &larr; %AI.MCP.Service</div>
+        <div class="card-body">
+          Class introspection + reference lookups.
+          <hr class="section-divider">
+          ToolSets: Catalog
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="flow-arrow">
+    <span>&#9660;</span>
+    <span class="arrow-label">each MCP registers its ToolSets</span>
+    <span>&#9660;</span>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  <!-- LAYER 4: ToolSets -->
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  <div class="layer">
+    <div class="layer-label">ToolSets (%AI.ToolSet wrappers — compile-time tool discovery)</div>
+    <div class="layer-content">
+
+      <div class="card card-fw card-fifth">
+        <div class="card-title">ToolSet.Production</div>
+        <div class="card-extends">extends %AI.ToolSet</div>
+        <div class="card-body">
+          <span class="badge">9 tools</span>
+          Includes Tool.Production
+        </div>
+      </div>
+
+      <div class="card card-fw card-fifth">
+        <div class="card-title">ToolSet.Transform</div>
+        <div class="card-extends">extends %AI.ToolSet</div>
+        <div class="card-body">
+          <span class="badge">14 tools</span>
+          Includes Tool.Transform
+        </div>
+      </div>
+
+      <div class="card card-fw card-fifth">
+        <div class="card-title">ToolSet.Testing</div>
+        <div class="card-extends">extends %AI.ToolSet</div>
+        <div class="card-body">
+          <span class="badge">6 tools</span>
+          Includes Tool.Testing
+        </div>
+      </div>
+
+      <div class="card card-fw card-fifth">
+        <div class="card-title">ToolSet.Catalog</div>
+        <div class="card-extends">extends %AI.ToolSet</div>
+        <div class="card-body">
+          <span class="badge">7 tools</span>
+          Includes Tool.Catalog
+        </div>
+      </div>
+
+      <div class="card card-fw card-fifth">
+        <div class="card-title">ToolSet.Monitoring</div>
+        <div class="card-extends">extends %AI.ToolSet</div>
+        <div class="card-body">
+          <span class="badge">5 tools</span>
+          Includes Tool.Monitoring
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="flow-arrow">
+    <span>&#9660;</span>
+    <span class="arrow-label">XData &lt;Include Class="..."/&gt; — %Discover() + %Invoke() generated at compile time</span>
+    <span>&#9660;</span>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  <!-- LAYER 5: Tools (the 41 LLM-callable methods) -->
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  <div class="layer">
+    <div class="layer-label">Tools (%AI.Tool subclasses — 41 LLM-callable ClassMethods)</div>
+    <div class="layer-content">
+
+      <!-- Tool.Production -->
+      <div class="card card-fw card-third">
+        <div class="card-title">Tool.Production <span class="badge">9 tools</span></div>
+        <div class="card-extends">extends %AI.Tool</div>
+        <div class="tool-pills">
+          <span class="tool-pill">ListProductions</span>
+          <span class="tool-pill">GetProduction</span>
+          <span class="tool-pill">CreateProduction</span>
+          <span class="tool-pill">DeleteProduction</span>
+          <span class="tool-pill">AddBusinessHost</span>
+          <span class="tool-pill">RemoveBusinessHost</span>
+          <span class="tool-pill">UpdateBusinessHostSettings</span>
+          <span class="tool-pill">StartProduction</span>
+          <span class="tool-pill">StopProduction</span>
+        </div>
+      </div>
+
+      <!-- Tool.Transform -->
+      <div class="card card-fw card-third">
+        <div class="card-title">Tool.Transform <span class="badge">14 tools</span></div>
+        <div class="card-extends">extends %AI.Tool</div>
+        <div class="tool-pills">
+          <span class="tool-pill">ListDTLs</span>
+          <span class="tool-pill">CreateDTL</span>
+          <span class="tool-pill">UpdateDTL</span>
+          <span class="tool-pill">CompileDTL</span>
+          <span class="tool-pill">DryRunDTL</span>
+          <span class="tool-pill">GetHL7SchemaMap</span>
+          <span class="tool-pill">ListLookupTables</span>
+          <span class="tool-pill">CreateBPL</span>
+          <span class="tool-pill">ValidateBPL</span>
+          <span class="tool-pill">ListBusinessRules</span>
+          <span class="tool-pill">CreateRoutingRule</span>
+          <span class="tool-pill">ListSDAFHIRDTLs</span>
+          <span class="tool-pill">DescribeTransformationPipeline</span>
+          <span class="tool-pill">GetCustomDTLPackage</span>
+        </div>
+      </div>
+
+      <!-- Tool.Testing -->
+      <div class="card card-fw card-third">
+        <div class="card-title">Tool.Testing <span class="badge">6 tools</span></div>
+        <div class="card-extends">extends %AI.Tool</div>
+        <div class="tool-pills">
+          <span class="tool-pill">ValidateHL7Structure</span>
+          <span class="tool-pill">ValidateHL7Semantics</span>
+          <span class="tool-pill">ValidateFHIRResource</span>
+          <span class="tool-pill">CompareMessages</span>
+          <span class="tool-pill">SendHL7</span>
+          <span class="tool-pill">SendFHIR</span>
+        </div>
+      </div>
+
+      <!-- Tool.Catalog -->
+      <div class="card card-fw card-half">
+        <div class="card-title">Tool.Catalog <span class="badge">7 tools</span></div>
+        <div class="card-extends">extends %AI.Tool</div>
+        <div class="tool-pills">
+          <span class="tool-pill">GetUserNamespace</span>
+          <span class="tool-pill">ListUserAccessibleNamespaces</span>
+          <span class="tool-pill">DescribeClass</span>
+          <span class="tool-pill">ExplainStatus</span>
+          <span class="tool-pill">LookupErrorCode</span>
+          <span class="tool-pill">LookupGlossaryTerm</span>
+          <span class="tool-pill">SearchApiIndex</span>
+        </div>
+      </div>
+
+      <!-- Tool.Monitoring -->
+      <div class="card card-fw card-half">
+        <div class="card-title">Tool.Monitoring <span class="badge">5 tools</span></div>
+        <div class="card-extends">extends %AI.Tool</div>
+        <div class="tool-pills">
+          <span class="tool-pill">QueryEventLog</span>
+          <span class="tool-pill">TopErrors</span>
+          <span class="tool-pill">QueryMessageStatus</span>
+          <span class="tool-pill">MessageSummary</span>
+          <span class="tool-pill">QueueStatus</span>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="flow-arrow">
+    <span>&#9660;</span>
+    <span class="arrow-label">tools query / mutate IRIS internals</span>
+    <span>&#9660;</span>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  <!-- LAYER 6: Catalogs (RAG / Vector Search) -->
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  <div class="layer">
+    <div class="layer-label">RAG Catalogs (IRIS Vector Search — runtime-registered KnowledgeBases)</div>
+    <div class="layer-content">
+
+      <div class="card card-ext card-half">
+        <div class="card-title">Catalog.Builder <span class="badge">Indexer</span></div>
+        <div class="card-extends">extends %RegisteredObject</div>
+        <div class="card-body">
+          Walks %Dictionary for Ens.Host / HS.* classes. Embeds descriptions with FastEmbed (AllMiniLML6V2, 384-dim). Persists to SQL vector tables.
+          <hr class="section-divider">
+          <ul>
+            <li>search_ens — Ens.* hosts, adapters, messages</li>
+            <li>search_hs — HS.* transformations, FHIR mappers</li>
+          </ul>
+          Seeds from InterSystems_IRIS_Health_Complete_Class_Catalog.xlsx
+        </div>
+      </div>
+
+      <div class="card card-ext card-half">
+        <div class="card-title">Catalog.Attach <span class="badge">Runtime Wiring</span></div>
+        <div class="card-extends">extends %RegisteredObject</div>
+        <div class="card-body">
+          Called by Manager.Build() at request time. Registers search_ens and search_hs as %AI.RAG KnowledgeBase tools on the agent's ToolManager.
+          <hr class="section-divider">
+          Uses %AI.ToolMgr.ExecuteTool() to query KBs (not SQL EMBEDDING — FastEmbed path).
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="flow-arrow">
+    <span>&#9660;</span>
+    <span class="arrow-label">persistence</span>
+    <span>&#9660;</span>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  <!-- LAYER 7: Data / Persistence -->
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  <div class="layer">
+    <div class="layer-label">Persistence Layer</div>
+    <div class="layer-content">
+
+      <div class="card card-data card-third">
+        <div class="card-title">Data.Connection <span class="badge">%Persistent</span></div>
+        <div class="card-extends">SQL: AgenticInterop_Data.LLMConnection</div>
+        <div class="card-body">
+          LLM provider metadata: name, provider type (bedrock/anthropic/azure-openai/...), model, region, base URL, max tokens, enabled, default.
+          <hr class="section-divider">
+          Secrets in IRIS Secured Wallet (never in table).
+          LastTestOk/LastTestError for health semaphore.
+        </div>
+      </div>
+
+      <div class="card card-data card-third">
+        <div class="card-title">Overlay Tables <span class="badge">3 classes</span></div>
+        <div class="card-extends">all %Persistent + %JSON.Adaptor</div>
+        <div class="card-body">
+          <ul>
+            <li>Data.AgentOverride — custom instructions, temperature, MCP/skill lists per agent class</li>
+            <li>Data.MCPOverride — custom name, description, toolset list per MCP class</li>
+            <li>Data.ToolSetOverride — custom tool manifest per toolset class</li>
+          </ul>
+          Keyed by ClassName. Merged on top of shipped defaults by Editor.Overlay.
+        </div>
+      </div>
+
+      <div class="card card-data card-third">
+        <div class="card-title">Data.AuditLog <span class="badge">%Persistent</span></div>
+        <div class="card-extends">SQL: AgenticInterop_Data.AuditLog</div>
+        <div class="card-body">
+          Every REST call logged: username, namespace, session ID, job, method, path, status code, request/response size, duration, error text.
+          <hr class="section-divider">
+          Indexed by (Username, Created), (Path, Created).
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  <!-- LAYER 8: Reference / Seed Data -->
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  <div class="layer">
+    <div class="layer-label">Reference Data (seeded at install via Reference.Loader)</div>
+    <div class="layer-content">
+
+      <div class="card card-ref card-third">
+        <div class="card-title">Reference.GlossaryTerm</div>
+        <div class="card-extends">%Persistent — ^AgInt.RefGlossD</div>
+        <div class="card-body">
+          ~250 InterSystems terms. Used by LookupGlossaryTerm tool.
+          Seeded from glossary.json.
+        </div>
+      </div>
+
+      <div class="card card-ref card-third">
+        <div class="card-title">Reference.ErrorCode</div>
+        <div class="card-extends">%Persistent — ^AgInt.RefErrD</div>
+        <div class="card-body">
+          ~4,500 IRIS error codes. Used by LookupErrorCode tool.
+          Seeded from error_codes.json.
+        </div>
+      </div>
+
+      <div class="card card-ref card-third">
+        <div class="card-title">Reference.ApiTopic</div>
+        <div class="card-extends">%Persistent — ^AgInt.RefApiD</div>
+        <div class="card-body">
+          ~80 API topics from Detailed_API_Index.pdf. Used by SearchApiIndex tool.
+          Seeded from api_topics.json.
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  <!-- LAYER 9: Install Hooks -->
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  <div class="layer">
+    <div class="layer-label">Install Hooks (IPM module.xml Activate / UnConfigure phase)</div>
+    <div class="layer-content">
+
+      <div class="card card-ext card-half">
+        <div class="card-title">Install.CSPTimeoutPatch</div>
+        <div class="card-extends">extends %RegisteredObject</div>
+        <div class="card-body">
+          Patches CSP.ini Server_Response_Timeout from 60s to 300s. Triggers Apache graceful restart. Idempotent.
+        </div>
+      </div>
+
+      <div class="card card-ext card-half">
+        <div class="card-title">Install.InteropEditorPatch</div>
+        <div class="card-extends">extends %RegisteredObject</div>
+        <div class="card-body">
+          Injects /agentic/inject.js into the IRIS Interop Editor HTML. Widens /ui/interop CookiePath to "/". Backs up original. Reverted on uninstall.
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  <!-- LAYER 10: Policy -->
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  <div class="layer">
+    <div class="layer-label">Policy</div>
+    <div class="layer-content">
+
+      <div class="card card-fw card-wide" style="max-width: 500px;">
+        <div class="card-title">Policy.ConfirmationGate <span class="badge">%AI.Policy</span></div>
+        <div class="card-extends">extends %AI.Policy.Authorization</div>
+        <div class="card-body">
+          Infrastructure for per-tool confirmation prompts. MUTATINGPREFIXES list (Create, Delete, Start, Stop, Send, etc.). Currently passes all through — agent uses conversational plan-then-approve pattern instead of per-call gates.
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- FRAMEWORK CLASS MAP -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<div style="margin-top: 48px; max-width: 1400px; margin-left: auto; margin-right: auto;">
+  <h2 style="font-size: 20px; font-weight: 600; color: #fff; margin-bottom: 16px;">%AI Framework Class Map</h2>
+  <p style="font-size: 13px; color: var(--text-dim); margin-bottom: 20px;">
+    How our 54 classes extend or wrap the InterSystems %AI Framework (IRIS 2026.2).
+    Bold = framework base class. Regular = our extension.
+  </p>
+
+  <div style="display: flex; gap: 16px; flex-wrap: wrap;">
+
+    <div class="card card-fw card-third">
+      <div class="card-title" style="font-size: 13px;">%AI.Agent</div>
+      <div class="card-body" style="margin-top: 6px;">
+        <ul>
+          <li>Agent.HealthInterop (router agent)</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="card card-fw card-third">
+      <div class="card-title" style="font-size: 13px;">%AI.Agent.Skill</div>
+      <div class="card-body" style="margin-top: 6px;">
+        <ul>
+          <li>Skill.Base (workaround subclass)</li>
+          <li style="padding-left: 12px;">Skill.Productions</li>
+          <li style="padding-left: 12px;">Skill.DTL</li>
+          <li style="padding-left: 12px;">Skill.BPL</li>
+          <li style="padding-left: 12px;">Skill.RoutingRules</li>
+          <li style="padding-left: 12px;">Skill.HL7v2</li>
+          <li style="padding-left: 12px;">Skill.FHIRR4</li>
+          <li style="padding-left: 12px;">Skill.SDA</li>
+          <li style="padding-left: 12px;">Skill.RestInProductions</li>
+          <li style="padding-left: 12px;">Skill.ESBPattern</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="card card-fw card-third">
+      <div class="card-title" style="font-size: 13px;">%AI.MCP.Service</div>
+      <div class="card-body" style="margin-top: 6px;">
+        <ul>
+          <li>MCP.Base (abstract)</li>
+          <li style="padding-left: 12px;">MCP.Production</li>
+          <li style="padding-left: 12px;">MCP.Transform</li>
+          <li style="padding-left: 12px;">MCP.Testing</li>
+          <li style="padding-left: 12px;">MCP.Catalog</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="card card-fw card-third">
+      <div class="card-title" style="font-size: 13px;">%AI.ToolSet</div>
+      <div class="card-body" style="margin-top: 6px;">
+        <ul>
+          <li>ToolSet.Production</li>
+          <li>ToolSet.Transform</li>
+          <li>ToolSet.Testing</li>
+          <li>ToolSet.Catalog</li>
+          <li>ToolSet.Monitoring</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="card card-fw card-third">
+      <div class="card-title" style="font-size: 13px;">%AI.Tool</div>
+      <div class="card-body" style="margin-top: 6px;">
+        <ul>
+          <li>Tool.Production (9 methods)</li>
+          <li>Tool.Transform (14 methods)</li>
+          <li>Tool.Testing (6 methods)</li>
+          <li>Tool.Catalog (7 methods)</li>
+          <li>Tool.Monitoring (5 methods)</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="card card-fw card-third">
+      <div class="card-title" style="font-size: 13px;">%AI.Policy.Authorization</div>
+      <div class="card-body" style="margin-top: 6px;">
+        <ul>
+          <li>Policy.ConfirmationGate</li>
+        </ul>
+      </div>
+    </div>
+
+  </div>
+
+  <div style="margin-top: 24px;">
+    <div style="font-size: 13px; font-weight: 600; color: var(--text-dim); margin-bottom: 12px;">Wrappers (not extending %AI, but essential glue)</div>
+    <div style="display: flex; gap: 16px; flex-wrap: wrap;">
+
+      <div class="card card-ext" style="flex: 1; min-width: 200px;">
+        <div class="card-title" style="font-size: 13px;">Agent Glue</div>
+        <div class="card-body" style="margin-top: 4px;">
+          <ul>
+            <li>Agent.Manager — build + wire</li>
+            <li>Agent.Monitor — limits + SSE</li>
+            <li>Agent.SkillLoader — skill registration</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="card card-ext" style="flex: 1; min-width: 200px;">
+        <div class="card-title" style="font-size: 13px;">Catalog / RAG</div>
+        <div class="card-body" style="margin-top: 4px;">
+          <ul>
+            <li>Catalog.Builder — embed + index</li>
+            <li>Catalog.Attach — runtime KB wire</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="card card-ext" style="flex: 1; min-width: 200px;">
+        <div class="card-title" style="font-size: 13px;">Connection</div>
+        <div class="card-body" style="margin-top: 4px;">
+          <ul>
+            <li>Connections — facade</li>
+            <li>Data.Connection — %Persistent</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="card card-ext" style="flex: 1; min-width: 200px;">
+        <div class="card-title" style="font-size: 13px;">Overlay System</div>
+        <div class="card-body" style="margin-top: 4px;">
+          <ul>
+            <li>Editor.Overlay — merge logic</li>
+            <li>Data.AgentOverride</li>
+            <li>Data.MCPOverride</li>
+            <li>Data.ToolSetOverride</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="card card-ext" style="flex: 1; min-width: 200px;">
+        <div class="card-title" style="font-size: 13px;">Install</div>
+        <div class="card-body" style="margin-top: 4px;">
+          <ul>
+            <li>Install.CSPTimeoutPatch</li>
+            <li>Install.InteropEditorPatch</li>
+          </ul>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+
+<!-- Footer -->
+<div style="margin-top: 48px; padding: 20px 0; border-top: 1px solid var(--line); max-width: 1400px; margin-left: auto; margin-right: auto;">
+  <p style="font-size: 12px; color: var(--text-dim);">
+    Agentic Interop for InterSystems IRIS for Health — 54 classes, 41 tools, 9 skills, 4 MCP servers.
+    Built on the %AI Framework (IRIS 2026.2). IPM package: agentic-interop.
+    <br>Generated 2026-05-08.
+  </p>
+</div>
+
+</body>
+</html>

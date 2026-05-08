@@ -784,7 +784,13 @@ async function send(message) {
         // clear the queue — they apply to THIS turn only.
         const tokensThisTurn = approvedTokens.slice();
         approvedTokens = [];
-        let res = await fetch(API + '/chat/stream', {
+        // Cache-bust: append a unique ?_t= so the browser opens a fresh
+        // TCP connection instead of reusing the keep-alive socket from the
+        // previous SSE stream. The CSP gateway maintains connection-level
+        // auth state that becomes stale after a long SSE response closes,
+        // causing 401 on the next request over the same socket.
+        const streamUrl = API + '/chat/stream?_t=' + Date.now();
+        let res = await fetch(streamUrl, {
             method: 'POST',
             headers,
             body: JSON.stringify({ message, history, approvedTokens: tokensThisTurn })
@@ -794,9 +800,10 @@ async function send(message) {
         // login modal. The user must NEVER see a sign-in prompt for
         // a transient auth failure during an active conversation.
         if (res.status === 401) {
-            // Retry 1: re-send same auth on a fresh TCP connection
+            // Retry 1: re-send same auth on a brand new URL (forces new
+            // TCP socket, bypasses any stale gateway connection state)
             headers['Authorization'] = authHeader();
-            res = await fetch(API + '/chat/stream', {
+            res = await fetch(API + '/chat/stream?_t=' + Date.now(), {
                 method: 'POST', headers,
                 body: JSON.stringify({ message, history, approvedTokens: tokensThisTurn })
             });
@@ -808,7 +815,7 @@ async function send(message) {
                 if (bridge.bearer) {
                     bridgeBearer = bridge.bearer;
                     headers['Authorization'] = bridgeBearer;
-                    res = await fetch(API + '/chat/stream', {
+                    res = await fetch(API + '/chat/stream?_t=' + Date.now(), {
                         method: 'POST', headers,
                         body: JSON.stringify({ message, history, approvedTokens: tokensThisTurn })
                     });
@@ -819,11 +826,11 @@ async function send(message) {
             // Retry 3: try stored Basic auth with a /whoami warmup
             const stored = getStoredAuth();
             if (stored) {
-                await fetch(API + '/whoami', {
+                await fetch(API + '/whoami?_t=' + Date.now(), {
                     headers: { Authorization: stored }, cache: 'no-store'
                 });
                 headers['Authorization'] = stored;
-                res = await fetch(API + '/chat/stream', {
+                res = await fetch(API + '/chat/stream?_t=' + Date.now(), {
                     method: 'POST', headers,
                     body: JSON.stringify({ message, history, approvedTokens: tokensThisTurn })
                 });
@@ -841,7 +848,7 @@ async function send(message) {
             await showLoginOverlay();
             authValidated = true;
             headers['Authorization'] = authHeader();
-            res = await fetch(API + '/chat/stream', {
+            res = await fetch(API + '/chat/stream?_t=' + Date.now(), {
                 method: 'POST', headers,
                 body: JSON.stringify({ message, history, approvedTokens: tokensThisTurn })
             });

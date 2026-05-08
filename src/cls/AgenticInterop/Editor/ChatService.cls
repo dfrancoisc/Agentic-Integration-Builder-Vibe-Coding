@@ -121,7 +121,7 @@ ClassMethod Chat(pResponse As %CSP.Response, pBodyStream) As %Status
             // The monitor caps wall-clock + tokens so the known
             // framework toolset-hang can never silently exceed the
             // CSP gateway timeout.
-            Set monitor = ##class(AgenticInterop.Agent.Monitor).%New(180, 100000)
+            Set monitor = ##class(AgenticInterop.Agent.Monitor).%New(300, 100000)
             Set maxIter = ##class(AgenticInterop.Editor.Overlay).GetEffectiveMaxIterations(agentClass)
             If maxIter = "" { Set maxIter = 10 }
             Set response = agent.Run(session, message, maxIter, monitor)
@@ -224,6 +224,12 @@ ClassMethod ChatStream(pResponse As %CSP.Response, pBodyStream) As %Status
     Set pResponse.CharSet = "utf-8"
     Do pResponse.SetHeader("Cache-Control", "no-cache, no-transform")
     Do pResponse.SetHeader("X-Accel-Buffering", "no")
+    ; Close the TCP connection after the SSE stream finishes. Without
+    ; this, the browser reuses the keep-alive socket and the CSP gateway's
+    ; connection-level auth state becomes stale — the NEXT request on the
+    ; same socket gets 401 even though it sends a valid Authorization
+    ; header. This was the "session expired" bug on the second chat turn.
+    Do pResponse.SetHeader("Connection", "close")
 
     // Process-private flag SSEEvent() checks before writing. Without
     // this, /chat (non-streaming) callers that reach the gate's
@@ -293,7 +299,7 @@ ClassMethod ChatStream(pResponse As %CSP.Response, pBodyStream) As %Status
         // progressively in the UI.
         Set maxIter = +agent.MaxIterations
         If maxIter < 1 { Set maxIter = 25 }
-        Set monitor = ##class(AgenticInterop.Agent.Monitor).%New(180, 100000)
+        Set monitor = ##class(AgenticInterop.Agent.Monitor).%New(300, 100000)
         Set monitor.SSEEnabled = 1
         Set response = ""
         Set iteration = 0
@@ -328,6 +334,22 @@ ClassMethod ChatStream(pResponse As %CSP.Response, pBodyStream) As %Status
                     }
                 }
                 Quit
+            }
+            ; Rate-limit cooldown: pause between iterations to avoid
+            ; provider TPM (tokens-per-minute) throttling. Each Chat()
+            ; sends full system prompt + skills + tools + history
+            ; (~40k+ tokens). 10 calls in 50s exceeds Bedrock's TPM
+            ; quota. Cooldown scales with depth: later iterations carry
+            ; heavier history. Skip iteration 1 (user just typed —
+            ; don't add latency to the first response).
+            If iteration > 1 {
+                Set cooldownSecs = $select(iteration > 5: 5, 1: 3)
+                If monitor.SSEEnabled {
+                    Set ev = {}
+                    Set ev.message = "Working... (pacing to stay within provider rate limits)"
+                    Do ..SSEEvent("status", ev)
+                }
+                Hang cooldownSecs
             }
         }
         ; Emit any remaining tool_result events for the final iteration
@@ -410,8 +432,10 @@ ClassMethod LooksLikeFabrication(pText As %String, pToolTrace As %String) As %Bo
 /// Wrap agent.Chat() with retry-on-rate-limit. Bedrock (and other
 /// providers) return a ProviderError with "Too many tokens" or
 /// "ThrottlingException" when the TPM/RPM quota is exceeded. Without
-/// this wrapper, the whole turn crashes. With it, we wait 10 seconds
-/// and retry up to 2 more times (3 attempts total). Emits an SSE
+/// this wrapper, the whole turn crashes. With it, we wait 30-90s
+/// (exponential backoff) and retry up to 3 more times (4 attempts
+/// total). The run loop also pauses 3-5s between iterations to
+/// spread token load below the TPM ceiling. Emits an SSE
 /// status event during the wait so the user sees "Rate limited,
 /// waiting..." in the UI instead of silence.
 ///
@@ -421,7 +445,7 @@ ClassMethod ChatWithRetry(agent As %AI.Agent, session As %AI.Agent.Session, inpu
 {
     ; NOTE: Quit inside a Try exits the Try block, NOT the While loop
     ; (ObjectScript gotcha). Use a success flag to control the loop.
-    Set maxRetries = 2
+    Set maxRetries = 3
     Set attempt = 0
     Set response = ""
     Set success = 0
@@ -449,7 +473,7 @@ ClassMethod ChatWithRetry(agent As %AI.Agent, session As %AI.Agent.Session, inpu
                 Throw ex
             }
             ; Wait and retry. Emit SSE status so the UI knows we're waiting.
-            Set waitSecs = $select(attempt=0:10, 1:20)
+            Set waitSecs = $select(attempt=0:30, attempt=1:60, 1:90)
             If monitor.SSEEnabled {
                 Set statusEv = {}
                 Set statusEv.message = "Rate limited by provider. Waiting " _ waitSecs _ " seconds before retrying (attempt " _ (attempt + 2) _ " of " _ (maxRetries + 1) _ ")..."

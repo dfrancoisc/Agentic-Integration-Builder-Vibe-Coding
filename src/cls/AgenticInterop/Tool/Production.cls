@@ -619,4 +619,233 @@ ClassMethod UpdateBusinessHostSettings(production As %String, hostName As %Strin
     Quit out
 }
 
+/// Run a post-build validation checklist on a production. Call this
+/// AFTER building and testing a production to verify everything works
+/// end-to-end. Checks: production exists, production is running, all
+/// hosts are enabled, no recent event log errors, messages flowed
+/// through the pipeline. Returns a structured pass/fail report with
+/// an overall verdict. Read-only.
+///
+/// production: fully-qualified production class name.
+/// minutesBack: how far back to check event log and messages (default 5).
+ClassMethod PostBuildValidation(production As %String, minutesBack As %Integer = 5) As %DynamicObject
+{
+    Set out = {}
+    Set out.production = production
+    Set out.checks = []
+    Set targetNs = ..%TargetNs()
+    Set out.namespace = targetNs
+    If $get(minutesBack) = "" Set minutesBack = 5
+    New $namespace
+    Try { Set $namespace = targetNs } Catch  {
+        Set out.ok = 0
+        Set out.error = "Cannot access namespace: " _ targetNs
+        Quit
+    }
+    Try {
+        Set allPass = 1
+        Set warnings = 0
+
+        ; --- Check 1: Production exists ---
+        Set c1 = {}
+        Set c1.check = "production_exists"
+        If ##class(Ens.Config.Production).%ExistsId(production) {
+            Set c1.pass = 1
+            Set c1.detail = "Class exists and is a valid production."
+        } Else {
+            Set c1.pass = 0
+            Set c1.detail = "Production class not found: " _ production
+            Set allPass = 0
+        }
+        Do out.checks.%Push(c1)
+        If 'c1.pass { Set out.ok = 0 Set out.allPass = 0 Set out.verdict = "FAIL — production does not exist" Quit }
+
+        ; --- Check 2: Production is running ---
+        Set c2 = {}
+        Set c2.check = "production_running"
+        Set activeName = ""
+        Try { Set activeName = ##class(Ens.Director).GetActiveProductionName() } Catch  {}
+        If activeName = production {
+            Set sc = ##class(Ens.Director).GetProductionStatus(.prodName, .prodStatus)
+            If prodStatus = 1 {
+                Set c2.pass = 1
+                Set c2.detail = "Production is running."
+            } Else {
+                Set c2.pass = 0
+                Set c2.detail = "Production is active but status is " _ prodStatus _ " (expected 1=Running)."
+                Set allPass = 0
+            }
+        } Else {
+            Set c2.pass = 0
+            Set c2.detail = "Production is NOT running. Active production: " _ $select(activeName="":"(none)", 1:activeName)
+            Set allPass = 0
+        }
+        Do out.checks.%Push(c2)
+
+        ; --- Check 3: All hosts enabled and classes valid ---
+        Set c3 = {}
+        Set c3.check = "hosts_healthy"
+        Set prod = ##class(Ens.Config.Production).%OpenId(production)
+        Set hostCount = prod.Items.Count()
+        Set disabledHosts = ""
+        Set missingClasses = ""
+        Set hostNames = ""
+        For i=1:1:hostCount {
+            Set item = prod.Items.GetAt(i)
+            Set hostNames = hostNames _ $select(hostNames="":"", 1:",") _ item.Name
+            If 'item.Enabled {
+                Set disabledHosts = disabledHosts _ $select(disabledHosts="":"", 1:", ") _ item.Name
+            }
+            If item.ClassName '= "", '##class(%Dictionary.CompiledClass).%ExistsId(item.ClassName) {
+                Set missingClasses = missingClasses _ $select(missingClasses="":"", 1:", ") _ item.Name _ "(" _ item.ClassName _ ")"
+            }
+        }
+        If missingClasses '= "" {
+            Set c3.pass = 0
+            Set c3.detail = "Missing host classes: " _ missingClasses
+            Set allPass = 0
+        } ElseIf disabledHosts '= "" {
+            Set c3.pass = 0
+            Set c3.detail = hostCount _ " hosts found. Disabled: " _ disabledHosts
+            Set allPass = 0
+        } Else {
+            Set c3.pass = 1
+            Set c3.detail = hostCount _ " hosts, all enabled with valid classes."
+        }
+        Set c3.hostCount = hostCount
+        Do out.checks.%Push(c3)
+
+        ; --- Check 4: Event log errors ---
+        Set c4 = {}
+        Set c4.check = "no_recent_errors"
+        Set cutoff = $system.SQL.DATEADD("mi", -minutesBack, $zdatetime($horolog, 3, 1))
+        Set sql = "SELECT COUNT(*) AS cnt FROM Ens_Util.Log WHERE Type = 1 AND TimeLogged >= ?"
+        Set rs = ##class(%SQL.Statement).%ExecDirect(, sql, cutoff)
+        Set errorCount = 0
+        If rs.%Next() { Set errorCount = +rs.%Get("cnt") }
+        If errorCount = 0 {
+            Set c4.pass = 1
+            Set c4.detail = "No errors in event log (last " _ minutesBack _ " minutes)."
+        } Else {
+            Set c4.pass = 0
+            Set c4.errorCount = errorCount
+            Set allPass = 0
+            ; Grab the first 3 error messages for context
+            Set c4.recentErrors = []
+            Set sql2 = "SELECT TOP 3 ConfigName, Text FROM Ens_Util.Log WHERE Type = 1 AND TimeLogged >= ? ORDER BY ID DESC"
+            Set rs2 = ##class(%SQL.Statement).%ExecDirect(, sql2, cutoff)
+            While rs2.%Next() {
+                Set e = {}
+                Set e.host = rs2.%Get("ConfigName")
+                Set e.text = $extract(rs2.%Get("Text"), 1, 300)
+                Do c4.recentErrors.%Push(e)
+            }
+            Set c4.detail = errorCount _ " error(s) in event log (last " _ minutesBack _ " min). See recentErrors."
+        }
+        Do out.checks.%Push(c4)
+
+        ; --- Check 5: Messages flowed ---
+        Set c5 = {}
+        Set c5.check = "messages_routed"
+        Set sql3 = "SELECT Status, COUNT(*) AS cnt FROM Ens.MessageHeader WHERE TimeCreated >= ? GROUP BY Status"
+        Set rs3 = ##class(%SQL.Statement).%ExecDirect(, sql3, cutoff)
+        Set totalMsgs = 0
+        Set completedMsgs = 0
+        Set errorMsgs = 0
+        Set c5.byStatus = []
+        While rs3.%Next() {
+            Set st = rs3.%Get("Status")
+            Set cnt = +rs3.%Get("cnt")
+            Set totalMsgs = totalMsgs + cnt
+            Set statusLabel = $case(st, 1:"Created", 2:"Queued", 3:"Delivered", 4:"Discarded", 5:"Suspended", 6:"Deferred", 7:"Aborted", 8:"Error", 9:"Completed", :"Unknown("_st_")")
+            If st = 9 Set completedMsgs = cnt
+            If st = 8 Set errorMsgs = cnt
+            Set s = {}
+            Set s.status = statusLabel
+            Set s.count = cnt
+            Do c5.byStatus.%Push(s)
+        }
+        Set c5.totalMessages = totalMsgs
+        Set c5.completedMessages = completedMsgs
+        Set c5.errorMessages = errorMsgs
+        If totalMsgs = 0 {
+            Set c5.pass = 0
+            Set c5.detail = "No messages found in last " _ minutesBack _ " minutes. Was a test message sent?"
+            Set allPass = 0
+        } ElseIf errorMsgs > 0 {
+            Set c5.pass = 0
+            Set c5.detail = totalMsgs _ " messages total, " _ errorMsgs _ " errored, " _ completedMsgs _ " completed."
+            Set allPass = 0
+        } ElseIf completedMsgs > 0 {
+            Set c5.pass = 1
+            Set c5.detail = totalMsgs _ " messages total, " _ completedMsgs _ " completed successfully."
+        } Else {
+            Set c5.pass = 0
+            Set c5.detail = totalMsgs _ " messages found but none in Completed status yet."
+            Set warnings = warnings + 1
+        }
+        Do out.checks.%Push(c5)
+
+        ; --- Check 6: Message trace — did messages reach every host? ---
+        Set c6 = {}
+        Set c6.check = "pipeline_coverage"
+        Set c6.hostsReached = []
+        Set sql4 = "SELECT DISTINCT TargetConfigName FROM Ens.MessageHeader WHERE TimeCreated >= ? AND TargetConfigName IS NOT NULL"
+        Set rs4 = ##class(%SQL.Statement).%ExecDirect(, sql4, cutoff)
+        Set reached = ""
+        While rs4.%Next() {
+            Set tgt = rs4.%Get("TargetConfigName")
+            Do c6.hostsReached.%Push(tgt)
+            Set reached = reached _ $select(reached="":"", 1:",") _ tgt
+        }
+        ; Compare reached hosts to production hosts (case-insensitive)
+        Set unreached = ""
+        Set reachedUpper = $zconvert(reached, "U")
+        For i=1:1:hostCount {
+            Set item = prod.Items.GetAt(i)
+            Set hName = item.Name
+            ; Services don't appear as TargetConfigName — skip them
+            Set hClass = item.ClassName
+            Set isService = (hClass [ "Service") || (hClass [ "service")
+            If 'isService, reachedUpper '[ $zconvert(hName, "U") {
+                Set unreached = unreached _ $select(unreached="":"", 1:", ") _ hName
+            }
+        }
+        If unreached = "" {
+            Set c6.pass = 1
+            Set c6.detail = "Messages reached all non-service hosts."
+        } ElseIf totalMsgs = 0 {
+            Set c6.pass = 0
+            Set c6.detail = "No messages — cannot verify pipeline coverage."
+            Set allPass = 0
+        } Else {
+            Set c6.pass = 0
+            Set c6.detail = "These hosts received no messages: " _ unreached
+            Set allPass = 0
+        }
+        Do out.checks.%Push(c6)
+
+        ; --- Verdict ---
+        Set passed = 0
+        Set total = out.checks.%Size()
+        Set iter = out.checks.%GetIterator()
+        While iter.%GetNext(.k, .v) {
+            If v.%Get("pass") = 1 Set passed = passed + 1
+        }
+        Set out.passed = passed
+        Set out.total = total
+        Set out.allPass = allPass
+        If allPass {
+            Set out.verdict = "ALL CHECKS PASSED (" _ passed _ "/" _ total _ ")"
+        } Else {
+            Set out.verdict = "FAILED — " _ passed _ "/" _ total _ " checks passed. See failed checks above."
+        }
+        Set out.ok = 1
+    } Catch ex {
+        Set out.ok = 0
+        Set out.error = $extract(ex.DisplayString(), 1, 400)
+    }
+    Quit out
+}
+
 }

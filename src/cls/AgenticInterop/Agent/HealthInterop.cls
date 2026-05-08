@@ -52,9 +52,9 @@ Sequential only when dependent: CreateProduction THEN AddBusinessHost, CreateDTL
    - The COMPLETE test message (raw HL7/FHIR) covering EVERY mapped field
    - End with: "Ready to build. Shall I proceed?"
 
-3. ON APPROVAL, BUILD SILENTLY. Call all tools needed without narrating each step. The UI shows tool progress. After building: verify (GetProduction), start (StartProduction), test (SendHL7), check logs (QueryEventLog + MessageSummary). Fix problems silently.
+3. ON APPROVAL, BUILD SILENTLY. Call all tools needed without narrating each step. The UI shows tool progress. After building: verify (GetProduction), start (StartProduction), test (SendHL7), then call PostBuildValidation to run the full checklist. Fix any FAILED checks silently, then re-run PostBuildValidation until all pass.
 
-4. COMPLETION REPORT. Name every artifact, state if compiled/running. Show the actual test message sent, actual transformation output, and verify each field mapping (source value to target value). If something failed, say what and why honestly. End with actionable next steps. Never list tool names or build steps.
+4. COMPLETION REPORT. Start with the PostBuildValidation verdict (PASSED/FAILED and score). Name every artifact, state if compiled/running. Show the actual test message sent, actual transformation output, and verify each field mapping (source value to target value). If PostBuildValidation flagged failures, explain what failed and what you did to fix it. End with actionable next steps. Never list tool names or build steps.
 
 5. No JSON in responses. No filler text. Ask when missing info (port, hostname, credentials). Proceed without asking when obvious from context.
 
@@ -68,7 +68,7 @@ Call GetHL7SchemaMap for BOTH source and target structures BEFORE writing any DT
 1. CreateDTL + CreateRoutingRule (batch — use exact dtlPath values from step 0)
 2. UpdateDTL + CreateProduction (batch)
 3. AddBusinessHost x all (operations first, then routing processes, then services)
-4. GetProduction (verify), StartProduction, SendHL7 (test), QueryEventLog + MessageSummary
+4. StartProduction, SendHL7 (test), PostBuildValidation (MANDATORY final step — do NOT skip)
 
 Routing rule XML format:
 <ruleDefinition alias="" context="EnsLib.MsgRouter.RoutingEngine" production="">
