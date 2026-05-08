@@ -42,7 +42,38 @@ ClassMethod Apply() As %Status
     Set rc = $zf(-1, "/usr/irissys/httpd/bin/httpd -k graceful 2>/dev/null")
     If rc = 0 { Write "Apache graceful restart triggered.",! }
     Else { Write "Could not restart Apache (rc="_rc_"); restart manually.",! }
+
+    ; Bump JWT access token timeout on /api/agentic from the default 60s
+    ; to 3600s. The 60s default causes "session expired" on the build
+    ; turn: the plan phase takes 30-40s, user reads the plan, and by the
+    ; time they type approval the JWT has expired. All silent retry
+    ; paths in chat.js re-fetch the same stale token from the parent
+    ; frame, so every retry also fails.
+    Do ..PatchJWTTimeout()
+
     Quit $$$OK
+}
+
+ClassMethod PatchJWTTimeout() [ Internal ]
+{
+    New $namespace
+    Set $namespace = "%SYS"
+    Try {
+        Do ##class(Security.Applications).Get("/api/agentic", .p)
+        If $get(p("JWTAccessTokenTimeout")) < 3600 {
+            Set props("JWTAccessTokenTimeout") = 3600
+            Set sc = ##class(Security.Applications).Modify("/api/agentic", .props)
+            If $$$ISOK(sc) {
+                Write "JWT access token timeout set to 3600s on /api/agentic",!
+            } Else {
+                Write "Failed to set JWT timeout: ", $system.Status.GetErrorText(sc),!
+            }
+        } Else {
+            Write "JWT access token timeout already >= 3600s — no change needed.",!
+        }
+    } Catch ex {
+        Write "JWT timeout patch skipped: ", ex.DisplayString(),!
+    }
 }
 
 }
