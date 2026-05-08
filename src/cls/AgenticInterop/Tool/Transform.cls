@@ -941,4 +941,97 @@ ClassMethod GetCustomDTLPackage() As %DynamicObject
     Quit out
 }
 
+/// Return the EXACT virtual-document segment paths for an HL7 message
+/// structure. CALL THIS BEFORE writing or updating any DTL that uses
+/// EnsLib.HL7.Message as source or target. The paths returned are the
+/// ONLY valid paths for SetValueAt / GetValueAt on that DocType — using
+/// any other path silently fails and produces empty segments.
+///
+/// Different message types have DIFFERENT group nesting. For example:
+///   ADT_A01: PID is flat  →  source.{PID:PatientName}
+///   ORU_R01: PID is nested → target.{PIDgrpgrp(1).PIDgrp.PID:PatientName}
+/// You MUST look up both source and target schemas before writing <assign>
+/// elements. Do NOT guess the paths.
+///
+/// category:         HL7 version category, e.g. "2.5", "2.3.1".
+/// messageStructure: message structure name, e.g. "ADT_A01", "ORU_R01",
+///                   "ORM_O01", "SIU_S12".
+///
+/// Returns: { ok, category, messageStructure, segments:[{path, segment,
+/// segmentType}], segmentCount, hint }.
+ClassMethod GetHL7SchemaMap(category As %String, messageStructure As %String) As %DynamicObject
+{
+    Set out = {}
+    Set out.category = $get(category)
+    Set out.messageStructure = $get(messageStructure)
+    Set out.segments = []
+    If $get(category) = "" {
+        Set out.ok = 0
+        Set out.error = "Pass `category` (e.g. '2.5') and `messageStructure` (e.g. 'ORU_R01')."
+        Return out
+    }
+    If $get(messageStructure) = "" {
+        Set out.ok = 0
+        Set out.error = "Pass `messageStructure` (e.g. 'ADT_A01', 'ORU_R01')."
+        Return out
+    }
+    Try {
+        ; Verify the message structure exists in the schema
+        Set rawDef = $get(^EnsHL7.Schema(category, "MS", messageStructure))
+        If rawDef = "" {
+            Set out.ok = 0
+            Set out.error = "Message structure '" _ messageStructure _ "' not found in '" _ category _ "'."
+            Set out.available = []
+            Set ms = "", count = 0
+            For {
+                Set ms = $order(^EnsHL7.Schema(category, "MS", ms))
+                Quit:ms=""
+                Do out.available.%Push(ms)
+                Set count = count + 1
+                Quit:count>30
+            }
+            Quit
+        }
+        ; Walk the map sub-node — each entry is a segment path
+        Set segCount = 0
+        Set key = ""
+        For {
+            Set key = $order(^EnsHL7.Schema(category, "MS", messageStructure, "map", key))
+            Quit:key=""
+            If key = "leftoversegs" Continue
+            Set mapVal = $get(^EnsHL7.Schema(category, "MS", messageStructure, "map", key))
+            ; mapVal format: "=pos|cat:segType" e.g. "=3,*,1,1|2.5:PID"
+            Set segType = $piece($piece(mapVal, "|", 2), ":", 2)
+            Set entry = {}
+            Set entry.path = key
+            Set entry.segmentType = segType
+            ; Build the DTL-ready path with (1) index for repeating groups
+            Set dtlPath = $replace(key, "()", "(1)")
+            Set entry.dtlPath = dtlPath
+            ; List fields for this segment type
+            Set entry.fields = []
+            Set fld = "", fldCount = 0
+            For {
+                Set fld = $order(^EnsHL7.Schema(category, "SS", segType, "map", fld))
+                Quit:fld=""
+                Set fldCount = fldCount + 1
+                Set fldEntry = {}
+                Set fldEntry.name = fld
+                Set fldEntry.fullPath = dtlPath _ ":" _ fld
+                Do entry.fields.%Push(fldEntry)
+                Quit:fldCount>40
+            }
+            Do out.segments.%Push(entry)
+            Set segCount = segCount + 1
+        }
+        Set out.segmentCount = segCount
+        Set out.ok = 1
+        Set out.hint = "Use the dtlPath values in DTL <assign> elements. For repeating groups, increment the index: (1), (2), etc. For repeating fields within a segment, append (1) to the field name: e.g. dtlPath:PatientIdentifierList(1). ALWAYS look up BOTH source and target schemas before writing a DTL."
+    } Catch ex {
+        Set out.ok = 0
+        Set out.error = $extract(ex.DisplayString(), 1, 400)
+    }
+    Return out
+}
+
 }

@@ -8,6 +8,19 @@
 const API = '/api/agentic';
 const AUTH_KEY = 'AGENTIC_AUTH';
 
+// [CSP cookie fix] Force credentials:'omit' on every fetch from this
+// iframe. Without this, the browser's default credentials:'same-origin'
+// sends the Interop Editor's CSPSESSIONID cookie with every request to
+// /api/agentic/. The CSP gateway sees the stale session cookie, tries
+// to validate it, FAILS, and returns 401 before ever reading the
+// Authorization header we send. This caused "Your session has expired"
+// on every second chat turn — the first SSE response's Set-Cookie
+// poisoned all subsequent requests.
+{
+    const _fetch = window.fetch.bind(window);
+    window.fetch = (url, opts) => _fetch(url, Object.assign({}, opts, { credentials: 'omit' }));
+}
+
 let bridgeBearer = '';
 let bridgeNamespace = '';
 let authValidated = false;

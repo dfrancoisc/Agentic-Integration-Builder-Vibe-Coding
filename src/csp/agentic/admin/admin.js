@@ -14,6 +14,17 @@ const API = '/api/agentic';
 const TABS = ['agents', 'mcps', 'toolsets', 'tools', 'skills', 'connections', 'catalogs', 'audit'];
 const AUTH_KEY = 'AGENTIC_AUTH';
 
+// [CSP cookie fix] Force credentials:'omit' on every fetch from this
+// iframe. Without this, the browser's default credentials:'same-origin'
+// sends the Interop Editor's CSPSESSIONID cookie with every request to
+// /api/agentic/. The CSP gateway sees the stale session cookie, tries
+// to validate it, FAILS, and returns 401 before ever reading the
+// Authorization header we send.
+{
+    const _fetch = window.fetch.bind(window);
+    window.fetch = (url, opts) => _fetch(url, Object.assign({}, opts, { credentials: 'omit' }));
+}
+
 // Bearer + namespace received from inject.js via postMessage. Set
 // during bootstrap before any API call.
 let bridgeBearer = '';

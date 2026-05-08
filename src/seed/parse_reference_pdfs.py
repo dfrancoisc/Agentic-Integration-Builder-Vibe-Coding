@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """
-Parse the four IRIS reference PDFs into structured JSON the IRIS-side
+DEV-TIME UTILITY — not in module.xml and not deployed at runtime.
+Parse the three IRIS reference PDFs into structured JSON the IRIS-side
 loader can consume. Run locally; the JSON files land alongside this
-script and are then copied into the container by the deploy step.
+script and are shipped by the FileCopy directives in module.xml.
 
 Usage:
     python3 parse_reference_pdfs.py  /path/to/pdf/dir  [/output/dir]

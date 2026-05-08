@@ -338,13 +338,19 @@ Adapter settings:
 
 Example: { "Host": { "SearchTableClass": "EnsLib.HL7.SearchTable" }, "Adapter": { "IPAddress": "10.0.0.5", "Port": "5001", "StayConnected": "-1" } }
 
+### CRITICAL: file-based hosts require existing directories
+
+IRIS does NOT auto-create directories for file-based services/operations. If FilePath, ArchivePath, or any directory setting points to a nonexistent path, the host fails at runtime with ERROR #5005 "Cannot open file" and the production suspends.
+
+BEFORE starting any production that uses file-based hosts, ensure all directories exist. Use a <code> block in a setup step or ask the user to confirm the paths exist. Common paths: /tmp/inbound, /tmp/outbound, /tmp/archive, /tmp/deadletter. When testing, always create the directories first.
+
 ### EnsLib.HL7.Operation.FileOperation (HL7 file outbound)
 
 Host settings:
 - SearchTableClass — usually "EnsLib.HL7.SearchTable"
 
 Adapter settings:
-- FilePath — output directory (REQUIRED)
+- FilePath — output directory (REQUIRED — directory MUST exist, see above)
 - Overwrite — "0" (append/new file) or "1" (overwrite)
 
 Example: { "Host": {}, "Adapter": { "FilePath": "/data/hl7/out" } }

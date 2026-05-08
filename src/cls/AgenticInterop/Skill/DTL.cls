@@ -60,6 +60,28 @@ Standard production messages: `source.propertyname` / `source.propertyname.subpr
 
 Virtual documents (other than XML): use the curly-brace syntax `source.{SegName:FieldName}` and indexed `source.{SegName:RepeatField(i).Subfield}`. Empty parentheses `(  )` in foreach iterate every instance — see "Repeating field shortcut" below.
 
+## CRITICAL: HL7 virtual document paths differ by message type — ALWAYS LOOK THEM UP
+
+Different HL7 message types have DIFFERENT segment group nesting. You CANNOT guess these paths.
+
+Examples of how paths vary:
+- ADT_A01: PID is flat              -> source.{PID:PatientName}
+- ADT_A01: PV1 is flat              -> source.{PV1:AttendingDoctor}
+- ORU_R01: PID is deeply nested     -> target.{PIDgrpgrp(1).PIDgrp.PID:PatientName}
+- ORU_R01: OBR is deeply nested     -> target.{PIDgrpgrp(1).ORCgrp(1).OBR:OrderingProvider}
+- ORU_R01: OBX is deeply nested     -> target.{PIDgrpgrp(1).ORCgrp(1).OBXgrp(1).OBX:ObservationValue}
+- ORM_O01: OBR nesting is different -> target.{ORCgrp(1).OBRgrp.OBR:...}
+
+MANDATORY WORKFLOW for building any HL7 DTL:
+1. Call GetHL7SchemaMap(category, sourceMessageStructure) to get SOURCE paths
+2. Call GetHL7SchemaMap(category, targetMessageStructure) to get TARGET paths
+3. Use the EXACT dtlPath values returned in your assign elements — never guess
+4. After creating/updating the DTL, call DryRunDTL with a realistic test message
+5. Verify the output contains all expected segments and fields
+
+If you skip steps 1-2, the DTL will silently produce empty segments because IRIS
+does not error on invalid virtual document paths — it just returns empty strings.
+
 XML virtual documents: see Routing XML Virtual Documents in Productions for `<assign>` paths.
 
 References to:
