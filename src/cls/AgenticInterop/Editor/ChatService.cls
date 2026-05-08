@@ -558,12 +558,16 @@ ClassMethod LooksLikeFabrication(pText As %String, pToolTrace As %String) As %Bo
 /// OnIterationComplete are NOT called here (the caller handles those).
 ClassMethod ChatWithRetry(agent As %AI.Agent, session As %AI.Agent.Session, input As %String, monitor As AgenticInterop.Agent.Monitor) As %AI.LLM.Response
 {
+    ; NOTE: Quit inside a Try exits the Try block, NOT the While loop
+    ; (ObjectScript gotcha). Use a success flag to control the loop.
     Set maxRetries = 2
     Set attempt = 0
-    While attempt <= maxRetries {
+    Set response = ""
+    Set success = 0
+    While (attempt <= maxRetries) && ('success) {
         Try {
             Set response = agent.Chat(session, input)
-            Quit  ; success — exit the retry loop
+            Set success = 1
         } Catch ex {
             Set errText = ex.DisplayString()
             Set isRateLimit = 0
