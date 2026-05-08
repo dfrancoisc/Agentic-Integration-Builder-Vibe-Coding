@@ -302,7 +302,7 @@ ClassMethod ChatStream(pResponse As %CSP.Response, pBodyStream) As %Status
             Set iteration = iteration + 1
             Do monitor.OnIterationStart(iteration, maxIter, session)
             Set input = $select(iteration=1:message, 1:"Continue executing tool calls. Do not repeat tools you already called.")
-            Set response = agent.Chat(session, input)
+            Set response = ..ChatWithRetry(agent, session, input, monitor)
             Do monitor.OnIterationComplete(iteration, response, session)
             If '$isobject(response) Quit
             Try { Set hasCalls = response.HasToolCalls() } Catch { Set hasCalls = 0 }
@@ -319,7 +319,7 @@ ClassMethod ChatStream(pResponse As %CSP.Response, pBodyStream) As %Status
                         ; Don't break out of loop — continue with a corrective message
                         Set iteration = iteration + 1
                         Do monitor.OnIterationStart(iteration, maxIter, session)
-                        Set response = agent.Chat(session, "STOP. You just wrote text claiming you built something, but you did NOT call any tools. Text is not action. You MUST call CreateProduction, AddBusinessHost, and the other tools to actually build the production. Do it now — call the tools.")
+                        Set response = ..ChatWithRetry(agent, session, "STOP. You just wrote text claiming you built something, but you did NOT call any tools. Text is not action. You MUST call CreateProduction, AddBusinessHost, and the other tools to actually build the production. Do it now — call the tools.", monitor)
                         Do monitor.OnIterationComplete(iteration, response, session)
                         If '$isobject(response) Quit
                         Try { Set hasCalls = response.HasToolCalls() } Catch { Set hasCalls = 0 }
@@ -544,6 +544,57 @@ ClassMethod LooksLikeFabrication(pText As %String, pToolTrace As %String) As %Bo
         }
     }
     Quit 0
+}
+
+/// Wrap agent.Chat() with retry-on-rate-limit. Bedrock (and other
+/// providers) return a ProviderError with "Too many tokens" or
+/// "ThrottlingException" when the TPM/RPM quota is exceeded. Without
+/// this wrapper, the whole turn crashes. With it, we wait 10 seconds
+/// and retry up to 2 more times (3 attempts total). Emits an SSE
+/// status event during the wait so the user sees "Rate limited,
+/// waiting..." in the UI instead of silence.
+///
+/// The monitor is passed for SSE emission only — OnIterationStart/
+/// OnIterationComplete are NOT called here (the caller handles those).
+ClassMethod ChatWithRetry(agent As %AI.Agent, session As %AI.Agent.Session, input As %String, monitor As AgenticInterop.Agent.Monitor) As %AI.LLM.Response
+{
+    Set maxRetries = 2
+    Set attempt = 0
+    While attempt <= maxRetries {
+        Try {
+            Set response = agent.Chat(session, input)
+            Quit  ; success — exit the retry loop
+        } Catch ex {
+            Set errText = ex.DisplayString()
+            Set isRateLimit = 0
+            Set lower = $zconvert(errText, "L")
+            If lower [ "too many tokens" Set isRateLimit = 1
+            If lower [ "throttling" Set isRateLimit = 1
+            If lower [ "rate limit" Set isRateLimit = 1
+            If lower [ "rate_limit" Set isRateLimit = 1
+            If lower [ "429" Set isRateLimit = 1
+            If lower [ "too many requests" Set isRateLimit = 1
+            If lower [ "overloaded" Set isRateLimit = 1
+            If 'isRateLimit {
+                ; Not a rate limit — rethrow immediately
+                Throw ex
+            }
+            If attempt >= maxRetries {
+                ; Exhausted retries — rethrow so the outer catch handles it
+                Throw ex
+            }
+            ; Wait and retry. Emit SSE status so the UI knows we're waiting.
+            Set waitSecs = $select(attempt=0:10, 1:20)
+            If monitor.SSEEnabled {
+                Set statusEv = {}
+                Set statusEv.message = "Rate limited by provider. Waiting " _ waitSecs _ " seconds before retrying (attempt " _ (attempt + 2) _ " of " _ (maxRetries + 1) _ ")..."
+                Do ..SSEEvent("status", statusEv)
+            }
+            Hang waitSecs
+            Set attempt = attempt + 1
+        }
+    }
+    Quit response
 }
 
 /// Write one SSE event to the open response. Each event format is:

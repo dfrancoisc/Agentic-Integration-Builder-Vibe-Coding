@@ -889,8 +889,14 @@ async function send(message) {
             } else if (event === 'tool_confirm' && data && data.token) {
                 bubble.toolGroup.hidden = false;
                 newApprovalCard(bubble.tools, data);
-            } else if (event === 'status') {
-                // Reserved for live progress updates.
+            } else if (event === 'status' && data) {
+                // Live progress updates — rate limit waits, phase changes, etc.
+                if (data.message) {
+                    bubble.toolGroup.hidden = false;
+                    bubble.toolLabel.textContent = data.message;
+                    bubble.toolDot.className = 'status-dot pending';
+                    $('messages').scrollTop = $('messages').scrollHeight;
+                }
             } else if (event === 'done' && data) {
                 // Finalize the tool group summary
                 if (toolCount > 0) {
