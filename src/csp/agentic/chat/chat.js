@@ -53,8 +53,8 @@ function saveUserExamples(arr) {
 const BUILTIN_EXAMPLES = [
     {
         cat: 'BUILD',
-        title: "ADT-to-ORU transformation with custom mappings",
-        prompt: "Build me a production that receives HL7 v2.5 ADT^A01 messages over MLLP on port 5000, transforms them to ORU^R01 messages where PID-3 maps to OBR-3, PV1-7 maps to OBR-16, and PID-5 maps to OBX-5 for the patient name observation, then routes to a downstream LIS over MLLP on port 5100. Include ACK handling and a dead-letter queue for transformation failures."
+        title: "ADT-to-ORU transformation with file output",
+        prompt: "Build a complete production that: (1) receives HL7 v2.5 ADT^A01 admission messages over MLLP on port 5000 with automatic acknowledgment, (2) transforms each ADT into an ORU^R01 observation report where the patient identifier becomes the filler order number, the attending doctor becomes the ordering provider, and the patient name is carried as an OBX observation value, (3) routes the transformed ORU messages to an outbound folder at /tmp/lis-outbound/ for pickup by the downstream LIS, and (4) sends any messages that fail transformation to a separate dead-letter folder at /tmp/dead-letter/ for manual review. Use the HL7 v2.5 schema for both source and target, and make sure the routing engine has a compiled business rule."
     },
     {
         cat: 'TRANSFORM',
