@@ -21,12 +21,16 @@
     --ref-bg: #3a1a1a;
     --ref-border: #6a2a2a;
     --ref-text: #fee0e0;
+    --opt-bg: #0d3326;
+    --opt-border: #1a6644;
+    --opt-text: #c8f5e0;
     --surface: #0f1419;
     --surface-2: #1a1f26;
     --surface-3: #242b34;
     --text: #e1e4e8;
     --text-dim: #8b949e;
     --accent: #58a6ff;
+    --green: #3fb950;
     --line: #30363d;
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -37,284 +41,149 @@
     padding: 32px;
     min-height: 100vh;
   }
-  h1 {
-    font-size: 28px;
-    font-weight: 600;
-    margin-bottom: 4px;
-    color: #fff;
-  }
-  .subtitle {
-    font-size: 14px;
-    color: var(--text-dim);
-    margin-bottom: 32px;
-  }
+  h1 { font-size: 28px; font-weight: 600; margin-bottom: 4px; color: #fff; }
+  h2 { font-size: 20px; font-weight: 600; color: #fff; margin-bottom: 16px; }
+  .subtitle { font-size: 14px; color: var(--text-dim); margin-bottom: 32px; }
   .legend {
-    display: flex;
-    gap: 24px;
-    margin-bottom: 28px;
-    flex-wrap: wrap;
+    display: flex; gap: 24px; margin-bottom: 28px; flex-wrap: wrap;
   }
   .legend-item {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 13px;
-    color: var(--text-dim);
+    display: flex; align-items: center; gap: 8px;
+    font-size: 13px; color: var(--text-dim);
   }
   .legend-swatch {
-    width: 14px;
-    height: 14px;
-    border-radius: 3px;
+    width: 14px; height: 14px; border-radius: 3px;
     border: 1px solid rgba(255,255,255,0.15);
   }
 
-  /* --- Diagram container --- */
   .diagram {
-    display: flex;
-    flex-direction: column;
-    gap: 20px;
-    max-width: 1400px;
-    margin: 0 auto;
+    display: flex; flex-direction: column; gap: 20px;
+    max-width: 1400px; margin: 0 auto;
   }
-
-  /* --- Layer rows --- */
-  .layer {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-  }
+  .layer { display: flex; flex-direction: column; gap: 2px; }
   .layer-label {
-    font-size: 11px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 1.2px;
-    color: var(--text-dim);
-    padding-left: 4px;
-    margin-bottom: 4px;
+    font-size: 11px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 1.2px; color: var(--text-dim);
+    padding-left: 4px; margin-bottom: 4px;
   }
-  .layer-content {
-    display: flex;
-    gap: 12px;
-    flex-wrap: wrap;
-  }
+  .layer-content { display: flex; gap: 12px; flex-wrap: wrap; }
 
-  /* --- Card base --- */
   .card {
-    border-radius: 8px;
-    padding: 14px 16px;
-    border: 1px solid var(--line);
-    position: relative;
+    border-radius: 8px; padding: 14px 16px;
+    border: 1px solid var(--line); position: relative;
     transition: transform 0.15s, box-shadow 0.15s;
   }
   .card:hover {
     transform: translateY(-2px);
-    box-shadow: 0 6px 24px rgba(0,0,0,0.4);
-    z-index: 10;
+    box-shadow: 0 6px 24px rgba(0,0,0,0.4); z-index: 10;
   }
   .card-title {
-    font-size: 14px;
-    font-weight: 600;
-    margin-bottom: 4px;
-    display: flex;
-    align-items: center;
-    gap: 6px;
+    font-size: 14px; font-weight: 600; margin-bottom: 4px;
+    display: flex; align-items: center; gap: 6px;
   }
   .card-extends {
-    font-size: 11px;
-    opacity: 0.7;
-    font-family: 'SF Mono', 'Fira Code', monospace;
-    margin-bottom: 8px;
+    font-size: 11px; opacity: 0.7;
+    font-family: 'SF Mono', 'Fira Code', monospace; margin-bottom: 8px;
   }
-  .card-body {
-    font-size: 12px;
-    line-height: 1.5;
-    opacity: 0.85;
-  }
-  .card-body ul {
-    list-style: none;
-    padding-left: 0;
-  }
-  .card-body li {
-    padding: 1px 0;
-  }
-  .card-body li::before {
-    content: "- ";
-    opacity: 0.4;
-  }
+  .card-body { font-size: 12px; line-height: 1.5; opacity: 0.85; }
+  .card-body ul { list-style: none; padding-left: 0; }
+  .card-body li { padding: 1px 0; }
+  .card-body li::before { content: "- "; opacity: 0.4; }
   .badge {
-    display: inline-block;
-    font-size: 10px;
-    font-weight: 700;
-    padding: 2px 7px;
-    border-radius: 10px;
-    background: rgba(255,255,255,0.12);
-    vertical-align: middle;
+    display: inline-block; font-size: 10px; font-weight: 700;
+    padding: 2px 7px; border-radius: 10px;
+    background: rgba(255,255,255,0.12); vertical-align: middle;
   }
 
-  /* --- Theme variants --- */
-  .card-fw {
-    background: var(--fw-bg);
-    border-color: var(--fw-border);
-    color: var(--fw-text);
-  }
+  .card-fw { background: var(--fw-bg); border-color: var(--fw-border); color: var(--fw-text); }
   .card-fw .badge { background: rgba(88,166,255,0.25); color: #8cc4ff; }
-
-  .card-ext {
-    background: var(--ext-bg);
-    border-color: var(--ext-border);
-    color: var(--ext-text);
-  }
+  .card-ext { background: var(--ext-bg); border-color: var(--ext-border); color: var(--ext-text); }
   .card-ext .badge { background: rgba(63,185,120,0.25); color: #7be0a4; }
-
-  .card-ui {
-    background: var(--ui-bg);
-    border-color: var(--ui-border);
-    color: var(--ui-text);
-  }
+  .card-ui { background: var(--ui-bg); border-color: var(--ui-border); color: var(--ui-text); }
   .card-ui .badge { background: rgba(150,100,220,0.25); color: #c8a8f0; }
-
-  .card-data {
-    background: var(--data-bg);
-    border-color: var(--data-border);
-    color: var(--data-text);
-  }
+  .card-data { background: var(--data-bg); border-color: var(--data-border); color: var(--data-text); }
   .card-data .badge { background: rgba(200,170,60,0.25); color: #e8d080; }
-
-  .card-ref {
-    background: var(--ref-bg);
-    border-color: var(--ref-border);
-    color: var(--ref-text);
-  }
+  .card-ref { background: var(--ref-bg); border-color: var(--ref-border); color: var(--ref-text); }
   .card-ref .badge { background: rgba(200,80,80,0.25); color: #f0a0a0; }
+  .card-opt { background: var(--opt-bg); border-color: var(--opt-border); color: var(--opt-text); }
+  .card-opt .badge { background: rgba(63,185,80,0.3); color: #7be0a4; }
 
-  /* --- Specific widths --- */
   .card-wide { flex: 1 1 100%; }
   .card-half { flex: 1 1 calc(50% - 6px); min-width: 300px; }
   .card-third { flex: 1 1 calc(33.3% - 8px); min-width: 260px; }
   .card-quarter { flex: 1 1 calc(25% - 9px); min-width: 220px; }
   .card-fifth { flex: 1 1 calc(20% - 10px); min-width: 200px; }
-  .card-auto { flex: 0 1 auto; }
 
-  /* --- Flow arrows --- */
   .flow-arrow {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    padding: 4px 0;
-    color: var(--text-dim);
-    font-size: 18px;
-    user-select: none;
+    display: flex; justify-content: center; align-items: center;
+    padding: 4px 0; color: var(--text-dim); font-size: 18px; user-select: none;
   }
   .flow-arrow .arrow-label {
-    font-size: 11px;
-    margin: 0 12px;
-    letter-spacing: 0.5px;
+    font-size: 11px; margin: 0 12px; letter-spacing: 0.5px;
   }
 
-  /* --- Nested group inside a card --- */
-  .inner-group {
-    display: flex;
-    gap: 8px;
-    flex-wrap: wrap;
-    margin-top: 8px;
-  }
+  .inner-group { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
   .inner-card {
-    background: rgba(0,0,0,0.2);
-    border: 1px solid rgba(255,255,255,0.08);
-    border-radius: 6px;
-    padding: 8px 10px;
-    font-size: 11px;
-    flex: 1 1 auto;
-    min-width: 140px;
+    background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 6px; padding: 8px 10px; font-size: 11px;
+    flex: 1 1 auto; min-width: 140px;
   }
-  .inner-card-title {
-    font-weight: 600;
-    font-size: 12px;
-    margin-bottom: 3px;
-  }
+  .inner-card-title { font-weight: 600; font-size: 12px; margin-bottom: 3px; }
 
-  /* --- Tool pills --- */
-  .tool-pills {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px;
-    margin-top: 6px;
-  }
+  .tool-pills { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
   .tool-pill {
-    font-size: 10px;
-    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 10px; font-family: 'SF Mono', 'Fira Code', monospace;
     background: rgba(255,255,255,0.08);
     border: 1px solid rgba(255,255,255,0.06);
-    border-radius: 4px;
-    padding: 2px 6px;
-    white-space: nowrap;
+    border-radius: 4px; padding: 2px 6px; white-space: nowrap;
+  }
+  .tool-pill.new {
+    background: rgba(63,185,80,0.15);
+    border-color: rgba(63,185,80,0.3);
   }
 
-  /* --- Connector lines (pure CSS) --- */
-  .connector-row {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 12px;
-    padding: 2px 0;
-  }
-  .connector-v {
-    width: 2px;
-    height: 16px;
-    background: var(--line);
-  }
-  .connector-label {
-    font-size: 10px;
-    color: var(--text-dim);
-    letter-spacing: 0.5px;
-  }
+  .section-divider { border: none; border-top: 1px dashed var(--line); margin: 8px 0; }
 
-  /* --- Section dividers --- */
-  .section-divider {
-    border: none;
-    border-top: 1px dashed var(--line);
-    margin: 8px 0;
-  }
-
-  /* --- Expand/collapse --- */
-  .expandable { cursor: pointer; }
-  .expandable .expand-icon {
-    display: inline-block;
-    transition: transform 0.2s;
-    font-size: 10px;
-    opacity: 0.6;
-  }
-  .expandable.collapsed .expand-icon { transform: rotate(-90deg); }
-  .expandable.collapsed + .expand-target { display: none; }
-
-  /* --- Stats bar --- */
   .stats-bar {
-    display: flex;
-    gap: 32px;
-    padding: 16px 20px;
-    background: var(--surface-2);
-    border: 1px solid var(--line);
-    border-radius: 8px;
-    margin-bottom: 24px;
-    flex-wrap: wrap;
+    display: flex; gap: 32px; padding: 16px 20px;
+    background: var(--surface-2); border: 1px solid var(--line);
+    border-radius: 8px; margin-bottom: 24px; flex-wrap: wrap;
   }
-  .stat {
-    display: flex;
-    flex-direction: column;
-  }
-  .stat-value {
-    font-size: 24px;
-    font-weight: 700;
-    color: #fff;
-  }
+  .stat { display: flex; flex-direction: column; }
+  .stat-value { font-size: 24px; font-weight: 700; color: #fff; }
+  .stat-value.green { color: var(--green); }
   .stat-label {
-    font-size: 11px;
-    color: var(--text-dim);
-    text-transform: uppercase;
-    letter-spacing: 0.8px;
+    font-size: 11px; color: var(--text-dim);
+    text-transform: uppercase; letter-spacing: 0.8px;
   }
 
-  /* --- Responsive --- */
+  .opt-callout {
+    background: var(--opt-bg); border: 1px solid var(--opt-border);
+    border-radius: 8px; padding: 16px 20px; margin-bottom: 28px;
+    display: flex; gap: 32px; flex-wrap: wrap; align-items: center;
+  }
+  .opt-callout h3 {
+    font-size: 14px; font-weight: 600; color: var(--green);
+    margin-bottom: 6px;
+  }
+  .opt-item { font-size: 12px; color: var(--opt-text); line-height: 1.6; }
+  .opt-metric {
+    font-size: 20px; font-weight: 700; color: var(--green);
+    display: block;
+  }
+  .opt-metric-label {
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.8px;
+    color: rgba(200,245,224,0.6);
+  }
+
+  .step-number {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 20px; height: 20px; border-radius: 50%;
+    background: rgba(88,166,255,0.2); color: var(--accent);
+    font-size: 11px; font-weight: 700; margin-right: 4px;
+    flex-shrink: 0;
+  }
+
   @media (max-width: 900px) {
     .card-third, .card-quarter, .card-fifth { flex: 1 1 100%; }
     body { padding: 16px; }
@@ -324,17 +193,40 @@
 <body>
 
 <h1>Agentic Interop for IRIS for Health</h1>
-<p class="subtitle">Architecture diagram — built on the InterSystems %AI Framework (IRIS 2026.2)</p>
+<p class="subtitle">Architecture diagram — built on the InterSystems %AI Framework (IRIS 2026.2). Updated 2026-05-08.</p>
 
 <!-- Stats -->
 <div class="stats-bar">
-  <div class="stat"><span class="stat-value">54</span><span class="stat-label">Classes</span></div>
-  <div class="stat"><span class="stat-value">41</span><span class="stat-label">LLM Tools</span></div>
+  <div class="stat"><span class="stat-value">58</span><span class="stat-label">Classes</span></div>
+  <div class="stat"><span class="stat-value">42</span><span class="stat-label">LLM Tools</span></div>
   <div class="stat"><span class="stat-value">9</span><span class="stat-label">Skills</span></div>
   <div class="stat"><span class="stat-value">4</span><span class="stat-label">MCP Servers</span></div>
-  <div class="stat"><span class="stat-value">5</span><span class="stat-label">ToolSets</span></div>
   <div class="stat"><span class="stat-value">2</span><span class="stat-label">RAG Catalogs</span></div>
-  <div class="stat"><span class="stat-value">12</span><span class="stat-label">Packages</span></div>
+  <div class="stat"><span class="stat-value">2</span><span class="stat-label">Policies</span></div>
+  <div class="stat"><span class="stat-value">13</span><span class="stat-label">Packages</span></div>
+</div>
+
+<!-- Token optimization callout -->
+<div class="opt-callout">
+  <div>
+    <h3>Token Optimization Layer</h3>
+    <div class="opt-item">
+      ToolFilter DiscoveryPolicy deduplicates auto-discovered tools and strips framework waste before each LLM request.
+      Schema map deduplication compresses HL7 structure maps. Catalog TopK reduced from 8 to 4.
+    </div>
+  </div>
+  <div style="text-align: center;">
+    <span class="opt-metric">55%</span>
+    <span class="opt-metric-label">Tool token reduction</span>
+  </div>
+  <div style="text-align: center;">
+    <span class="opt-metric">77%</span>
+    <span class="opt-metric-label">Schema map reduction</span>
+  </div>
+  <div style="text-align: center;">
+    <span class="opt-metric">~7K</span>
+    <span class="opt-metric-label">Tokens per request (tools)</span>
+  </div>
 </div>
 
 <!-- Legend -->
@@ -344,13 +236,14 @@
   <div class="legend-item"><div class="legend-swatch" style="background:var(--ui-bg);border-color:var(--ui-border)"></div> REST / Editor services</div>
   <div class="legend-item"><div class="legend-swatch" style="background:var(--data-bg);border-color:var(--data-border)"></div> Persistence / Data</div>
   <div class="legend-item"><div class="legend-swatch" style="background:var(--ref-bg);border-color:var(--ref-border)"></div> Reference / Seed data</div>
+  <div class="legend-item"><div class="legend-swatch" style="background:var(--opt-bg);border-color:var(--opt-border)"></div> Token optimization</div>
 </div>
 
 <div class="diagram">
 
-  <!-- ═══════════════════════════════════════════════════════════ -->
+  <!-- ======================================================= -->
   <!-- LAYER 0: REST / UI Surface -->
-  <!-- ═══════════════════════════════════════════════════════════ -->
+  <!-- ======================================================= -->
   <div class="layer">
     <div class="layer-label">REST Surface &amp; Editor Services</div>
     <div class="layer-content">
@@ -401,13 +294,13 @@
 
   <div class="flow-arrow">
     <span>&#9660;</span>
-    <span class="arrow-label">POST /chat/stream</span>
+    <span class="arrow-label">POST /chat/stream (SSE)</span>
     <span>&#9660;</span>
   </div>
 
-  <!-- ═══════════════════════════════════════════════════════════ -->
+  <!-- ======================================================= -->
   <!-- LAYER 1: Connection + ChatService run loop -->
-  <!-- ═══════════════════════════════════════════════════════════ -->
+  <!-- ======================================================= -->
   <div class="layer">
     <div class="layer-label">Connection &amp; Chat Runtime</div>
     <div class="layer-content">
@@ -451,41 +344,40 @@
     <span>&#9660;</span>
   </div>
 
-  <!-- ═══════════════════════════════════════════════════════════ -->
-  <!-- LAYER 2: Agent + Manager + Monitor + Skills -->
-  <!-- ═══════════════════════════════════════════════════════════ -->
+  <!-- ======================================================= -->
+  <!-- LAYER 2: Agent + Manager build pipeline -->
+  <!-- ======================================================= -->
   <div class="layer">
     <div class="layer-label">Agent Layer</div>
     <div class="layer-content">
 
       <!-- Agent -->
-      <div class="card card-fw" style="flex: 2 1 380px; min-width: 340px;">
+      <div class="card card-fw" style="flex: 2 1 400px; min-width: 360px;">
         <div class="card-title">Agent.HealthInterop <span class="badge">%AI.Agent</span></div>
         <div class="card-extends">extends %AI.Agent</div>
         <div class="card-body">
           The single router agent. MAXITERATIONS=25, TEMPERATURE=0.3.
           <hr class="section-divider">
-          XData INSTRUCTIONS: system prompt (~7.3K tokens) — plan-then-build workflow, anti-fabrication rules, tool batching guidance, build sequence, GetHL7SchemaMap mandate.
+          XData INSTRUCTIONS: system prompt (~1.5K tokens) — mandatory research-first workflow, parallel tool batching, build sequence, PostBuildValidation mandate, anti-fabrication rules.
           <hr class="section-divider">
-          <strong>Parameter MCPS:</strong> Production, Transform, Testing, Catalog<br>
+          <strong>Parameter MCPS:</strong> Production, Transform, Testing, Catalog (admin UI metadata only)<br>
           <strong>Parameter SKILLS:</strong> 9 specialist skills (below)
         </div>
       </div>
 
-      <!-- Manager -->
-      <div class="card card-ext" style="flex: 1 1 250px; min-width: 230px;">
+      <!-- Manager.Build pipeline -->
+      <div class="card card-ext" style="flex: 1.5 1 320px; min-width: 300px;">
         <div class="card-title">Agent.Manager <span class="badge">Builder</span></div>
         <div class="card-extends">extends %RegisteredObject</div>
         <div class="card-body">
-          ClassMethod Build():
+          ClassMethod Build() — 6-step pipeline:
           <ul>
-            <li>Instantiates HealthInterop agent</li>
-            <li>Attaches %AI.Provider from Connection</li>
-            <li>Reads Overlay for customizations</li>
-            <li>Registers MCPs (RegisterToAgent)</li>
-            <li>Loads Skills (SkillLoader)</li>
-            <li>Attaches Catalog KBs (Catalog.Attach)</li>
-            <li>Sets ConfirmationGate policy</li>
+            <li><span class="step-number">1</span> %New(provider) + %Init() — auto-discovers Tool classes</li>
+            <li><span class="step-number">2</span> SetDiscoveryPolicy(ToolFilter) — catalog dedup + waste removal</li>
+            <li><span class="step-number">3</span> Overlay: system prompt, temperature, MaxIterations</li>
+            <li><span class="step-number">4</span> UseToolSet() on each Tool.* class — makes methods executable</li>
+            <li><span class="step-number">5</span> SkillLoader — registers 9 sub-agent skills</li>
+            <li><span class="step-number">6</span> ConfirmationGate + Catalog.Attach (search_ens, search_hs)</li>
           </ul>
         </div>
       </div>
@@ -509,8 +401,34 @@
     </div>
   </div>
 
-  <!-- Skills sub-section -->
+  <!-- Policies sub-section -->
   <div class="layer" style="margin-top: -8px; padding-left: 20px;">
+    <div class="layer-label">Policies (filter + authorize before each LLM request)</div>
+    <div class="layer-content">
+
+      <div class="card card-opt card-half">
+        <div class="card-title">Policy.ToolFilter <span class="badge">%AI.Policy.Discovery</span></div>
+        <div class="card-extends">extends %AI.Policy.Discovery</div>
+        <div class="card-body">
+          %Resolve() runs before each LLM request. Strips framework auto-discovered waste (%AI.Tools.FileSystem, SQL, ShellTools, %AI.Agent.Skill) and deduplicates entries by class name. Keeps first occurrence per class.
+          <hr class="section-divider">
+          Saves ~2,100 tokens from framework waste + ~6,900 tokens from deduplication = ~9,000 tokens per request eliminated.
+        </div>
+      </div>
+
+      <div class="card card-fw card-half">
+        <div class="card-title">Policy.ConfirmationGate <span class="badge">%AI.Policy.Authorization</span></div>
+        <div class="card-extends">extends %AI.Policy.Authorization</div>
+        <div class="card-body">
+          Per-tool confirmation prompts. MUTATINGPREFIXES list (Create, Delete, Start, Stop, Send, etc.). Pre-approved tokens (set by ChatService when the user approves) bypass the gate.
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Skills sub-section -->
+  <div class="layer" style="margin-top: -4px; padding-left: 20px;">
     <div class="layer-label">Skills (sub-agent tools registered via SkillLoader)</div>
     <div class="layer-content">
 
@@ -566,54 +484,54 @@
 
   <div class="flow-arrow">
     <span>&#9660;</span>
-    <span class="arrow-label">agent.UseToolSet() per MCP</span>
+    <span class="arrow-label">Manager.Build step 4: agent.UseToolSet(Tool.*) — registers methods in executor</span>
     <span>&#9660;</span>
   </div>
 
-  <!-- ═══════════════════════════════════════════════════════════ -->
-  <!-- LAYER 3: MCP Servers -->
-  <!-- ═══════════════════════════════════════════════════════════ -->
+  <!-- ======================================================= -->
+  <!-- LAYER 3: MCP Servers (admin UI metadata only) -->
+  <!-- ======================================================= -->
   <div class="layer">
-    <div class="layer-label">MCP Servers (internal, configuration-driven)</div>
+    <div class="layer-label">MCP Servers (admin UI metadata — no longer registered at runtime)</div>
     <div class="layer-content">
 
-      <div class="card card-fw card-quarter">
-        <div class="card-title">MCP.Production <span class="badge">%AI.MCP</span></div>
+      <div class="card card-fw card-quarter" style="opacity: 0.7;">
+        <div class="card-title">MCP.Production <span class="badge">metadata</span></div>
         <div class="card-extends">extends MCP.Base &larr; %AI.MCP.Service</div>
         <div class="card-body">
           Production lifecycle + monitoring.
           <hr class="section-divider">
-          ToolSets: Production, Monitoring
+          Admin UI grouping. Tool classes registered directly via UseToolSet.
         </div>
       </div>
 
-      <div class="card card-fw card-quarter">
-        <div class="card-title">MCP.Transform <span class="badge">%AI.MCP</span></div>
+      <div class="card card-fw card-quarter" style="opacity: 0.7;">
+        <div class="card-title">MCP.Transform <span class="badge">metadata</span></div>
         <div class="card-extends">extends MCP.Base &larr; %AI.MCP.Service</div>
         <div class="card-body">
           DTL, BPL, routing rule authoring.
           <hr class="section-divider">
-          ToolSets: Transform
+          Admin UI grouping. Tool classes registered directly via UseToolSet.
         </div>
       </div>
 
-      <div class="card card-fw card-quarter">
-        <div class="card-title">MCP.Testing <span class="badge">%AI.MCP</span></div>
+      <div class="card card-fw card-quarter" style="opacity: 0.7;">
+        <div class="card-title">MCP.Testing <span class="badge">metadata</span></div>
         <div class="card-extends">extends MCP.Base &larr; %AI.MCP.Service</div>
         <div class="card-body">
           HL7 / FHIR message testing + validation.
           <hr class="section-divider">
-          ToolSets: Testing
+          Admin UI grouping. Tool classes registered directly via UseToolSet.
         </div>
       </div>
 
-      <div class="card card-fw card-quarter">
-        <div class="card-title">MCP.Catalog <span class="badge">%AI.MCP</span></div>
+      <div class="card card-fw card-quarter" style="opacity: 0.7;">
+        <div class="card-title">MCP.Catalog <span class="badge">metadata</span></div>
         <div class="card-extends">extends MCP.Base &larr; %AI.MCP.Service</div>
         <div class="card-body">
           Class introspection + reference lookups.
           <hr class="section-divider">
-          ToolSets: Catalog
+          Admin UI grouping. Tool classes registered directly via UseToolSet.
         </div>
       </div>
 
@@ -622,82 +540,21 @@
 
   <div class="flow-arrow">
     <span>&#9660;</span>
-    <span class="arrow-label">each MCP registers its ToolSets</span>
+    <span class="arrow-label">direct UseToolSet — no ToolSet wrapper indirection</span>
     <span>&#9660;</span>
   </div>
 
-  <!-- ═══════════════════════════════════════════════════════════ -->
-  <!-- LAYER 4: ToolSets -->
-  <!-- ═══════════════════════════════════════════════════════════ -->
+  <!-- ======================================================= -->
+  <!-- LAYER 4: Tools (the 42 LLM-callable methods) -->
+  <!-- ======================================================= -->
   <div class="layer">
-    <div class="layer-label">ToolSets (%AI.ToolSet wrappers — compile-time tool discovery)</div>
-    <div class="layer-content">
-
-      <div class="card card-fw card-fifth">
-        <div class="card-title">ToolSet.Production</div>
-        <div class="card-extends">extends %AI.ToolSet</div>
-        <div class="card-body">
-          <span class="badge">9 tools</span>
-          Includes Tool.Production
-        </div>
-      </div>
-
-      <div class="card card-fw card-fifth">
-        <div class="card-title">ToolSet.Transform</div>
-        <div class="card-extends">extends %AI.ToolSet</div>
-        <div class="card-body">
-          <span class="badge">14 tools</span>
-          Includes Tool.Transform
-        </div>
-      </div>
-
-      <div class="card card-fw card-fifth">
-        <div class="card-title">ToolSet.Testing</div>
-        <div class="card-extends">extends %AI.ToolSet</div>
-        <div class="card-body">
-          <span class="badge">6 tools</span>
-          Includes Tool.Testing
-        </div>
-      </div>
-
-      <div class="card card-fw card-fifth">
-        <div class="card-title">ToolSet.Catalog</div>
-        <div class="card-extends">extends %AI.ToolSet</div>
-        <div class="card-body">
-          <span class="badge">7 tools</span>
-          Includes Tool.Catalog
-        </div>
-      </div>
-
-      <div class="card card-fw card-fifth">
-        <div class="card-title">ToolSet.Monitoring</div>
-        <div class="card-extends">extends %AI.ToolSet</div>
-        <div class="card-body">
-          <span class="badge">5 tools</span>
-          Includes Tool.Monitoring
-        </div>
-      </div>
-
-    </div>
-  </div>
-
-  <div class="flow-arrow">
-    <span>&#9660;</span>
-    <span class="arrow-label">XData &lt;Include Class="..."/&gt; — %Discover() + %Invoke() generated at compile time</span>
-    <span>&#9660;</span>
-  </div>
-
-  <!-- ═══════════════════════════════════════════════════════════ -->
-  <!-- LAYER 5: Tools (the 41 LLM-callable methods) -->
-  <!-- ═══════════════════════════════════════════════════════════ -->
-  <div class="layer">
-    <div class="layer-label">Tools (%AI.Tool subclasses — 41 LLM-callable ClassMethods)</div>
+    <div class="layer-label">Tools (%AI.Tool subclasses — 42 LLM-callable ClassMethods, registered directly via UseToolSet)</div>
     <div class="layer-content">
 
       <!-- Tool.Production -->
       <div class="card card-fw card-third">
-        <div class="card-title">Tool.Production <span class="badge">9 tools</span></div>
-        <div class="card-extends">extends %AI.Tool</div>
+        <div class="card-title">Tool.Production <span class="badge">10 tools</span></div>
+        <div class="card-extends">extends %AI.Tool &mdash; 4,737 chars</div>
         <div class="tool-pills">
           <span class="tool-pill">ListProductions</span>
           <span class="tool-pill">GetProduction</span>
@@ -708,13 +565,14 @@
           <span class="tool-pill">UpdateBusinessHostSettings</span>
           <span class="tool-pill">StartProduction</span>
           <span class="tool-pill">StopProduction</span>
+          <span class="tool-pill new">PostBuildValidation</span>
         </div>
       </div>
 
       <!-- Tool.Transform -->
       <div class="card card-fw card-third">
         <div class="card-title">Tool.Transform <span class="badge">14 tools</span></div>
-        <div class="card-extends">extends %AI.Tool</div>
+        <div class="card-extends">extends %AI.Tool &mdash; 9,950 chars</div>
         <div class="tool-pills">
           <span class="tool-pill">ListDTLs</span>
           <span class="tool-pill">CreateDTL</span>
@@ -736,7 +594,7 @@
       <!-- Tool.Testing -->
       <div class="card card-fw card-third">
         <div class="card-title">Tool.Testing <span class="badge">6 tools</span></div>
-        <div class="card-extends">extends %AI.Tool</div>
+        <div class="card-extends">extends %AI.Tool &mdash; 5,209 chars</div>
         <div class="tool-pills">
           <span class="tool-pill">ValidateHL7Structure</span>
           <span class="tool-pill">ValidateHL7Semantics</span>
@@ -750,7 +608,7 @@
       <!-- Tool.Catalog -->
       <div class="card card-fw card-half">
         <div class="card-title">Tool.Catalog <span class="badge">7 tools</span></div>
-        <div class="card-extends">extends %AI.Tool</div>
+        <div class="card-extends">extends %AI.Tool &mdash; 4,287 chars</div>
         <div class="tool-pills">
           <span class="tool-pill">GetUserNamespace</span>
           <span class="tool-pill">ListUserAccessibleNamespaces</span>
@@ -765,7 +623,7 @@
       <!-- Tool.Monitoring -->
       <div class="card card-fw card-half">
         <div class="card-title">Tool.Monitoring <span class="badge">5 tools</span></div>
-        <div class="card-extends">extends %AI.Tool</div>
+        <div class="card-extends">extends %AI.Tool &mdash; 3,441 chars</div>
         <div class="tool-pills">
           <span class="tool-pill">QueryEventLog</span>
           <span class="tool-pill">TopErrors</span>
@@ -784,9 +642,55 @@
     <span>&#9660;</span>
   </div>
 
-  <!-- ═══════════════════════════════════════════════════════════ -->
+  <!-- ======================================================= -->
+  <!-- LAYER 5: Token Optimization Details -->
+  <!-- ======================================================= -->
+  <div class="layer">
+    <div class="layer-label">Token Optimization Pipeline (applied per LLM request)</div>
+    <div class="layer-content">
+
+      <div class="card card-opt card-third">
+        <div class="card-title">ToolFilter <span class="badge">catalog</span></div>
+        <div class="card-body">
+          <strong>Before:</strong> 29 tools, ~62K chars (~15.6K tokens)<br>
+          <strong>After:</strong> 14 classes / 42 methods, ~28K chars (~7K tokens)
+          <hr class="section-divider">
+          Strips: %AI.Tools.FileSystem, SQL, ShellTools, %AI.Agent.Skill, Skill.Base. Deduplicates %Init() + UseToolSet entries.
+        </div>
+      </div>
+
+      <div class="card card-opt card-third">
+        <div class="card-title">Schema Dedup <span class="badge">GetHL7SchemaMap</span></div>
+        <div class="card-body">
+          <strong>Before:</strong> ORU_R01 = 122K chars, ADT_A01 = 91K chars<br>
+          <strong>After:</strong> ORU_R01 = 28K chars, ADT_A01 = 41K chars
+          <hr class="section-divider">
+          First occurrence of a segment type: full field list. Later: fieldsRef pointing back.
+        </div>
+      </div>
+
+      <div class="card card-opt card-third">
+        <div class="card-title">Catalog TopK <span class="badge">RAG</span></div>
+        <div class="card-body">
+          <strong>Before:</strong> TopK=8, ~175 tokens per result<br>
+          <strong>After:</strong> TopK=4, ~700 tokens per search
+          <hr class="section-divider">
+          Each catalog search now returns 4 results instead of 8. With 3-4 searches per plan, saves ~2,800 tokens per plan turn.
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="flow-arrow">
+    <span>&#9660;</span>
+    <span class="arrow-label">vector search + persistence</span>
+    <span>&#9660;</span>
+  </div>
+
+  <!-- ======================================================= -->
   <!-- LAYER 6: Catalogs (RAG / Vector Search) -->
-  <!-- ═══════════════════════════════════════════════════════════ -->
+  <!-- ======================================================= -->
   <div class="layer">
     <div class="layer-label">RAG Catalogs (IRIS Vector Search — runtime-registered KnowledgeBases)</div>
     <div class="layer-content">
@@ -798,8 +702,8 @@
           Walks %Dictionary for Ens.Host / HS.* classes. Embeds descriptions with FastEmbed (AllMiniLML6V2, 384-dim). Persists to SQL vector tables.
           <hr class="section-divider">
           <ul>
-            <li>search_ens — Ens.* hosts, adapters, messages</li>
-            <li>search_hs — HS.* transformations, FHIR mappers</li>
+            <li>search_ens — Ens.* hosts, adapters, messages (TopK=4)</li>
+            <li>search_hs — HS.* transformations, FHIR mappers (TopK=4)</li>
           </ul>
           Seeds from InterSystems_IRIS_Health_Complete_Class_Catalog.xlsx
         </div>
@@ -809,9 +713,9 @@
         <div class="card-title">Catalog.Attach <span class="badge">Runtime Wiring</span></div>
         <div class="card-extends">extends %RegisteredObject</div>
         <div class="card-body">
-          Called by Manager.Build() at request time. Registers search_ens and search_hs as %AI.RAG KnowledgeBase tools on the agent's ToolManager.
+          Called by Manager.Build() step 6 at request time. Registers search_ens and search_hs as %AI.RAG.KnowledgeBase tools on the agent's ToolManager. TopK=4 per KB.
           <hr class="section-divider">
-          Uses %AI.ToolMgr.ExecuteTool() to query KBs (not SQL EMBEDDING — FastEmbed path).
+          Silently skips if catalog tables have no rows (admin hasn't built yet). Best-effort attach — never breaks the chat.
         </div>
       </div>
 
@@ -824,9 +728,9 @@
     <span>&#9660;</span>
   </div>
 
-  <!-- ═══════════════════════════════════════════════════════════ -->
+  <!-- ======================================================= -->
   <!-- LAYER 7: Data / Persistence -->
-  <!-- ═══════════════════════════════════════════════════════════ -->
+  <!-- ======================================================= -->
   <div class="layer">
     <div class="layer-label">Persistence Layer</div>
     <div class="layer-content">
@@ -868,9 +772,9 @@
     </div>
   </div>
 
-  <!-- ═══════════════════════════════════════════════════════════ -->
+  <!-- ======================================================= -->
   <!-- LAYER 8: Reference / Seed Data -->
-  <!-- ═══════════════════════════════════════════════════════════ -->
+  <!-- ======================================================= -->
   <div class="layer">
     <div class="layer-label">Reference Data (seeded at install via Reference.Loader)</div>
     <div class="layer-content">
@@ -905,9 +809,9 @@
     </div>
   </div>
 
-  <!-- ═══════════════════════════════════════════════════════════ -->
+  <!-- ======================================================= -->
   <!-- LAYER 9: Install Hooks -->
-  <!-- ═══════════════════════════════════════════════════════════ -->
+  <!-- ======================================================= -->
   <div class="layer">
     <div class="layer-label">Install Hooks (IPM module.xml Activate / UnConfigure phase)</div>
     <div class="layer-content">
@@ -931,33 +835,15 @@
     </div>
   </div>
 
-  <!-- ═══════════════════════════════════════════════════════════ -->
-  <!-- LAYER 10: Policy -->
-  <!-- ═══════════════════════════════════════════════════════════ -->
-  <div class="layer">
-    <div class="layer-label">Policy</div>
-    <div class="layer-content">
-
-      <div class="card card-fw card-wide" style="max-width: 500px;">
-        <div class="card-title">Policy.ConfirmationGate <span class="badge">%AI.Policy</span></div>
-        <div class="card-extends">extends %AI.Policy.Authorization</div>
-        <div class="card-body">
-          Infrastructure for per-tool confirmation prompts. MUTATINGPREFIXES list (Create, Delete, Start, Stop, Send, etc.). Currently passes all through — agent uses conversational plan-then-approve pattern instead of per-call gates.
-        </div>
-      </div>
-
-    </div>
-  </div>
-
 </div>
 
-<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- ======================================================= -->
 <!-- FRAMEWORK CLASS MAP -->
-<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- ======================================================= -->
 <div style="margin-top: 48px; max-width: 1400px; margin-left: auto; margin-right: auto;">
-  <h2 style="font-size: 20px; font-weight: 600; color: #fff; margin-bottom: 16px;">%AI Framework Class Map</h2>
+  <h2>%AI Framework Class Map</h2>
   <p style="font-size: 13px; color: var(--text-dim); margin-bottom: 20px;">
-    How our 54 classes extend or wrap the InterSystems %AI Framework (IRIS 2026.2).
+    How our 58 classes extend or wrap the InterSystems %AI Framework (IRIS 2026.2).
     Bold = framework base class. Regular = our extension.
   </p>
 
@@ -1004,23 +890,10 @@
     </div>
 
     <div class="card card-fw card-third">
-      <div class="card-title" style="font-size: 13px;">%AI.ToolSet</div>
+      <div class="card-title" style="font-size: 13px;">%AI.Tool (direct UseToolSet)</div>
       <div class="card-body" style="margin-top: 6px;">
         <ul>
-          <li>ToolSet.Production</li>
-          <li>ToolSet.Transform</li>
-          <li>ToolSet.Testing</li>
-          <li>ToolSet.Catalog</li>
-          <li>ToolSet.Monitoring</li>
-        </ul>
-      </div>
-    </div>
-
-    <div class="card card-fw card-third">
-      <div class="card-title" style="font-size: 13px;">%AI.Tool</div>
-      <div class="card-body" style="margin-top: 6px;">
-        <ul>
-          <li>Tool.Production (9 methods)</li>
+          <li>Tool.Production (10 methods)</li>
           <li>Tool.Transform (14 methods)</li>
           <li>Tool.Testing (6 methods)</li>
           <li>Tool.Catalog (7 methods)</li>
@@ -1030,10 +903,27 @@
     </div>
 
     <div class="card card-fw card-third">
-      <div class="card-title" style="font-size: 13px;">%AI.Policy.Authorization</div>
+      <div class="card-title" style="font-size: 13px;">%AI.ToolSet (source only, not deployed)</div>
+      <div class="card-body" style="margin-top: 6px; opacity: 0.6;">
+        <ul>
+          <li>ToolSet.Production</li>
+          <li>ToolSet.Transform</li>
+          <li>ToolSet.Testing</li>
+          <li>ToolSet.Catalog</li>
+          <li>ToolSet.Monitoring</li>
+        </ul>
+        <div style="margin-top: 4px; font-style: italic; font-size: 11px;">
+          Retained in source for reference. Not compiled at runtime — direct UseToolSet on Tool classes instead.
+        </div>
+      </div>
+    </div>
+
+    <div class="card card-fw card-third">
+      <div class="card-title" style="font-size: 13px;">%AI.Policy.*</div>
       <div class="card-body" style="margin-top: 6px;">
         <ul>
-          <li>Policy.ConfirmationGate</li>
+          <li>Policy.ToolFilter (%AI.Policy.Discovery)</li>
+          <li>Policy.ConfirmationGate (%AI.Policy.Authorization)</li>
         </ul>
       </div>
     </div>
@@ -1102,12 +992,147 @@
 
 </div>
 
+<!-- ======================================================= -->
+<!-- Manager.Build Sequence Diagram -->
+<!-- ======================================================= -->
+<div style="margin-top: 48px; max-width: 1400px; margin-left: auto; margin-right: auto;">
+  <h2>Manager.Build() — Request-Time Agent Assembly</h2>
+  <p style="font-size: 13px; color: var(--text-dim); margin-bottom: 20px;">
+    Every chat request builds a fresh agent instance. This 6-step pipeline wires all components.
+  </p>
+
+  <div style="display: flex; flex-direction: column; gap: 8px;">
+
+    <div class="card card-ext card-wide" style="display: flex; align-items: flex-start; gap: 16px; padding: 12px 16px;">
+      <span class="step-number" style="margin-top: 2px; flex-shrink: 0;">1</span>
+      <div>
+        <div class="card-title" style="font-size: 13px;">%New(provider) + %Init()</div>
+        <div class="card-body">
+          Instantiates the HealthInterop agent class with the configured Bedrock provider.
+          %Init() auto-discovers every non-abstract %AI.Tool subclass in the namespace and adds them to the FindTools catalog.
+          This includes our 5 Tool classes, but ALSO framework waste (%AI.Tools.FileSystem, SQL, ShellTools) and the abstract Skill.Base.
+        </div>
+      </div>
+    </div>
+
+    <div class="card card-opt card-wide" style="display: flex; align-items: flex-start; gap: 16px; padding: 12px 16px;">
+      <span class="step-number" style="margin-top: 2px; flex-shrink: 0; background: rgba(63,185,80,0.3); color: var(--green);">2</span>
+      <div>
+        <div class="card-title" style="font-size: 13px;">SetDiscoveryPolicy(ToolFilter) <span class="badge" style="background: rgba(63,185,80,0.3); color: #7be0a4;">NEW</span></div>
+        <div class="card-body">
+          Registers the ToolFilter DiscoveryPolicy on the ToolManager. %Resolve() runs before EACH LLM request:
+          strips 5 framework waste entries, deduplicates by class name.
+          The LLM sees 14 clean entries instead of 19+ duplicated ones. Saves ~9,000 tokens per request.
+        </div>
+      </div>
+    </div>
+
+    <div class="card card-ext card-wide" style="display: flex; align-items: flex-start; gap: 16px; padding: 12px 16px;">
+      <span class="step-number" style="margin-top: 2px; flex-shrink: 0;">3</span>
+      <div>
+        <div class="card-title" style="font-size: 13px;">Overlay: system prompt, temperature, MaxIterations</div>
+        <div class="card-body">
+          Reads user customizations from Data.AgentOverride via Editor.Overlay. Applies system prompt override,
+          temperature override, MaxIterations override. Falls through to compiled class defaults if no override exists.
+        </div>
+      </div>
+    </div>
+
+    <div class="card card-opt card-wide" style="display: flex; align-items: flex-start; gap: 16px; padding: 12px 16px;">
+      <span class="step-number" style="margin-top: 2px; flex-shrink: 0; background: rgba(63,185,80,0.3); color: var(--green);">4</span>
+      <div>
+        <div class="card-title" style="font-size: 13px;">UseToolSet(Tool.*) — direct registration <span class="badge" style="background: rgba(63,185,80,0.3); color: #7be0a4;">CHANGED</span></div>
+        <div class="card-body">
+          Calls agent.UseToolSet() directly on each Tool class (Production, Transform, Testing, Catalog, Monitoring).
+          This makes individual ClassMethods callable via ExecuteTool.
+          <strong>Previously:</strong> MCP.RegisterToAgent called UseToolSet on ToolSet wrapper classes that &lt;Include&gt;d the same Tool methods — doubling every definition.
+          <strong>Now:</strong> one UseToolSet per Tool class, no wrappers needed.
+        </div>
+      </div>
+    </div>
+
+    <div class="card card-ext card-wide" style="display: flex; align-items: flex-start; gap: 16px; padding: 12px 16px;">
+      <span class="step-number" style="margin-top: 2px; flex-shrink: 0;">5</span>
+      <div>
+        <div class="card-title" style="font-size: 13px;">SkillLoader — register 9 sub-agent skills</div>
+        <div class="card-body">
+          Reads SKILLS parameter (overlay-aware). For each skill class, constructs an %AI.Agent.Skill via the Skill.Base
+          workaround (fixes $ZF marshal bug) and adds it to the ToolManager. Skills are invoked as sub-agent tools by the LLM.
+        </div>
+      </div>
+    </div>
+
+    <div class="card card-ext card-wide" style="display: flex; align-items: flex-start; gap: 16px; padding: 12px 16px;">
+      <span class="step-number" style="margin-top: 2px; flex-shrink: 0;">6</span>
+      <div>
+        <div class="card-title" style="font-size: 13px;">ConfirmationGate + Catalog.Attach</div>
+        <div class="card-body">
+          Sets the ConfirmationGate authorization policy (mutating tools require approval).
+          Then attaches search_ens and search_hs KnowledgeBase tools if their vector tables have rows.
+          These RAG tools are added OUTSIDE the ToolFilter because they're registered after %Init().
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ======================================================= -->
+<!-- Token Budget Summary -->
+<!-- ======================================================= -->
+<div style="margin-top: 48px; max-width: 1400px; margin-left: auto; margin-right: auto;">
+  <h2>Per-Request Token Budget</h2>
+  <p style="font-size: 13px; color: var(--text-dim); margin-bottom: 20px;">
+    Estimated token consumption for a complex HL7 production build request (plan + build + test).
+  </p>
+
+  <div style="display: flex; gap: 16px; flex-wrap: wrap;">
+
+    <div class="card card-opt card-quarter">
+      <div class="card-title" style="font-size: 13px;">System Prompt</div>
+      <div class="card-body">
+        <span style="font-size: 20px; font-weight: 700; color: var(--green);">~1.5K</span> tokens
+        <hr class="section-divider">
+        Was ~7.2K. Trimmed 84% by removing redundant examples and verbose rule descriptions.
+      </div>
+    </div>
+
+    <div class="card card-opt card-quarter">
+      <div class="card-title" style="font-size: 13px;">Tool Definitions</div>
+      <div class="card-body">
+        <span style="font-size: 20px; font-weight: 700; color: var(--green);">~7K</span> tokens
+        <hr class="section-divider">
+        Was ~15.6K. ToolFilter dedup + framework waste removal = 55% reduction.
+      </div>
+    </div>
+
+    <div class="card card-opt card-quarter">
+      <div class="card-title" style="font-size: 13px;">Schema Maps (per map)</div>
+      <div class="card-body">
+        <span style="font-size: 20px; font-weight: 700; color: var(--green);">~7K</span> tokens
+        <hr class="section-divider">
+        Was ~30K. Segment type deduplication: first gets fields, later get fieldsRef.
+      </div>
+    </div>
+
+    <div class="card card-opt card-quarter">
+      <div class="card-title" style="font-size: 13px;">Catalog Results (per search)</div>
+      <div class="card-body">
+        <span style="font-size: 20px; font-weight: 700; color: var(--green);">~700</span> tokens
+        <hr class="section-divider">
+        Was ~1.4K. TopK halved from 8 to 4, keeping most relevant classes.
+      </div>
+    </div>
+
+  </div>
+</div>
+
 <!-- Footer -->
 <div style="margin-top: 48px; padding: 20px 0; border-top: 1px solid var(--line); max-width: 1400px; margin-left: auto; margin-right: auto;">
   <p style="font-size: 12px; color: var(--text-dim);">
-    Agentic Interop for InterSystems IRIS for Health — 54 classes, 41 tools, 9 skills, 4 MCP servers.
+    Agentic Interop for InterSystems IRIS for Health — 58 classes, 42 tools, 9 skills, 4 MCP servers, 2 policies, 2 RAG catalogs.
     Built on the %AI Framework (IRIS 2026.2). IPM package: agentic-interop.
-    <br>Generated 2026-05-08.
+    <br>Updated 2026-05-08. Token optimization: tool definitions 15.6K &rarr; 7K, schema maps 30K &rarr; 7K, system prompt 7.2K &rarr; 1.5K.
   </p>
 </div>
 
