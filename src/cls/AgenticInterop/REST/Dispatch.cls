@@ -86,6 +86,8 @@ XData UrlMap [ XMLNamespace = "http://www.intersystems.com/urlmap" ]
          run ~30s on a stock IRIS for Health install. -->
     <Route Url="/catalog/status"                Method="GET"    Call="CatalogStatus" />
     <Route Url="/catalog/rebuild"               Method="POST"   Call="CatalogRebuild" />
+    <Route Url="/catalog/browse"                Method="GET"    Call="CatalogBrowse" />
+    <Route Url="/catalog/search"                Method="POST"   Call="CatalogSearch" />
 
     <!-- Phase 7 audit trail viewer: list recent audit rows with
          filters, plus distinct kinds for dropdowns. -->
@@ -521,6 +523,16 @@ ClassMethod CatalogStatus() As %Status
 ClassMethod CatalogRebuild() As %Status
 {
     Quit ##class(AgenticInterop.Editor.CatalogService).Rebuild(%response, %request.Content)
+}
+
+ClassMethod CatalogBrowse() As %Status
+{
+    Quit ##class(AgenticInterop.Editor.CatalogService).Browse(%response)
+}
+
+ClassMethod CatalogSearch() As %Status
+{
+    Quit ##class(AgenticInterop.Editor.CatalogService).Search(%response)
 }
 
 ClassMethod AuditList() As %Status

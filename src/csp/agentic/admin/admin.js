@@ -552,10 +552,9 @@ function renderConnectionDetail() {
 }
 
 // Phase 5 catalog admin. Renders one card per catalog (search_ens,
-// search_hs) with row count, last-built note, and a Rebuild button
-// that POSTs /catalog/rebuild scoped to that catalog. Long-running
-// (~30s for both catalogs); the button shows BUILDING while it
-// waits and re-fetches status on completion.
+// search_hs) with row count, kind breakdown, test search panel,
+// browse panel, and a Rebuild button. Long-running (~30s for both
+// catalogs); the button shows BUILDING while it waits.
 function renderCatalogList() {
     const list = $('list');
     const status = state.list[0] || {};
@@ -563,7 +562,9 @@ function renderCatalogList() {
     const sourceNs = renderCatalogControls();
     list.appendChild(sourceNs);
     list.appendChild(renderCatalogCard('search_ens', 'Ens.* business hosts and adapters in the active interop namespace.', status.ens || {}));
-    list.appendChild(renderCatalogCard('search_hs',  'HealthShare HS.* transformation classes — DTLs, FHIR↔SDA3 mappers, HL7 helpers.', status.hs  || {}));
+    list.appendChild(renderCatalogCard('search_hs',  'HealthShare HS.* transformation classes — DTLs, FHIR/SDA3 mappers, HL7 helpers.', status.hs  || {}));
+    list.appendChild(renderCatalogSearchPanel());
+    list.appendChild(renderCatalogBrowsePanel());
 }
 
 function renderCatalogControls() {
@@ -594,10 +595,20 @@ function renderCatalogCard(name, description, st) {
     const rowsLine = st.exists
         ? `<span class="badge user">${st.rows || 0} rows indexed</span>`
         : `<span class="badge abstract">not built</span>`;
+    // Kind breakdown badges
+    let kindHtml = '';
+    if (st.kinds && st.kinds.length) {
+        kindHtml = '<div class="row2" style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px;">';
+        for (const k of st.kinds) {
+            kindHtml += `<span class="badge" style="font-size:10px;padding:1px 6px;">${escapeHtml(k.kind || '?')}: ${k.count}</span>`;
+        }
+        kindHtml += '</div>';
+    }
     card.innerHTML = `
         <div class="row1">${escapeHtml(name)} ${rowsLine}</div>
         <div class="row2 desc">${escapeHtml(description)}</div>
         <div class="row2"><code>${escapeHtml(st.table || '')}</code></div>
+        ${kindHtml}
         <div class="row2" style="margin-top:6px;">
             <button class="primary" data-rebuild="${name === 'search_ens' ? 'ens' : 'hs'}">Rebuild this catalog</button>
             <span class="rebuild-status" style="margin-left:10px;color:var(--muted);font-size:11px;"></span>
@@ -610,26 +621,203 @@ function renderCatalogCard(name, description, st) {
     return card;
 }
 
+// Test Search panel — type a query, pick a catalog, see the ranked
+// results with similarity scores. This is the most direct way to
+// verify "does the agent find the right class for this question?"
+function renderCatalogSearchPanel() {
+    const panel = document.createElement('div');
+    panel.className = 'list-item';
+    panel.style.cursor = 'default';
+    panel.innerHTML = `
+        <div class="row1">Test search</div>
+        <div class="row2 desc">Type a query to see what the agent's vector search returns. These are the exact results the agent sees at chat time.</div>
+        <div class="field-row" style="margin-top:8px;">
+            <div class="field" style="margin:0;flex:1;">
+                <label>Query</label>
+                <input id="f-search-query" type="text" placeholder="e.g. convert HL7 to FHIR" style="width:100%;">
+            </div>
+            <div class="field" style="margin:0;">
+                <label>Catalog</label>
+                <select id="f-search-catalog" style="min-width:100px;">
+                    <option value="ens">search_ens</option>
+                    <option value="hs">search_hs</option>
+                </select>
+            </div>
+            <div class="field" style="margin:0;">
+                <label>Top K</label>
+                <input id="f-search-k" type="number" value="8" min="1" max="20" style="width:60px;">
+            </div>
+            <div class="field" style="margin:0;align-self:flex-end;">
+                <button class="primary" id="btn-test-search">Search</button>
+            </div>
+        </div>
+        <div id="search-results" style="margin-top:8px;"></div>
+    `;
+    panel.querySelector('#btn-test-search').addEventListener('click', runCatalogSearch);
+    // Also run on Enter in the query input
+    panel.querySelector('#f-search-query').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') runCatalogSearch();
+    });
+    return panel;
+}
+
+async function runCatalogSearch() {
+    const query = ($('f-search-query')?.value || '').trim();
+    const catalog = $('f-search-catalog')?.value || 'ens';
+    const k = Number($('f-search-k')?.value) || 8;
+    const resultsEl = $('search-results');
+    if (!query) { resultsEl.innerHTML = '<div style="color:var(--muted);font-size:12px;">Enter a query above.</div>'; return; }
+    resultsEl.innerHTML = '<div style="color:var(--muted);font-size:12px;">Searching...</div>';
+    try {
+        const r = await post('/catalog/search', { catalog, query, k });
+        if (!r.ok) { resultsEl.innerHTML = `<div style="color:var(--danger);">Error: ${escapeHtml(r.error)}</div>`; return; }
+        if (!r.results || !r.results.length) { resultsEl.innerHTML = '<div style="color:var(--muted);font-size:12px;">No results.</div>'; return; }
+        let html = '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
+        html += '<thead><tr style="text-align:left;border-bottom:1px solid var(--border);">';
+        html += '<th style="padding:4px 8px;width:30px;">#</th>';
+        html += '<th style="padding:4px 8px;">Class</th>';
+        html += '<th style="padding:4px 8px;width:60px;">Kind</th>';
+        html += '<th style="padding:4px 8px;width:60px;">Score</th>';
+        html += '</tr></thead><tbody>';
+        for (const res of r.results) {
+            const meta = res.metadata || {};
+            const cls = meta.className || '(unknown)';
+            const kind = meta.kind || '';
+            const score = typeof res.score === 'number' ? res.score.toFixed(4) : res.score || '';
+            // Truncate text for the expandable preview
+            const textPreview = (res.text || '').substring(0, 200);
+            html += `<tr style="border-bottom:1px solid var(--border);cursor:pointer;" class="search-result-row">`;
+            html += `<td style="padding:4px 8px;vertical-align:top;">${res.rank}</td>`;
+            html += `<td style="padding:4px 8px;"><strong>${escapeHtml(cls)}</strong><div style="color:var(--muted);font-size:11px;margin-top:2px;white-space:pre-wrap;">${escapeHtml(textPreview)}${(res.text||'').length > 200 ? '...' : ''}</div></td>`;
+            html += `<td style="padding:4px 8px;vertical-align:top;"><span class="badge" style="font-size:10px;">${escapeHtml(kind)}</span></td>`;
+            html += `<td style="padding:4px 8px;vertical-align:top;font-family:monospace;">${escapeHtml(score)}</td>`;
+            html += '</tr>';
+        }
+        html += '</tbody></table>';
+        resultsEl.innerHTML = html;
+    } catch (e) {
+        resultsEl.innerHTML = `<div style="color:var(--danger);">Failed: ${escapeHtml(e.message)}</div>`;
+    }
+}
+
+// Browse panel — paginated table of all entries in a catalog,
+// filterable by text substring and kind.
+function renderCatalogBrowsePanel() {
+    const panel = document.createElement('div');
+    panel.className = 'list-item';
+    panel.style.cursor = 'default';
+    panel.innerHTML = `
+        <div class="row1">Browse catalog entries</div>
+        <div class="row2 desc">View all indexed entries. Filter by class name or kind to verify coverage.</div>
+        <div class="field-row" style="margin-top:8px;">
+            <div class="field" style="margin:0;">
+                <label>Catalog</label>
+                <select id="f-browse-catalog" style="min-width:100px;">
+                    <option value="ens">search_ens</option>
+                    <option value="hs">search_hs</option>
+                </select>
+            </div>
+            <div class="field" style="margin:0;flex:1;">
+                <label>Filter (class name substring)</label>
+                <input id="f-browse-filter" type="text" placeholder="e.g. Gateway, FHIR, Patient" style="width:100%;">
+            </div>
+            <div class="field" style="margin:0;">
+                <label>Kind</label>
+                <input id="f-browse-kind" type="text" placeholder="e.g. Gateway, FHIR-DTL" style="width:120px;">
+            </div>
+            <div class="field" style="margin:0;align-self:flex-end;">
+                <button class="primary" id="btn-browse">Browse</button>
+            </div>
+        </div>
+        <div id="browse-results" style="margin-top:8px;"></div>
+        <div id="browse-pager" style="margin-top:6px;display:flex;gap:8px;align-items:center;"></div>
+    `;
+    panel.querySelector('#btn-browse').addEventListener('click', () => loadCatalogBrowse(1));
+    panel.querySelector('#f-browse-filter').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') loadCatalogBrowse(1);
+    });
+    panel.querySelector('#f-browse-kind').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') loadCatalogBrowse(1);
+    });
+    return panel;
+}
+
+async function loadCatalogBrowse(page) {
+    const catalog = $('f-browse-catalog')?.value || 'ens';
+    const filter = ($('f-browse-filter')?.value || '').trim();
+    const kind = ($('f-browse-kind')?.value || '').trim();
+    const resultsEl = $('browse-results');
+    const pagerEl = $('browse-pager');
+    resultsEl.innerHTML = '<div style="color:var(--muted);font-size:12px;">Loading...</div>';
+    pagerEl.innerHTML = '';
+    try {
+        const params = new URLSearchParams({ catalog, page, pageSize: 30 });
+        if (filter) params.set('filter', filter);
+        if (kind) params.set('kind', kind);
+        const r = await get('/catalog/browse?' + params.toString());
+        if (!r.ok) { resultsEl.innerHTML = `<div style="color:var(--danger);">Error: ${escapeHtml(r.error)}</div>`; return; }
+        if (!r.entries || !r.entries.length) {
+            resultsEl.innerHTML = '<div style="color:var(--muted);font-size:12px;">No entries match the filter.</div>';
+            return;
+        }
+        let html = `<div style="font-size:11px;color:var(--muted);margin-bottom:4px;">${r.total} total entries, page ${r.page} of ${r.totalPages}</div>`;
+        html += '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
+        html += '<thead><tr style="text-align:left;border-bottom:1px solid var(--border);">';
+        html += '<th style="padding:4px 8px;">Class</th>';
+        html += '<th style="padding:4px 8px;width:80px;">Kind</th>';
+        html += '<th style="padding:4px 8px;">Embedded text</th>';
+        html += '</tr></thead><tbody>';
+        for (const entry of r.entries) {
+            const meta = entry.metadata || {};
+            const cls = meta.className || entry.source || '(unknown)';
+            const entryKind = meta.kind || '';
+            const text = (entry.text || '').substring(0, 250);
+            html += '<tr style="border-bottom:1px solid var(--border);">';
+            html += `<td style="padding:4px 8px;vertical-align:top;white-space:nowrap;"><strong>${escapeHtml(cls)}</strong></td>`;
+            html += `<td style="padding:4px 8px;vertical-align:top;"><span class="badge" style="font-size:10px;">${escapeHtml(entryKind)}</span></td>`;
+            html += `<td style="padding:4px 8px;font-size:11px;color:var(--muted);white-space:pre-wrap;">${escapeHtml(text)}${(entry.text||'').length > 250 ? '...' : ''}</td>`;
+            html += '</tr>';
+        }
+        html += '</tbody></table>';
+        resultsEl.innerHTML = html;
+        // Pager buttons
+        let pagerHtml = '';
+        if (r.page > 1) {
+            pagerHtml += `<button class="secondary" data-page="${r.page - 1}">Previous</button>`;
+        }
+        pagerHtml += `<span style="font-size:12px;color:var(--muted);">Page ${r.page} / ${r.totalPages}</span>`;
+        if (r.page < r.totalPages) {
+            pagerHtml += `<button class="secondary" data-page="${r.page + 1}">Next</button>`;
+        }
+        pagerEl.innerHTML = pagerHtml;
+        pagerEl.querySelectorAll('button[data-page]').forEach(btn => {
+            btn.addEventListener('click', () => loadCatalogBrowse(Number(btn.dataset.page)));
+        });
+    } catch (e) {
+        resultsEl.innerHTML = `<div style="color:var(--danger);">Failed: ${escapeHtml(e.message)}</div>`;
+    }
+}
+
 async function rebuildCatalog(scope, btn, statusEl) {
     const sourceNamespace = ($('f-catalog-ns')?.value || 'USER').trim();
     const cap = Number($('f-catalog-cap')?.value) || 2000;
     btn.disabled = true;
-    statusEl.textContent = 'BUILDING — embedding can run 10-60 seconds…';
+    statusEl.textContent = 'BUILDING — embedding can run 10-60 seconds...';
     try {
         const r = await post('/catalog/rebuild', { sourceNamespace, scope, cap });
         const block = scope === 'ens' ? r.ens : r.hs;
         if (block) {
-            statusEl.textContent = `built — scanned ${block.scanned}, indexed ${block.indexed} in ${block.elapsedMs}ms`;
+            statusEl.textContent = `built -- scanned ${block.scanned}, indexed ${block.indexed} in ${block.elapsedMs}ms`;
         } else if (r.ok) {
             statusEl.textContent = 'built';
         } else {
-            statusEl.textContent = 'FAILED — ' + (r.error || 'unknown error');
+            statusEl.textContent = 'FAILED -- ' + (r.error || 'unknown error');
         }
         toast('Catalog rebuilt.', 'success');
         // Refresh the status display
         if (state.tab === 'catalogs') loadList();
     } catch (e) {
-        statusEl.textContent = 'FAILED — ' + e.message;
+        statusEl.textContent = 'FAILED -- ' + e.message;
         showError(e);
     } finally {
         btn.disabled = false;
