@@ -28,7 +28,12 @@
 <!-- Static UI bundle (HTML/CSS/JS for /agentic/ and /agentic/admin/).
      Authenticated only — no anonymous access. The user must already
      have an IRIS session before any agentic_interop asset is served
-     (restriction #3: no UI visible to unauthenticated users). -->
+     (restriction #3: no UI visible to unauthenticated users).
+     UseCookies=0 + CSRFToken=0 + SessionScope=0: fully stateless.
+     Sessions cause 401 on the second chat turn — the CSP gateway
+     creates a session on the first POST (SSE stream), then the browser
+     sends the stale session cookie on the second POST, and CSRF token
+     validation fails before our Dispatch code even runs. -->
 <CSPApplication
     Url="/agentic"
     Path="${cspdir}agentic"
@@ -38,23 +43,25 @@
     AuthenticationMethods="96"
     PasswordAuthEnabled="1"
     UnauthenticatedEnabled="1"
-    UseCookies="2"
+    UseCookies="0"
     AutoCompile="0"
     DefaultTimeout="900"
     CookiePath="/"
     GroupById="%ISCMgtPortal"
-    UseSessionCookie="0"
-    Description="agentic_interop static UI bundle (chat + admin) — authenticated, no session cookies"
+    Description="agentic_interop static UI bundle (chat + admin) — authenticated, stateless (no sessions/cookies/CSRF)"
 />
 
 <!-- REST API. JWTAuthEnabled=1 + GroupById=%ISCMgtPortal so the IRIS
      JWT the Interop SPA already holds authenticates here too — no
-     second login. AutheEnabled=32 (allow unauth at gateway) lets the
-     dispatch class enforce auth itself; OnPreDispatch rejects
-     $username = "" or "UnknownUser" with 401, and writes an audit row
-     for both successes and rejections. UseCookies=2 disables the
-     per-app session cookie so we don't fight the shared-session
-     model. -->
+     second login. AutheEnabled=32 (Password auth) lets the dispatch
+     class enforce auth via OnPreDispatch ($username check) and write
+     an audit row for both successes and rejections.
+     UseCookies=0 + CSRFToken disabled + SessionScope=0: fully
+     stateless REST. Every request authenticates via the Authorization
+     header (Basic or JWT). No session cookies, no CSRF tokens.
+     Previous UseCookies=2 caused 401 on the second chat turn because
+     the CSP gateway created a session on the first SSE POST, then
+     CSRF validation failed on the next POST before our code ran. -->
 <CSPApplication
     Url="/api/agentic"
     DispatchClass="AgenticInterop.REST.Dispatch"
@@ -62,12 +69,11 @@
     PasswordAuthEnabled="1"
     UnauthenticatedEnabled="1"
     JWTAuthEnabled="1"
-    UseSessionCookie="0"
-    UseCookies="2"
+    UseCookies="0"
     AutoCompile="0"
     CookiePath="/"
     GroupById="%ISCMgtPortal"
-    Description="agentic_interop REST API — authenticated via shared IRIS JWT + audited"
+    Description="agentic_interop REST API — stateless (no sessions/cookies/CSRF), auth via Authorization header + audited"
 />
 
 <!-- Patch the shipped IRIS Interop Editor to load /agentic/inject.js

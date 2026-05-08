@@ -1,7 +1,12 @@
 /// REST dispatcher for /api/agentic. Routes /health, /namespace, and the
-/// /editor/* family to the matching Editor service classes. UseSession=0
-/// (set on the CSP application) so iframe fetches with credentials don't
-/// deadlock against curl-style probes.
+/// /editor/* family to the matching Editor service classes.
+///
+/// UseSession=0 (class param) + UseCookies=0 + CSRFToken=0 + SessionScope=0
+/// (CSP application). Every request authenticates via the Authorization
+/// header — no session cookies, no CSRF tokens. Previous UseCookies=2
+/// caused 401 on the second chat turn: the CSP gateway created a session
+/// on the first SSE POST, then the browser sent the stale session cookie
+/// on the second POST, and CSRF validation failed before OnPreDispatch ran.
 ///
 /// Cross-cutting headers:
 ///   X-IRIS-Namespace — optional. If present and non-empty, Dispatch
