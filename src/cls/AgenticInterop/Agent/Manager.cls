@@ -95,36 +95,4 @@ ClassMethod Build(pProvider As %AI.Provider, Output pAgent As %AI.Agent, pAgentC
     Quit tSC
 }
 
-/// Diagnostic: build the agent and dump its registered tools and skill
-/// list. Returns a %DynamicObject suitable for the admin UI's Test panel.
-ClassMethod Diagnose(pProvider As %AI.Provider, Output pInfo As %DynamicObject, pAgentClass As %String = "AgenticInterop.Agent.HealthInterop") As %Status
-{
-    Set pInfo = {}
-    Set tSC = ..Build(pProvider, .agent, pAgentClass)
-    If 'tSC {
-        Set pInfo.ok = 0
-        Set pInfo.error = $system.Status.GetErrorText(tSC)
-        Quit tSC
-    }
-    Set pInfo.ok = 1
-    Set pInfo.agentClass = $classname(agent)
-    Set pInfo.namespace = $namespace
-    Set pInfo.mcps = []
-    Set mcps = $parameter(pAgentClass, "MCPS")
-    For i=1:1:$LENGTH(mcps, ",") {
-        Set cls = $ZSTRIP($PIECE(mcps, ",", i), "<>W")
-        If cls '= "" { Do pInfo.mcps.%Push(cls) }
-    }
-    Set pInfo.skills = []
-    Set skills = $parameter(pAgentClass, "SKILLS")
-    For i=1:1:$LENGTH(skills, ",") {
-        Set cls = $ZSTRIP($PIECE(skills, ",", i), "<>W")
-        If cls '= "" { Do pInfo.skills.%Push(cls) }
-    }
-    If $isobject(agent.ToolManager) {
-        Set pInfo.toolManagerToken = agent.ToolManager."%token"
-    }
-    Quit $$$OK
-}
-
 }

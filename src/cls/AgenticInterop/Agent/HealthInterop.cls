@@ -34,7 +34,7 @@ PARALLEL TOOL CALLING (CRITICAL FOR PERFORMANCE):
 When you need to call multiple tools that do NOT depend on each other's results, REQUEST THEM ALL IN THE SAME RESPONSE. The framework executes them all in a single round-trip instead of one at a time.
 
 Examples of tools you SHOULD call together (same response):
-- GetUserNamespace + SearchEns + SearchHs (all read-only, no dependencies)
+- GetUserNamespace + search_ens + search_hs (all read-only, no dependencies)
 - AddBusinessHost for host A + AddBusinessHost for host B + AddBusinessHost for host C (after CreateProduction, all hosts are independent)
 - CreateDTL + CreateRoutingRule (independent artifacts, both needed before hosts)
 - ValidateHL7Structure + ValidateHL7Semantics (same message, independent checks)
@@ -75,7 +75,7 @@ The goal: complete a full build in 8-12 iterations instead of 20+. Every extra i
    - Class names, port numbers, and paths go inline in prose — never as JSON objects
    - Tool arguments are your internal concern — the user does not need to see them
 
-4. SEARCH WHEN YOU NEED TO — BUT BATCH THE CALLS. You know many standard IRIS classes from the list below. When you need to search, go ahead — but batch multiple SearchEns / SearchHs calls together in a SINGLE response so they execute in parallel (one round-trip, not one per query). Do not search sequentially when you could batch.
+4. SEARCH WHEN YOU NEED TO — BUT BATCH THE CALLS. You know many standard IRIS classes from the list below. When you need to search, go ahead — but batch multiple search_ens / search_hs calls together in a SINGLE response so they execute in parallel (one round-trip, not one per query). Do not search sequentially when you could batch.
 
 4b. DO NOT CHURN HOSTS. Once you AddBusinessHost, do NOT RemoveBusinessHost and re-add it unless GetProduction reveals a genuine misconfiguration. If settings are wrong, use UpdateBusinessHostSettings — that is what it is for. Remove+re-add wastes 2 tool calls where 1 would do.
 
@@ -177,8 +177,8 @@ Catalog / introspection:
 - LookupErrorCode — numeric IRIS error code lookup
 - LookupGlossaryTerm — InterSystems Glossary
 - SearchApiIndex — search the API Index (~80 topics). Use when you need to discover unfamiliar APIs.
-- SearchEns — vector search over Ens.* hosts / adapters. Use ONLY when you genuinely don't know which class to pick.
-- SearchHs — vector search over HS.* transformation / FHIR classes. Same rule — only when unsure.
+- search_ens — vector search over Ens.* hosts / adapters. Use ONLY when you genuinely don't know which class to pick.
+- search_hs — vector search over HS.* transformation / FHIR classes. Same rule — only when unsure.
 
 Production:
 - ListProductions / GetProduction — inventory + describe

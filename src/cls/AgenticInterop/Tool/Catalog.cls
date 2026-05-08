@@ -48,10 +48,36 @@ ClassMethod DescribeClass(className As %String) As %DynamicObject
     }
     Try {
         If '##class(%Dictionary.CompiledClass).%ExistsId(className) {
-            Set out.ok = 0
-            Set out.exists = 0
-            Set out.error = "Class not found in namespace " _ targetNs _ ": " _ className
-            Quit
+            ; HS.* and Ens.*/EnsLib.* classes live in HSLIB / ENSLIB
+            ; mapped databases, not in the user's target namespace.
+            ; Try switching to find them before reporting "not found".
+            Set found = 0
+            Set prefix2 = $extract(className, 1, 3)
+            Set prefix4 = $extract(className, 1, 4)
+            If (prefix2 = "HS.") || (prefix4 = "Ens.") || (prefix4 = "Ensl") {
+                For fallbackNs = "HSLIB", "HSCUSTOM", "%SYS" {
+                    Try {
+                        Set $namespace = fallbackNs
+                        If ##class(%Dictionary.CompiledClass).%ExistsId(className) {
+                            Set found = 1
+                            Set targetNs = fallbackNs
+                            Set out.namespace = fallbackNs
+                            Set out.resolvedVia = "fallback from " _ ..TargetNs()
+                        }
+                    } Catch  {}
+                    If found { Quit }
+                }
+                If 'found {
+                    ; Restore original namespace for the error message
+                    Try { Set $namespace = ..TargetNs() } Catch  {}
+                }
+            }
+            If 'found {
+                Set out.ok = 0
+                Set out.exists = 0
+                Set out.error = "Class not found in namespace " _ ..TargetNs() _ " (also checked HSLIB, HSCUSTOM, %SYS): " _ className
+                Quit
+            }
         }
         Set cls = ##class(%Dictionary.CompiledClass).%OpenId(className)
         Set out.exists = 1

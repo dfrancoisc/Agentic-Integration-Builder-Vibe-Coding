@@ -11,17 +11,15 @@ Conventions:
 
 ## Persistent data model (`AgenticInterop.Data.*`)
 
+The primary configuration entities (Agent, MCP, ToolSet) are class definitions, not %Persistent rows (see PLAN.md "Data model — class as data"). The overlay tables below store admin UI overrides that diverge from compiled class defaults.
+
 | Class | Path | Extends | Purpose | Phase |
 |---|---|---|---|---|
-| Provider | src/cls/AgenticInterop/Data/Provider.cls | %Persistent, %JSON.Adaptor | LLM provider rows: name, kind, non-secret config JSON, WalletRef, semaphore status | 1 |
-| Agent | src/cls/AgenticInterop/Data/Agent.cls | %Persistent, %JSON.Adaptor | Agent definition: name, system prompt, model, temperature, ref to Provider, list of MCPServer refs, and Skills as a `list of %String` (each entry is a fully-qualified %AI.Agent.Skill subclass name like "AgenticInterop.Skill.Productions") | 1 |
-| MCPServer | src/cls/AgenticInterop/Data/MCPServer.cls | %Persistent, %JSON.Adaptor | Logical MCP grouping (UI only — no HTTP). Holds list of Toolsets | 1 |
-| Toolset | src/cls/AgenticInterop/Data/Toolset.cls | %Persistent, %JSON.Adaptor | Maps a config row to a runtime ToolSet class name + display metadata | 1 |
-| Tool | src/cls/AgenticInterop/Data/Tool.cls | %Persistent, %JSON.Adaptor | Tool def: name, description, input/output schema, implementation kind, body, timeout, RequiresConfirmation | 1 |
-| (Data.Skill REMOVED) | — | — | Skills are %AI.Agent.Skill SUBCLASSES (code-defined, shipped with the IPM module), NOT user-editable data rows. The Data.Agent table holds a string-list of Skill class names that the runtime instantiates and adds to the parent agent's ToolManager. See "Skill classes" section below. | — |
-| Conversation | src/cls/AgenticInterop/Data/Conversation.cls | %Persistent, %JSON.Adaptor | Chat session header (id, agent, namespace, opened-at) | 2 |
-| Message | src/cls/AgenticInterop/Data/Message.cls | %Persistent, %JSON.Adaptor | Chat messages tied to a Conversation | 2 |
-| ToolInvocation | src/cls/AgenticInterop/Data/ToolInvocation.cls | %Persistent, %JSON.Adaptor | Audit row per tool call: input, output, duration, error | 4 |
+| Connection | src/cls/AgenticInterop/Data/Connection.cls | %Persistent, %JSON.Adaptor | LLM connection config (provider/model/region/baseURL/maxTokens/enabled/isDefault) plus last-test result. SQL alias `AgenticInterop_Data.LLMConnection`. Secret in IRIS Secured Wallet. | 1 |
+| AgentOverride | src/cls/AgenticInterop/Data/AgentOverride.cls | %Persistent, %JSON.Adaptor | Admin UI overrides for Agent class parameters (system prompt, temperature, MCPS, SKILLS, MaxIterations) | 6 |
+| MCPOverride | src/cls/AgenticInterop/Data/MCPOverride.cls | %Persistent, %JSON.Adaptor | Admin UI overrides for MCP class parameters (TOOLSETS) | 6 |
+| ToolSetOverride | src/cls/AgenticInterop/Data/ToolSetOverride.cls | %Persistent, %JSON.Adaptor | Admin UI overrides for ToolSet class parameters (tool list) | 6 |
+| AuditLog | src/cls/AgenticInterop/Data/AuditLog.cls | %Persistent, %JSON.Adaptor | Audit row per REST request + tool call: user, namespace, action, input, output, duration, error | 4 |
 
 ## %AI.Agent + %AI.ToolSet implementations
 
@@ -61,89 +59,88 @@ The PDFs Routing_DICOM_Documents_in_Productions, Enabling_Productions_to_Use_Man
 | Monitor | src/cls/AgenticInterop/Agent/Monitor.cls | %RegisteredObject | Iteration callback object: deadline, token budget, optional SSE writer. Pattern from ai-hub-iteration-monitor skill. | 2 |
 | SkillLoader | src/cls/AgenticInterop/Agent/SkillLoader.cls | %RegisteredObject | Reads Data.Agent.Skills (string-list of class names), instantiates each %AI.Agent.Skill subclass, sets `skill.ParentAgent = agent`, calls `agent.ToolManager.AddTool(skill)`. Skills then appear as tools in the parent's catalog. | 2 |
 
-## Wallet + Provider integration
+## Connection + Provider integration
 
 | Class | Path | Extends | Purpose | Phase |
 |---|---|---|---|---|
-| Vault | src/cls/AgenticInterop/Wallet/Vault.cls | %RegisteredObject | Helpers around %Wallet.Collection / %Wallet.KeyValue. Idempotent secret-write API. Reads via SettingStore @{wallet.X.Y} placeholders. | 1 |
-| Factory | src/cls/AgenticInterop/Provider/Factory.cls | %RegisteredObject | Maps Data.Provider row → %AI.Provider (resolves @{wallet.X.Y} via SettingStore). Also runs healthcheck (1-token chat completion) and updates Status/LastError on the Data.Provider row. | 1 |
+| Connections | src/cls/AgenticInterop/Connections.cls | %RegisteredObject | Facade for Connection rows + secrets. List/Get/Create/Update/Delete + SetSecret/HasSecret/ClearSecret/Test/GetProvider. Idempotent wallet bootstrap (Security.Resources + %Wallet.Collection). Uses %AI.Provider.Create + ChatComplete for live test. | 1 |
 
-## Tool execution layer
+## Tool implementation classes (`AgenticInterop.Tool.*` — each extends `%AI.Tool`)
 
-| Class | Path | Extends | Purpose | Phase |
-|---|---|---|---|---|
-| Registry | src/cls/AgenticInterop/Tool/Registry.cls | %RegisteredObject | Loads Data.Tool rows → builds the per-tool dispatch entries that ToolSets pick up via Include or programmatic AddTool | 4 |
-| SqlExecutor | src/cls/AgenticInterop/Tool/SqlExecutor.cls | %RegisteredObject | Runs SQL bodies against the current $namespace, returns standard envelope | 4 |
-| ObjectScriptExecutor | src/cls/AgenticInterop/Tool/ObjectScriptExecutor.cls | %RegisteredObject | Calls a class method by ##class()/$classmethod from the Tool.Body reference | 4 |
-| PythonExecutor | src/cls/AgenticInterop/Tool/PythonExecutor.cls | %RegisteredObject | Imports a Python module/class via %SYS.Python, calls method, marshals JSON | 4 |
-| RestExecutor | src/cls/AgenticInterop/Tool/RestExecutor.cls | %RegisteredObject | Calls an external/internal REST endpoint with the Tool.Body URL template | 4 |
-| Monitoring | src/cls/AgenticInterop/Tool/Monitoring.cls | %AI.Tool | 5 read-only SQL tools (QueryEventLog, TopErrors, QueryMessageStatus, MessageSummary, QueueStatus) querying Ens_Util.Log and Ens.MessageHeader | 5 |
-| Production | src/cls/AgenticInterop/Tool/Production.cls | %AI.Tool | 9 production lifecycle + host CRUD tools (ListProductions, GetProduction, CreateProduction, DeleteProduction, StartProduction, StopProduction, AddBusinessHost, RemoveBusinessHost, UpdateBusinessHostSettings) | 4 |
-| Testing | src/cls/AgenticInterop/Tool/Testing.cls | %AI.Tool | 6 HL7/FHIR validation + send tools (ValidateHL7Structure, ValidateHL7Semantics, ValidateFHIRResource, CompareMessages, SendHL7, SendFHIR) | 4 |
-| Transform | src/cls/AgenticInterop/Tool/Transform.cls | %AI.Tool | 9 DTL/BPL/rule CRUD tools (ListDTLs, ListLookupTables, ListBusinessRules, DryRunDTL, CompileDTL, CreateDTL, UpdateDTL, CreateBPL, ValidateBPL) | 4 |
-| Catalog | src/cls/AgenticInterop/Tool/Catalog.cls | %AI.Tool | 9 introspection + vector search tools (GetUserNamespace, ListUserAccessibleNamespaces, DescribeClass, ExplainStatus, LookupErrorCode, LookupGlossaryTerm, SearchApiIndex, SearchEns, SearchHs) | 2 (stub), 5 (real) |
+Each public ClassMethod is auto-discovered by the %AI framework as a tool. Composed into ToolSets via `<Include Class="..."/>`.
+
+| Class | Path | Tools | Phase |
+|---|---|---|---|
+| Production | src/cls/AgenticInterop/Tool/Production.cls | ListProductions, GetProduction, CreateProduction, DeleteProduction, StartProduction, StopProduction, AddBusinessHost, RemoveBusinessHost, UpdateBusinessHostSettings | 4 |
+| Transform | src/cls/AgenticInterop/Tool/Transform.cls | ListDTLs, ListLookupTables, ListBusinessRules, DryRunDTL, CompileDTL, CreateDTL, UpdateDTL, CreateBPL, ValidateBPL, ListSDAFHIRDTLs, DescribeTransformationPipeline, GetCustomDTLPackage | 4 |
+| Testing | src/cls/AgenticInterop/Tool/Testing.cls | ValidateHL7Structure, ValidateHL7Semantics, ValidateFHIRResource, CompareMessages, SendHL7, SendFHIR | 4 |
+| Catalog | src/cls/AgenticInterop/Tool/Catalog.cls | GetUserNamespace, ListUserAccessibleNamespaces, DescribeClass, ExplainStatus, LookupErrorCode, LookupGlossaryTerm, SearchApiIndex | 2 (stub), 5 (real) |
+| Monitoring | src/cls/AgenticInterop/Tool/Monitoring.cls | QueryEventLog, TopErrors, QueryMessageStatus, MessageSummary, QueueStatus | 5 |
 
 ## Catalog (RAG)
 
 | Class | Path | Extends | Purpose | Phase |
 |---|---|---|---|---|
-| EnsBuilder | src/cls/AgenticInterop/Catalog/EnsBuilder.cls | %RegisteredObject | Reads XLS sheets relevant to Ens (Business Services/Processes/Operations + Adapters + Productions). Uses Embedded Python (openpyxl). Idempotent. | 5 |
-| HsBuilder | src/cls/AgenticInterop/Catalog/HsBuilder.cls | %RegisteredObject | Reads XLS sheets relevant to HS (DTL/BPL/Schema/REST/Utilities). Idempotent. | 5 |
-| EnsKnowledgeBase | src/cls/AgenticInterop/Catalog/EnsKnowledgeBase.cls | %RegisteredObject | %AI.RAG.KnowledgeBase wiring (FastEmbed + IRIS VectorStore) for catalog.ens table. Tool name: search_ens | 5 |
-| HsKnowledgeBase | src/cls/AgenticInterop/Catalog/HsKnowledgeBase.cls | %RegisteredObject | Same shape for catalog.hs. Tool name: search_hs | 5 |
+| Builder | src/cls/AgenticInterop/Catalog/Builder.cls | %RegisteredObject | Builds both search_ens and search_hs KnowledgeBases from XLS (openpyxl) or %Dictionary. Creates %AI.RAG.KnowledgeBase instances with FastEmbed + VectorStore. Idempotent. | 5 |
+| Attach | src/cls/AgenticInterop/Catalog/Attach.cls | %RegisteredObject | At agent build time, registers search_ens / search_hs KnowledgeBase tools on the agent's ToolManager when the underlying tables are populated. | 5 |
 
-## REST surface (`AgenticInterop.REST.*`)
+## REST surface
 
-| Class | Path | Extends | URL prefix | Purpose | Phase |
-|---|---|---|---|---|---|
-| Dispatch | src/cls/AgenticInterop/REST/Dispatch.cls | %CSP.REST | /api/agentic/ | UrlMap router. Reads X-IRIS-Namespace header, validates access, does `new $namespace`. UseSession=0. | 0 |
-| HealthAPI | src/cls/AgenticInterop/REST/HealthAPI.cls | %CSP.REST | /api/agentic/health | Returns {ok, namespace, version} | 0 |
-| NamespaceAPI | src/cls/AgenticInterop/REST/NamespaceAPI.cls | %CSP.REST | /api/agentic/namespace | Returns current namespace + user-accessible namespaces list | 0 |
-| ProviderAPI | src/cls/AgenticInterop/REST/ProviderAPI.cls | %CSP.REST | /api/agentic/v1/providers | CRUD + /healthcheck + /secret | 1 |
-| ConfigAPI | src/cls/AgenticInterop/REST/ConfigAPI.cls | %CSP.REST | /api/agentic/v1/{agents,mcps,toolsets,tools,skills} | CRUD for the five entity tables | 1 (agents/mcps), 4 (rest) |
-| ChatAPI | src/cls/AgenticInterop/REST/ChatAPI.cls | %CSP.REST | /api/agentic/v1/chat | POST conversations + SSE messages | 2 (sync), 3 (SSE) |
-| CatalogAPI | src/cls/AgenticInterop/REST/CatalogAPI.cls | %CSP.REST | /api/agentic/v1/catalog | search_ens, search_hs, rebuild | 5 |
+All routes live in a single `AgenticInterop.REST.Dispatch` class (%CSP.REST UrlMap) at `/api/agentic/`. Service logic is delegated to `AgenticInterop.Editor.*` service classes.
+
+| Class | Path | Purpose | Phase |
+|---|---|---|---|
+| Dispatch | src/cls/AgenticInterop/REST/Dispatch.cls | UrlMap router. X-IRIS-Namespace header, access gate, audit logging. UseCookies=0 + no sessions/CSRF. | 0 |
+| Editor.ChatService | src/cls/AgenticInterop/Editor/ChatService.cls | SSE chat streaming, tool-call approval, conversation lifecycle | 2-3 |
+| Editor.ConnectionService | src/cls/AgenticInterop/Editor/ConnectionService.cls | Connection CRUD + secret + test | 1 |
+| Editor.AgentService | src/cls/AgenticInterop/Editor/AgentService.cls | Agent class read + overlay write | 6 |
+| Editor.MCPService | src/cls/AgenticInterop/Editor/MCPService.cls | MCP class read + overlay write | 6 |
+| Editor.ToolSetService | src/cls/AgenticInterop/Editor/ToolSetService.cls | ToolSet class read + overlay write, cross-provider tool selection | 6 |
+| Editor.ToolService | src/cls/AgenticInterop/Editor/ToolService.cls | Tool read + dry-run | 6 |
+| Editor.CatalogService | src/cls/AgenticInterop/Editor/CatalogService.cls | Catalog rebuild + vector search | 5 |
+| Editor.AuditService | src/cls/AgenticInterop/Editor/AuditService.cls | Audit trail query | 7 |
+| Editor.RegistryService | src/cls/AgenticInterop/Editor/RegistryService.cls | Class registry for dropdowns (agents/mcps/toolsets/skills) | 6 |
+| Editor.SourceService | src/cls/AgenticInterop/Editor/SourceService.cls | XData/source text read for editor | 6 |
 
 ## Policies
 
 | Class | Path | Extends | Purpose | Phase |
 |---|---|---|---|---|
-| ConfirmationGate | src/cls/AgenticInterop/Policy/ConfirmationGate.cls | %AI.Policy.Authorization | Pauses execution for any tool with RequiresConfirmation = 1; surfaces approve/reject prompt to UI via SSE | 4 |
-| AuditToInvocation | src/cls/AgenticInterop/Policy/AuditToInvocation.cls | %AI.Policy.Audit | Persists every tool call to Data.ToolInvocation | 4 |
+| ConfirmationGate | src/cls/AgenticInterop/Policy/ConfirmationGate.cls | %AI.Policy.Authorization | Pauses execution for mutating tools (start_*, delete_*, etc. or requires_confirmation: true); surfaces approve/reject prompt to UI via SSE. Pre-approved tokens bypass the gate. | 4 |
 
 ## CSP web apps (registered via module.xml)
 
 | URL | Type | Namespace | DispatchClass | Phase |
 |---|---|---|---|---|
-| /agentic/ | 1 (CSP files) | install ns | (static React bundle from src/csp/agentic/) | 0 |
+| /agentic/ | 1 (CSP files) | install ns | (static JS/HTML/CSS from src/csp/agentic/) | 0 |
 | /api/agentic/ | 2 (REST) | install ns | AgenticInterop.REST.Dispatch | 0 |
 
-Both web apps created with `UseSession="0"` (CSP iframe deadlock workaround documented in project memory). NAMESPACE attribute defaults to the install namespace — no `<Namespace>` override in module.xml.
+Both web apps created with `UseCookies="0"` + no sessions/CSRF (the CSP gateway creates sessions on the first SSE POST, then CSRF validation rejects the next POST — fully stateless avoids this). NAMESPACE attribute defaults to the install namespace — no `<Namespace>` override in module.xml.
 
 ## Vector tables (created by Catalog builders)
 
-| Table | Schema | Dimensions | Created by | Phase |
+| Table | KB tool name | Dimensions | Created by | Phase |
 |---|---|---|---|---|
-| AgenticInterop_Catalog.Ens | id, text, vector, metadata, source, plus promoted fields: package, type, abstract | 384 (FastEmbed AllMiniLML6V2) | Catalog.EnsBuilder.Build() | 5 |
-| AgenticInterop_Catalog.Hs | same shape | 384 | Catalog.HsBuilder.Build() | 5 |
-| AgenticInterop_Catalog.ErrorReference | id, text, vector, metadata (errorCode, domain, category, placeholders) | 384 | Catalog.ReferenceBuilder.BuildErrors() | 5 |
-| AgenticInterop_Catalog.Glossary | id, text, vector, metadata (term, category, relatedTerms) | 384 | Catalog.ReferenceBuilder.BuildGlossary() | 5 |
-| AgenticInterop_Catalog.ApiIndex | id, text, vector, metadata (topic, availableTools, availableClasses, relevantSkill) | 384 | Catalog.ReferenceBuilder.BuildApiIndex() | 5 |
+| (managed by %AI.RAG) | search_ens | 384 (FastEmbed AllMiniLML6V2) | Catalog.Builder.Build("ens", ...) | 5 |
+| (managed by %AI.RAG) | search_hs | 384 | Catalog.Builder.Build("hs", ...) | 5 |
 
-Tables created in install namespace.
+## Reference seed tables (SQL, not vector)
 
-`Catalog.ReferenceBuilder` (added in Phase 5 alongside EnsBuilder/HsBuilder) ingests the four reference PDFs (Configuration_Parameter_File_Reference, Detailed_API_Index, InterSystems_Error_Reference, InterSystems_Glossary_of_Terms) into these vector tables. Same FastEmbed embedder, same `%AI.RAG.KnowledgeBase` pattern, exposed as `search_errors`, `search_glossary`, `search_api_index` tools. Wired into ToolSet.Reference.
+| Table | Created by | Phase |
+|---|---|---|
+| AgenticInterop_Reference.ErrorCode | Reference.Loader from error_codes.json | 5 |
+| AgenticInterop_Reference.GlossaryTerm | Reference.Loader from glossary.json | 5 |
+| AgenticInterop_Reference.ApiTopic | Reference.Loader from api_topics.json | 5 |
 
-## Frontend (not %AI Framework, but part of the IPM ship)
+Reference data is seeded from JSON files (src/seed/) by `AgenticInterop.Reference.Loader`. These are SQL tables queried by `Tool.Catalog` methods (LookupErrorCode, LookupGlossaryTerm, SearchApiIndex), not vector KBs.
+
+## Frontend (vanilla JS — no build step, part of the IPM ship)
 
 | Path | Purpose | Phase |
 |---|---|---|
-| frontend/ | Vite + React 18 + TypeScript source. Built output goes to src/csp/agentic/ for IPM packaging | 0 (scaffold), 2-7 (build out) |
-| frontend/src/main.tsx | Entry point; exports `window.AgenticInterop.mount(rootEl, opts)` | 0 |
-| frontend/src/api/* | Typed REST client | 1 |
-| frontend/src/features/chat/* | Chat UI + SSE | 2-3 |
-| frontend/src/features/admin/* | One list + form page per entity | 1, 4-6 |
-| src/csp/agentic/index.html | Sample host HTML for testing the bundle without an Angular shell | 0 |
+| src/csp/agentic/chat/ | Chat UI (vanilla JS + CSS). Loads as iframe or standalone. SSE streaming. | 0 (scaffold), 2-7 (build out) |
+| src/csp/agentic/admin/ | Admin SPA (vanilla JS + CSS). Entity CRUD, catalog management, audit trail. | 1, 4-7 |
+| src/csp/agentic/inject.js | Script injected into the IRIS Interop Editor to add AI buttons | 0 |
 
 ## Seeds
 

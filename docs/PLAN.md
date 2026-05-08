@@ -26,9 +26,8 @@ These are user-set rules captured at kickoff. Any deviation must be documented i
 ┌──────────────────────────────────────────────────────────────────┐
 │  Customer Angular page (post-login)                              │
 │  ┌──────────────────────────────────────────────────────────┐    │
-│  │  React chatbot bundle (mounted via window.AgenticInterop │    │
-│  │  .mount(rootEl, {namespace, ...})). Admin UI mounted     │    │
-│  │  separately at /agentic/admin/.                          │    │
+│  │  Vanilla JS chatbot (iframe or standalone).               │    │
+│  │  Admin UI at /agentic/admin/.                            │    │
 │  └──────────────────────────────────────────────────────────┘    │
 └──────────────────────────────────────┬───────────────────────────┘
                                        │ REST + SSE
@@ -37,7 +36,7 @@ These are user-set rules captured at kickoff. Any deviation must be documented i
 │  IRIS for Health (any namespace where zpm load was run)          │
 │                                                                  │
 │  CSP web apps (created at install time):                         │
-│    /agentic/        — static React bundle (Type 1 CSP app)       │
+│    /agentic/        — static JS bundle (Type 1 CSP app)          │
 │    /api/agentic/    — REST (Type 2, UseSession=0)                │
 │                                                                  │
 │  AgenticInterop.REST.Dispatch reads X-IRIS-Namespace header,     │
@@ -314,28 +313,29 @@ Each phase ends with a working slice and a commit + push to dfrancoisc/agentic_i
 - Cross-provider tool selection in ToolSet editor (any tool from any %AI.Tool class can be added to any ToolSet)
 - Definition of done: ask a question requiring catalog lookup, agent calls the right catalog tool, returns relevant classes. Monitoring questions answered via SQL queries against Ens.Util.Log and Ens.MessageHeader.
 
-### Phase 6 — Admin UI completion
-- All entity CRUD pages (Agents, MCPs, Toolsets, Tools, Skills, Providers)
+### Phase 6 — Admin UI completion (DONE 2026-05-06)
+- All entity CRUD pages (Agents, MCPs, Toolsets, Tools, Skills, Connections)
 - Tool form with Dry-run panel
 - Skill editor (markdown)
 - Definition of done: every entity creatable / editable / deletable from the UI.
 
-### Phase 7 — Polish + handover
+### Phase 7 — Polish + handover (DONE 2026-05-07)
 - Audit trail UI for ToolInvocation
 - Error reporting page
 - Mount API documentation for customers integrating into their Angular shell
 - Operations runbook
+- Ghost code cleanup, docs audit, IPM compliance
 - Definition of done: another developer can clone, install, configure, and use without asking for help.
 
 ## Chatbot UI quality bar
 
-The React chatbot bundle is the core deliverable and must work perfectly regardless of where it is mounted — sample host HTML, customer Angular page, or any future surface. Treat the bundle as a self-contained, reusable component that handles its own state, errors, retries, and lifecycle. Never assume properties of the host page beyond what the documented `mount()` contract guarantees.
+The chatbot UI is the core deliverable and must work perfectly regardless of where it is loaded — iframe in an Angular page, standalone page, or any future surface. The UI is vanilla JS with no build step, handling its own state, errors, retries, and lifecycle. Never assume properties of the host page beyond what the documented iframe contract guarantees.
 
 This applies across phases. The phase column below indicates when each chatbot capability ships, but every shipped capability must be production-quality at that point — no placeholder UI, no broken states, no half-working flows.
 
 ## Open items
 
-- Customer Angular shell — none provided. Phase 0 ships a sample host HTML so dev works. Customers wire the React bundle into their own Angular page using the documented `mount()` API; we do not own that integration.
+- Customer Angular shell — none provided. Phase 0 ships a sample host HTML so dev works. Customers embed the chatbot via iframe (`/agentic/chat/index.html`) in their own Angular page; we do not own that integration.
 - Multi-namespace install ergonomics: install once per target namespace. Future enhancement could add a "deploy to all my namespaces" admin action.
 - mcp.testing isolation default: recommend always-isolated test production by default (configurable).
 

@@ -1,6 +1,6 @@
 # Agent Tool Catalog
 
-Each tool below becomes one row in `AgenticInterop.Data.Tool`, dispatched at runtime by the matching executor (SQL / ObjectScript / Python / REST). Tools are surfaced to the agent through `AgenticInterop.Policy.DynamicToolDiscovery` (a `%AI.Policy.Discovery` subclass that reads the Tool table at query time — see PLAN.md "Skills" + "Dynamic tool discovery"). Each tool's `Body` references the API to invoke; the executor handles parameter binding and the standard envelope.
+Each tool below is a public ClassMethod on a `%AI.Tool` subclass (e.g. `AgenticInterop.Tool.Production`, `.Transform`, `.Testing`, `.Catalog`, `.Monitoring`). Tools are composed into `%AI.ToolSet` subclasses via the framework's `<Include Class="..."/>` directive and registered with the agent at build time by `AgenticInterop.Agent.Manager`. The method name is the tool name the LLM sees.
 
 This file grows batch-by-batch. Tools marked `[BATCH N]` were finalised in that batch; all others are pending.
 

@@ -40,15 +40,15 @@
     DeployPath="agentic"
     SourcePath="${root}src/csp/agentic"
     Recurse="1"
-    AuthenticationMethods="96"
+    AuthenticationMethods="32"
     PasswordAuthEnabled="1"
-    UnauthenticatedEnabled="1"
+    UnauthenticatedEnabled="0"
     UseCookies="0"
     AutoCompile="0"
     DefaultTimeout="900"
     CookiePath="/"
     GroupById="%ISCMgtPortal"
-    Description="agentic_interop static UI bundle (chat + admin) — authenticated, stateless (no sessions/cookies/CSRF)"
+    Description="agentic_interop static UI bundle (chat + admin) — authenticated only (restriction #3: no UI before login), stateless (no sessions/cookies/CSRF)"
 />
 
 <!-- REST API. JWTAuthEnabled=1 + GroupById=%ISCMgtPortal so the IRIS
@@ -67,7 +67,7 @@
     DispatchClass="AgenticInterop.REST.Dispatch"
     AuthenticationMethods="32"
     PasswordAuthEnabled="1"
-    UnauthenticatedEnabled="1"
+    UnauthenticatedEnabled="0"
     JWTAuthEnabled="1"
     UseCookies="0"
     AutoCompile="0"

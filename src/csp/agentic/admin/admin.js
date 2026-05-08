@@ -75,10 +75,6 @@ function getStoredAuth() {
 function setStoredAuth(basic) {
     try { localStorage.setItem(AUTH_KEY, basic); } catch {}
 }
-function clearStoredAuth() {
-    try { localStorage.removeItem(AUTH_KEY); } catch {}
-}
-
 function showLoginOverlay(message) {
     return new Promise((resolve) => {
         const existing = document.getElementById('agentic-login-overlay');
@@ -2068,7 +2064,6 @@ function bindSourcePanel(formEl) {
 function cssEscape(s) { return String(s).replace(/[^a-zA-Z0-9_\-]/g, c => '\\' + c); }
 
 function shortName(cls) { return cls.split('.').slice(-1)[0]; }
-function firstLine(s) { if (!s) return ''; return s.split(/\r?\n/)[0]; }
 function escapeHtml(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function escapeAttr(s) { return escapeHtml(s); }
 // Description text in the source classes is hard-wrapped at ~60 chars
