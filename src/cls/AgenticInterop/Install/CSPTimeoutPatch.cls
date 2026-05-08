@@ -54,25 +54,45 @@ ClassMethod Apply() As %Status
     Quit $$$OK
 }
 
+/// Bump JWTAccessTokenTimeout on EVERY web app in the %ISCMgtPortal
+/// group from the default 60s to 3600s. The JWT's exp claim is stamped
+/// at issuance by the issuing app's timeout value. Since the Interop
+/// Editor can call any of these apps first (and the bridge captures the
+/// resulting Bearer), ALL apps in the group must use the longer timeout.
+/// Without this, the chatbot's JWT expires mid-conversation and all
+/// retry paths fail because the parent frame caches the same stale token.
 ClassMethod PatchJWTTimeout() [ Internal ]
 {
     New $namespace
     Set $namespace = "%SYS"
     Try {
-        Do ##class(Security.Applications).Get("/api/agentic", .p)
-        If $get(p("JWTAccessTokenTimeout")) < 3600 {
-            Set props("JWTAccessTokenTimeout") = 3600
-            Set sc = ##class(Security.Applications).Modify("/api/agentic", .props)
-            If $$$ISOK(sc) {
-                Write "JWT access token timeout set to 3600s on /api/agentic",!
+        Set patched = 0
+        Set skipped = 0
+        ; Walk every JWT-enabled web app in the Management Portal group
+        Set stmt = ##class(%SQL.Statement).%New()
+        Set sc = stmt.%Prepare("SELECT Name FROM Security.Applications WHERE JWTAuthEnabled = 1 AND (GroupById = '%ISCMgtPortal' OR Name = '/api/agentic')")
+        If $$$ISERR(sc) { Write "JWT patch: SQL prepare failed",! Quit }
+        Set rs = stmt.%Execute()
+        While rs.%Next() {
+            Set appName = rs.Name
+            Kill p, props
+            Do ##class(Security.Applications).Get(appName, .p)
+            If $get(p("JWTAccessTokenTimeout")) < 3600 {
+                Set props("JWTAccessTokenTimeout") = 3600
+                Set sc = ##class(Security.Applications).Modify(appName, .props)
+                If $$$ISOK(sc) {
+                    Write "JWT timeout -> 3600s on ", appName, !
+                    Set patched = patched + 1
+                } Else {
+                    Write "FAILED ", appName, ": ", $system.Status.GetErrorText(sc), !
+                }
             } Else {
-                Write "Failed to set JWT timeout: ", $system.Status.GetErrorText(sc),!
+                Set skipped = skipped + 1
             }
-        } Else {
-            Write "JWT access token timeout already >= 3600s — no change needed.",!
         }
+        Write "JWT patch complete: ", patched, " updated, ", skipped, " already OK.", !
     } Catch ex {
-        Write "JWT timeout patch skipped: ", ex.DisplayString(),!
+        Write "JWT timeout patch error: ", ex.DisplayString(), !
     }
 }
 

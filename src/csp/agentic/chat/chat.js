@@ -841,7 +841,15 @@ async function send(message) {
             if (isViaInterop()) {
                 // Bridge users: NEVER show a login modal — the parent
                 // SPA owns auth. Tell the user to refresh that page.
-                throw new Error('Your session has expired. Please refresh the Interop Editor page (Ctrl+Shift+R or Cmd+Shift+R) and re-open the chatbot.');
+                // Include token age info if available from the bridge.
+                let detail = '';
+                try {
+                    const ba = await fetchBridgeAuth();
+                    if (ba.tokenSecondsLeft !== undefined && ba.tokenSecondsLeft < 0) {
+                        detail = ' The authentication token expired ' + Math.abs(Math.floor(ba.tokenSecondsLeft)) + 's ago.';
+                    }
+                } catch {}
+                throw new Error('Your session has expired.' + detail + ' Please close this panel, refresh the Interop Editor page (Ctrl+Shift+R or Cmd+Shift+R), and re-open the chatbot.');
             }
             // Standalone users: one last chance via the login form
             authValidated = false;

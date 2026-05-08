@@ -39,7 +39,45 @@
     var CONFIG_OVERLAY_ID = 'agentic-config-overlay';
     var CHAT_OVERLAY_ID = 'agentic-chat-overlay';
 
-    var STATE = { bearer: '' };
+    var STATE = { bearer: '', bearerExp: 0 };
+
+    /* ---------------- JWT helpers ---------------- */
+
+    // Decode JWT payload without verification (just reads exp claim).
+    function jwtExp(bearerStr) {
+        try {
+            var token = bearerStr.replace(/^Bearer\s+/i, '');
+            var parts = token.split('.');
+            if (parts.length !== 3) return 0;
+            var b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+            // Pad to 4-char boundary
+            while (b64.length % 4) b64 += '=';
+            var payload = JSON.parse(atob(b64));
+            return payload.exp || 0;
+        } catch (e) { return 0; }
+    }
+
+    function tokenSecondsLeft() {
+        if (!STATE.bearerExp) return 99999; // no exp => assume long-lived
+        return Math.floor(STATE.bearerExp - Date.now() / 1000);
+    }
+
+    // Try to trigger a fresh Bearer capture by making a lightweight
+    // API call through the Angular SPA's own fetch path. The wrapped
+    // window.fetch will capture any outgoing Authorization header.
+    // This only helps if the Angular app's HTTP interceptor attaches
+    // a FRESH token to outgoing requests. If the Angular app is also
+    // using the expired token, this is a no-op — the caller falls
+    // through to the stale token and chat.js handles the 401.
+    var refreshInFlight = false;
+    function tryRefreshBearer() {
+        if (refreshInFlight) return Promise.resolve();
+        refreshInFlight = true;
+        return window.fetch('/api/interop-editors/', {
+            method: 'GET',
+            cache: 'no-store'
+        }).catch(function(){}).then(function(){ refreshInFlight = false; });
+    }
 
     /* ---------------- Bearer + namespace capture ---------------- */
 
@@ -59,6 +97,7 @@
             }
             if (typeof auth === 'string' && auth.indexOf('Bearer ') === 0) {
                 STATE.bearer = auth;
+                STATE.bearerExp = jwtExp(auth);
             }
         } catch {}
     }
@@ -77,6 +116,7 @@
         try {
             if (/^authorization$/i.test(name) && typeof value === 'string' && value.indexOf('Bearer ') === 0) {
                 STATE.bearer = value;
+                STATE.bearerExp = jwtExp(value);
             }
         } catch {}
         return origSet.apply(this, arguments);
@@ -92,15 +132,26 @@
     window.addEventListener('message', function (e) {
         var d = e.data || {};
         if (d && d.type === 'agentic:auth:request') {
-            try {
-                if (e.source && e.source.postMessage) {
-                    e.source.postMessage({
-                        type: 'agentic:auth:response',
-                        bearer: STATE.bearer || '',
-                        namespace: currentNamespace()
-                    }, '*');
-                }
-            } catch {}
+            var respond = function () {
+                try {
+                    if (e.source && e.source.postMessage) {
+                        e.source.postMessage({
+                            type: 'agentic:auth:response',
+                            bearer: STATE.bearer || '',
+                            namespace: currentNamespace(),
+                            tokenSecondsLeft: tokenSecondsLeft()
+                        }, '*');
+                    }
+                } catch {}
+            };
+            // If the token is expired or about to expire, try to refresh
+            // before responding. This gives the Angular SPA a chance to
+            // issue a fresh token via its own HTTP interceptor.
+            if (tokenSecondsLeft() < 30) {
+                tryRefreshBearer().then(respond);
+            } else {
+                respond();
+            }
         }
         if (d && d.type === 'agentic:close-chat') closeChat();
         if (d && d.type === 'agentic:close-config') closeConfig();
