@@ -157,6 +157,26 @@ ClassMethod StartProduction(production As %String) As %DynamicObject
         Quit
     }
     Try {
+        ; Pre-flight: check that all host classes in the production
+        ; exist. If any are missing (e.g. HS.FHIR.* classes that live
+        ; in HSLIB but aren't mapped to this namespace), report them
+        ; upfront instead of letting Ens.Director fail mid-start.
+        If ##class(Ens.Config.Production).%ExistsId(production) {
+            Set prod = ##class(Ens.Config.Production).%OpenId(production)
+            Set missing = ""
+            For i=1:1:prod.Items.Count() {
+                Set item = prod.Items.GetAt(i)
+                Set cls = item.ClassName
+                If cls '= "", '##class(%Dictionary.CompiledClass).%ExistsId(cls) {
+                    Set missing = missing _ $select(missing="":"",1:", ") _ cls
+                }
+            }
+            If missing '= "" {
+                Set out.ok = 0
+                Set out.error = "Cannot start — these host classes are not available in namespace " _ targetNs _ ": " _ missing _ ". They may live in HSLIB/ENSLIB. Remove them via remove_business_host or verify the class names with describe_class."
+                Quit
+            }
+        }
         Set tSC = ##class(Ens.Director).StartProduction(production)
         If 'tSC {
             Set out.ok = 0
@@ -181,6 +201,9 @@ ClassMethod StopProduction(timeout As %Integer = 30, force As %Boolean = 0) As %
 {
     Set out = {}
     Set out.tool = "stop_production"
+    ; Guard against the framework passing "" when the LLM omits a parameter
+    If $get(timeout)="" Set timeout = 30
+    If $get(force)="" Set force = 0
     Set targetNs = ..%TargetNs()
     Set out.namespace = targetNs
     New $namespace
@@ -199,7 +222,7 @@ ClassMethod StopProduction(timeout As %Integer = 30, force As %Boolean = 0) As %
             Set out.message = "No production is currently active."
             Quit
         }
-        Set tSC = ##class(Ens.Director).StopProduction(timeout, force)
+        Set tSC = ##class(Ens.Director).StopProduction(+timeout, +force)
         If 'tSC {
             Set out.ok = 0
             Set out.stopped = 0
@@ -359,6 +382,32 @@ ClassMethod AddBusinessHost(production As %String, hostName As %String, hostClas
         If '##class(Ens.Config.Production).%ExistsId(production) {
             Set out.ok = 0
             Set out.error = "Production not found: " _ production
+            Quit
+        }
+        ; BUG 4 fix: validate that the host class actually exists
+        ; before adding it to the production. HS.*/Ens.*/EnsLib.*
+        ; classes live in HSLIB/ENSLIB mapped databases — check
+        ; there if not found in the user namespace. Without this,
+        ; the production compiles but StartProduction fails at
+        ; runtime with CLASS DOES NOT EXIST.
+        Set classFound = ##class(%Dictionary.CompiledClass).%ExistsId(hostClass)
+        If 'classFound {
+            Set prefix2 = $extract(hostClass, 1, 3)
+            Set prefix4 = $extract(hostClass, 1, 4)
+            If (prefix2 = "HS.") || (prefix4 = "Ens.") || (prefix4 = "Ensl") {
+                For fbNs = "HSLIB", "HSCUSTOM", "%SYS" {
+                    Try {
+                        New $namespace
+                        Set $namespace = fbNs
+                        If ##class(%Dictionary.CompiledClass).%ExistsId(hostClass) Set classFound = 1
+                    } Catch  {}
+                    If classFound Quit
+                }
+            }
+        }
+        If 'classFound {
+            Set out.ok = 0
+            Set out.error = "Host class not found: " _ hostClass _ ". Verify the exact class name with describe_class or search_ens before adding a host."
             Quit
         }
         Set prod = ##class(Ens.Config.Production).%OpenId(production)
