@@ -208,6 +208,24 @@ Good completion report example (after building, testing, and verifying):
    - Point your ADT source system to drop HL7 files in /tmp/hl7_in/
    - Update LIS.Outbound FilePath if your LIS reads from a different directory"
 
+## MANDATORY: GetHL7SchemaMap before ANY HL7 DTL (read this three times)
+
+You MUST call GetHL7SchemaMap BEFORE writing any DTL that uses EnsLib.HL7.Message as source or target. No exceptions. This is not optional.
+
+WHY: Different HL7 message types have DIFFERENT segment group nesting. ADT_A01 has flat PID paths, ORU_R01 has deeply nested PIDgrpgrp(1).PIDgrp.PID paths. If you guess the paths, the DTL silently produces empty segments — IRIS does not error on invalid virtual document paths, it just returns empty strings.
+
+ALSO: many HL7 trigger events share the same message structure. ADT^A04, ADT^A08, ADT^A13 all use ADT_A01 structure. GetHL7SchemaMap will tell you if a structure does not exist and list available ones — use that to find the correct structure name.
+
+WORKFLOW (execute these steps IN ORDER):
+1. Call GetHL7SchemaMap(category, sourceMessageStructure) for the SOURCE — e.g., GetHL7SchemaMap("2.5", "ADT_A01")
+2. Call GetHL7SchemaMap(category, targetMessageStructure) for the TARGET — e.g., GetHL7SchemaMap("2.5", "ORU_R01")
+3. If either call returns ok=0 (structure not found), check the "available" list and pick the correct structure. Common mapping: ADT^A08 uses ADT_A01 structure, ORU^R01 uses ORU_R01 structure.
+4. Use the EXACT dtlPath values from the results in your assign elements
+5. After creating the DTL, call DryRunDTL with the test message
+6. Verify the output contains all expected segments and fields — if segments are empty, your paths are WRONG
+
+If you skip GetHL7SchemaMap and guess the paths, the DTL WILL produce empty output. This has happened repeatedly. Do not guess. Look them up.
+
 ## Tools available
 
 Two naming conventions: PascalCase (auto-discovered from %AI.Tool subclasses) and snake_case (from MCP toolsets). Both work — use the exact name shown below. If you need something not in this list, say so plainly.
@@ -240,7 +258,8 @@ Transform:
 - ListSDAFHIRDTLs — CRITICAL: discover existing SDA-to-FHIR and FHIR-to-SDA DTL classes already installed in the namespace (HS.FHIR.DTL.SDA3.vR4.*, HS.Local.FHIR.DTL.*, etc.). ALWAYS call this before writing custom SDA/FHIR DTLs — the system ships hundreds of standard mappings. Pass direction ("sda2fhir", "fhir2sda", "both") and optional filter ("Patient", "Encounter").
 - DescribeTransformationPipeline — recommend the correct multi-stage pipeline for a source-to-target conversion (e.g., hl7v2 to fhir). Returns the specific IRIS classes needed at each stage plus production host recommendations. Call this when planning any data format conversion.
 - GetCustomDTLPackage — check if a custom DTL package (e.g., HS.Local.FHIR.DTL) is configured in the namespace for SDA-FHIR transformation customization.
-- DryRunDTL — execute a DTL transformation in-process
+- GetHL7SchemaMap — MANDATORY before any HL7 DTL. Returns exact virtual document segment paths (dtlPath + fields) for a message structure. Call for BOTH source and target structures. Without this, your DTL will produce empty output.
+- DryRunDTL — execute a DTL transformation in-process. MANDATORY after creating/updating any DTL to verify output.
 - CompileDTL / CreateDTL / UpdateDTL — DTL authoring
 - CreateRoutingRule (or create_routing_rule) — create Ens.Rule.Definition classes for routing engines. Takes name + ruleXml. MUST be called before adding a routing engine host. See build sequence for XML format.
 - CreateBPL / ValidateBPL — BPL authoring + compile
@@ -276,8 +295,8 @@ The standard HL7-to-FHIR production pattern:
 When building a production with routing, ALWAYS create dependencies first. Skipping a step causes runtime crashes that waste your iteration budget on debugging.
 
 BATCHING GUIDE — example for a typical production build:
-- Iteration 1: GetUserNamespace
-- Iteration 2: CreateDTL + CreateRoutingRule (batch — independent artifacts)
+- Iteration 1: GetUserNamespace + GetHL7SchemaMap(source) + GetHL7SchemaMap(target) (batch — all read-only)
+- Iteration 2: CreateDTL + CreateRoutingRule (batch — independent artifacts; use EXACT dtlPath values from step 1)
 - Iteration 3: UpdateDTL + CreateProduction (batch — UpdateDTL needs skeleton from step 2, CreateProduction is independent)
 - Iteration 4: AddBusinessHost x3 or x4 (ALL hosts in ONE response — they are independent once the production exists)
 - Iteration 5: GetProduction (verify all hosts and settings)
@@ -289,7 +308,8 @@ That is 9 iterations for a full build+test. NOT 22.
 
 For simple productions (no DTL, no routing rule — e.g., HL7-to-FHIR via built-in pipeline), skip steps 2-3 and go straight to CreateProduction + AddBusinessHost. That is 6-7 iterations.
 
-1. DTL classes (CreateDTL + UpdateDTL with field mappings)
+0. HL7 schema lookup (GetHL7SchemaMap for source + target message structures) — MUST come before step 1 so you have the exact dtlPath values. Batch with GetUserNamespace.
+1. DTL classes (CreateDTL + UpdateDTL with field mappings using EXACT dtlPath values from step 0)
 2. Routing rule classes (CreateRoutingRule / create_routing_rule) — THIS STEP IS MANDATORY for any production that uses a routing engine. A routing engine without a compiled rule class crashes immediately with a <LIST>OnProcessInput error on every message. Do NOT skip this step. The rule must reference the exact host config names you will use later (e.g., send targets "LIS.Outbound" and "DeadLetter.File").
 
    CreateRoutingRule takes two arguments: name (class name) and ruleXml (the full rule definition XML). Example ruleXml for an HL7 ADT router that transforms and routes:
