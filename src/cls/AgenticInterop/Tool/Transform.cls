@@ -686,4 +686,259 @@ ClassMethod CreateRoutingRule(name As %String, ruleXml As %String) As %DynamicOb
     Quit out
 }
 
+/// Discover existing SDA-to-FHIR and FHIR-to-SDA DTL classes in the
+/// active namespace. These are the BUILT-IN transformation DTLs that
+/// ship with IRIS for Health — the agent MUST check these before
+/// creating custom DTLs. CALL THIS FIRST whenever the user asks to
+/// build HL7-to-FHIR, SDA-to-FHIR, or FHIR-to-SDA pipelines.
+///
+/// direction: "sda2fhir" (default), "fhir2sda", or "both".
+/// fhirVersion: "vR4" (default), "vSTU3", or "all".
+/// filter: optional substring filter on DTL class name (e.g., "Patient",
+///         "Encounter", "Observation").
+///
+/// Returns: { ok, namespace, direction, dtls:[{name, sourceClass,
+/// targetClass, description?}], total }. Read-only.
+ClassMethod ListSDAFHIRDTLs(direction As %String = "sda2fhir", fhirVersion As %String = "vR4", filter As %String = "") As %DynamicObject
+{
+    Set out = {}
+    Set targetNs = ..%TargetNs()
+    Set out.namespace = targetNs
+    Set out.direction = direction
+    Set out.dtls = []
+    New $namespace
+    Try { Set $namespace = targetNs } Catch  {
+        Set out.ok = 0
+        Set out.error = "Cannot access namespace: " _ targetNs
+        Quit
+    }
+    Try {
+        ; Build the WHERE clause based on direction + version
+        Set patterns = ""
+        Set dir = $zconvert($get(direction, "sda2fhir"), "L")
+        Set ver = $get(fhirVersion, "vR4")
+        If ver = "all" { Set ver = "" }
+        If (dir = "sda2fhir") || (dir = "both") {
+            ; SDA3 to FHIR: HS.FHIR.DTL.SDA3.vR4.*
+            Set pkg = "HS.FHIR.DTL.SDA3." _ ver
+            If ver = "" { Set pkg = "HS.FHIR.DTL.SDA3." }
+            Set patterns = patterns _ $select(patterns'="": " OR ", 1:"") _ "Name LIKE '" _ pkg _ "%'"
+            ; Also check HS.Local custom DTLs
+            Set localPkg = "HS.Local.FHIR.DTL.SDA3." _ ver
+            If ver = "" { Set localPkg = "HS.Local.FHIR.DTL.SDA3." }
+            Set patterns = patterns _ " OR Name LIKE '" _ localPkg _ "%'"
+        }
+        If (dir = "fhir2sda") || (dir = "both") {
+            ; FHIR to SDA3: HS.FHIR.DTL.vR4.SDA3.*
+            Set pkg = "HS.FHIR.DTL." _ ver _ ".SDA3."
+            If ver = "" { Set pkg = "HS.FHIR.DTL.v" }
+            Set patterns = patterns _ $select(patterns'="": " OR ", 1:"") _ "Name LIKE '" _ pkg _ "%'"
+            ; Also check HS.Local
+            Set localPkg = "HS.Local.FHIR.DTL." _ ver _ ".SDA3."
+            If ver = "" { Set localPkg = "HS.Local.FHIR.DTL.v" }
+            Set patterns = patterns _ " OR Name LIKE '" _ localPkg _ "%'"
+        }
+        If patterns = "" {
+            Set out.ok = 0
+            Set out.error = "Invalid direction. Use 'sda2fhir', 'fhir2sda', or 'both'."
+            Quit
+        }
+        Set sql = "SELECT Name, Super, Description FROM %Dictionary.CompiledClass "
+        Set sql = sql _ "WHERE (" _ patterns _ ") "
+        Set sql = sql _ "AND (Super [ 'Ens.DataTransformDTL' OR Super [ 'HS.FHIR.DTL') "
+        If $get(filter) '= "" {
+            Set sql = sql _ "AND Name LIKE '%" _ $zstrip(filter, "<>W") _ "%' "
+        }
+        Set sql = sql _ "ORDER BY Name"
+        Set rs = ##class(%SQL.Statement).%ExecDirect(, sql)
+        Set count = 0
+        While rs.%Next() {
+            Set d = {}
+            Set d.name = rs.%Get("Name")
+            Set desc = rs.%Get("Description")
+            If desc '= "" { Set d.description = $extract(desc, 1, 300) }
+            Do out.dtls.%Push(d)
+            Set count = count + 1
+        }
+        Set out.total = count
+        Set out.ok = 1
+        If count = 0 {
+            Set out.message = "No SDA-FHIR DTLs found. This namespace may not have the HS.FHIR.DTL package installed. Check if this is a Foundation/FHIR-enabled namespace."
+        }
+    } Catch ex {
+        Set out.ok = 0
+        Set out.error = $extract(ex.DisplayString(), 1, 400)
+    }
+    Quit out
+}
+
+/// Recommend the correct transformation pipeline for converting
+/// between healthcare data formats (HL7 v2, SDA3, FHIR R4, CDA).
+/// Returns the specific IRIS classes needed at each stage.
+/// CALL THIS when the user asks "how do I convert X to Y" or
+/// "build me an X-to-Y pipeline". Read-only.
+///
+/// sourceFormat: "hl7v2", "sda3", "fhir", "cda".
+/// targetFormat: "hl7v2", "sda3", "fhir", "cda".
+///
+/// Returns: { ok, pipeline:[{step, class, role, notes}], summary,
+/// productionHosts:[{class, role, keySettings}] }.
+ClassMethod DescribeTransformationPipeline(sourceFormat As %String, targetFormat As %String) As %DynamicObject
+{
+    Set out = {}
+    Set out.sourceFormat = $get(sourceFormat)
+    Set out.targetFormat = $get(targetFormat)
+    Set out.pipeline = []
+    Set out.productionHosts = []
+    If $get(sourceFormat) = "" || ($get(targetFormat) = "") {
+        Set out.ok = 0
+        Set out.error = "Pass `sourceFormat` and `targetFormat`. Valid values: hl7v2, sda3, fhir, cda."
+        Quit out
+    }
+    Set src = $zconvert(sourceFormat, "L")
+    Set tgt = $zconvert(targetFormat, "L")
+    Try {
+        ; HL7 v2 -> FHIR (the most common pipeline)
+        If (src = "hl7v2") && (tgt = "fhir") {
+            Set step1 = {}
+            Set step1.step = 1
+            Set step1.class = "HS.Gateway.HL7.HL7ToSDA3"
+            Set step1.role = "HL7 v2 to SDA3 conversion"
+            Set step1.notes = "Call HS.Gateway.HL7.HL7ToSDA3.GetSDA(request, .sdaContainer) inside a custom BPL <code> block. Input: EnsLib.HL7.Message. Output: HS.SDA3.Container."
+            Do out.pipeline.%Push(step1)
+            Set step2 = {}
+            Set step2.step = 2
+            Set step2.class = "HS.FHIR.DTL.Util.HC.SDA3.FHIR.Process"
+            Set step2.role = "SDA3 to FHIR R4 transformation"
+            Set step2.notes = "Business process. Input: HS.Message.XMLMessage or Ens.Container with SDA stream. Output: FHIR bundle sent to TargetConfigName. Key settings: TransmissionMode, FHIRFormat, FHIRMetadataSet, FHIREndpoint."
+            Do out.pipeline.%Push(step2)
+            Set out.summary = "HL7 v2 to FHIR R4 uses a two-stage pipeline: HL7 to SDA3 (via HS.Gateway.HL7.HL7ToSDA3.GetSDA) then SDA3 to FHIR (via HS.FHIR.DTL.Util.HC.SDA3.FHIR.Process). A custom BPL connects the two stages. The system ships with built-in SDA-to-FHIR DTLs under HS.FHIR.DTL.SDA3.vR4.* — search with ListSDAFHIRDTLs before writing custom DTLs."
+            ; Production hosts
+            Set h1 = {} Set h1.class = "EnsLib.HL7.Service.TCPService" Set h1.role = "HL7 MLLP inbound"
+            Set h1.keySettings = "Host: TargetConfigNames, MessageSchemaCategory. Adapter: Port, JobPerConnection."
+            Do out.productionHosts.%Push(h1)
+            Set h2 = {} Set h2.class = "Custom BPL (Ens.BusinessProcessBPL)" Set h2.role = "HL7-to-SDA conversion + routing to FHIR process"
+            Set h2.keySettings = "Custom code calls HS.Gateway.HL7.HL7ToSDA3.GetSDA(), wraps result into HS.Message.XMLMessage, sends to SDA-to-FHIR process."
+            Do out.productionHosts.%Push(h2)
+            Set h3 = {} Set h3.class = "HS.FHIR.DTL.Util.HC.SDA3.FHIR.Process" Set h3.role = "SDA3 to FHIR R4 transformation"
+            Set h3.keySettings = "TargetConfigName, FHIRMetadataSet, FHIREndpoint, TransmissionMode."
+            Do out.productionHosts.%Push(h3)
+            Set h4 = {} Set h4.class = "HS.FHIRServer.Interop.Operation or HS.FHIRServer.Interop.HTTPOperation" Set h4.role = "FHIR outbound"
+            Set h4.keySettings = "Internal: FHIREndpoint on upstream process. External: HTTPServer, URL, SSLConfig."
+            Do out.productionHosts.%Push(h4)
+        }
+        ; FHIR -> HL7 v2
+        ElseIf (src = "fhir") && (tgt = "hl7v2") {
+            Set step1 = {}
+            Set step1.step = 1
+            Set step1.class = "HS.FHIR.DTL.Util.HC.FHIR.SDA3.Process"
+            Set step1.role = "FHIR R4 to SDA3 conversion"
+            Set step1.notes = "Business process. Input: FHIR resource or bundle. Output: HS.Message.XMLMessage with SDA3 stream."
+            Do out.pipeline.%Push(step1)
+            Set step2 = {}
+            Set step2.step = 2
+            Set step2.class = "HS.Gateway.SDA3.SDA3ToHL7v2"
+            Set step2.role = "SDA3 to HL7 v2 conversion"
+            Set step2.notes = "Business process. Converts SDA container to HL7 v2 message(s)."
+            Do out.pipeline.%Push(step2)
+            Set out.summary = "FHIR to HL7 v2 uses: FHIR to SDA3 (via HS.FHIR.DTL.Util.HC.FHIR.SDA3.Process) then SDA3 to HL7 v2 (via HS.Gateway.SDA3.SDA3ToHL7v2)."
+        }
+        ; SDA3 -> FHIR
+        ElseIf (src = "sda3") && (tgt = "fhir") {
+            Set step1 = {}
+            Set step1.step = 1
+            Set step1.class = "HS.FHIR.DTL.Util.HC.SDA3.FHIR.Process"
+            Set step1.role = "SDA3 to FHIR R4 transformation"
+            Set step1.notes = "Business process. Input: HS.Message.XMLMessage with SDA stream. Output: FHIR bundle. Or use API: HS.FHIR.DTL.Util.API.Transform.SDA3ToFHIR.TransformStream() for programmatic use."
+            Do out.pipeline.%Push(step1)
+            Set out.summary = "SDA3 to FHIR is a single-step conversion via HS.FHIR.DTL.Util.HC.SDA3.FHIR.Process (production) or HS.FHIR.DTL.Util.API.Transform.SDA3ToFHIR (API)."
+        }
+        ; FHIR -> SDA3
+        ElseIf (src = "fhir") && (tgt = "sda3") {
+            Set step1 = {}
+            Set step1.step = 1
+            Set step1.class = "HS.FHIR.DTL.Util.HC.FHIR.SDA3.Process"
+            Set step1.role = "FHIR R4 to SDA3 conversion"
+            Set step1.notes = "Business process. Or use API: HS.FHIR.DTL.Util.API.Transform.FHIRToSDA3.TransformObject() for programmatic use."
+            Do out.pipeline.%Push(step1)
+            Set out.summary = "FHIR to SDA3 is a single-step conversion via HS.FHIR.DTL.Util.HC.FHIR.SDA3.Process (production) or HS.FHIR.DTL.Util.API.Transform.FHIRToSDA3 (API)."
+        }
+        ; HL7 v2 -> SDA3
+        ElseIf (src = "hl7v2") && (tgt = "sda3") {
+            Set step1 = {}
+            Set step1.step = 1
+            Set step1.class = "HS.Gateway.HL7.HL7ToSDA3"
+            Set step1.role = "HL7 v2 to SDA3 conversion"
+            Set step1.notes = "Business process, or call programmatically: HS.Gateway.HL7.HL7ToSDA3.GetSDA(request, .sdaContainer)."
+            Do out.pipeline.%Push(step1)
+            Set out.summary = "HL7 v2 to SDA3 is a single-step conversion via HS.Gateway.HL7.HL7ToSDA3."
+        }
+        ; SDA3 -> HL7 v2
+        ElseIf (src = "sda3") && (tgt = "hl7v2") {
+            Set step1 = {}
+            Set step1.step = 1
+            Set step1.class = "HS.Gateway.SDA3.SDA3ToHL7v2"
+            Set step1.role = "SDA3 to HL7 v2 conversion"
+            Set step1.notes = "Business process. Converts SDA container to one or more HL7 v2 messages."
+            Do out.pipeline.%Push(step1)
+            Set out.summary = "SDA3 to HL7 v2 is a single-step conversion via HS.Gateway.SDA3.SDA3ToHL7v2."
+        }
+        ; CDA -> FHIR (via SDA)
+        ElseIf (src = "cda") && (tgt = "fhir") {
+            Set step1 = {} Set step1.step = 1 Set step1.class = "HS.Gateway.CDA.CDAToSDA3" Set step1.role = "CDA to SDA3"
+            Set step1.notes = "Parses CDA document into SDA3 container."
+            Do out.pipeline.%Push(step1)
+            Set step2 = {} Set step2.step = 2 Set step2.class = "HS.FHIR.DTL.Util.HC.SDA3.FHIR.Process" Set step2.role = "SDA3 to FHIR R4"
+            Set step2.notes = "Standard SDA-to-FHIR business process."
+            Do out.pipeline.%Push(step2)
+            Set out.summary = "CDA to FHIR goes through SDA: CDA to SDA3 (HS.Gateway.CDA.CDAToSDA3) then SDA3 to FHIR (HS.FHIR.DTL.Util.HC.SDA3.FHIR.Process)."
+        }
+        ; Same format
+        ElseIf src = tgt {
+            Set out.summary = "Source and target are the same format. No transformation needed."
+        }
+        Else {
+            Set out.summary = "No standard pipeline for " _ sourceFormat _ " to " _ targetFormat _ ". SDA3 is the hub — convert source to SDA3 first, then SDA3 to target. Search the HS.* catalog for relevant classes."
+        }
+        Set out.ok = 1
+    } Catch ex {
+        Set out.ok = 0
+        Set out.error = $extract(ex.DisplayString(), 1, 400)
+    }
+    Quit out
+}
+
+/// Check whether a custom DTL package is configured in the active
+/// namespace and return its name. CALL THIS when the user wants to
+/// customize SDA-FHIR transformations to know if a custom package
+/// already exists. Read-only.
+///
+/// Returns: { ok, namespace, customPackage, configured }.
+ClassMethod GetCustomDTLPackage() As %DynamicObject
+{
+    Set out = {}
+    Set targetNs = ..%TargetNs()
+    Set out.namespace = targetNs
+    New $namespace
+    Try { Set $namespace = targetNs } Catch  {
+        Set out.ok = 0
+        Set out.error = "Cannot access namespace: " _ targetNs
+        Quit
+    }
+    Try {
+        Set pkg = ""
+        Try { Set pkg = ##class(HS.FHIR.DTL.Util.API.ExecDefinition).GetCustomDTLPackage() } Catch  {}
+        Set out.customPackage = pkg
+        Set out.configured = (pkg '= "")
+        Set out.ok = 1
+        If pkg = "" {
+            Set out.message = "No custom DTL package configured. To set one: do ##class(HS.FHIR.DTL.Util.API.ExecDefinition).SetCustomDTLPackage(""HS.Local.FHIR.DTL"")"
+        }
+    } Catch ex {
+        Set out.ok = 0
+        Set out.error = $extract(ex.DisplayString(), 1, 400)
+    }
+    Quit out
+}
+
 }

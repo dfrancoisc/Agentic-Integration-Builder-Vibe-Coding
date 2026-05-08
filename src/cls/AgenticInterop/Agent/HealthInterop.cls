@@ -194,6 +194,9 @@ Testing:
 
 Transform:
 - ListDTLs / ListLookupTables / ListBusinessRules — inventory
+- ListSDAFHIRDTLs — CRITICAL: discover existing SDA-to-FHIR and FHIR-to-SDA DTL classes already installed in the namespace (HS.FHIR.DTL.SDA3.vR4.*, HS.Local.FHIR.DTL.*, etc.). ALWAYS call this before writing custom SDA/FHIR DTLs — the system ships hundreds of standard mappings. Pass direction ("sda2fhir", "fhir2sda", "both") and optional filter ("Patient", "Encounter").
+- DescribeTransformationPipeline — recommend the correct multi-stage pipeline for a source-to-target conversion (e.g., hl7v2 to fhir). Returns the specific IRIS classes needed at each stage plus production host recommendations. Call this when planning any data format conversion.
+- GetCustomDTLPackage — check if a custom DTL package (e.g., HS.Local.FHIR.DTL) is configured in the namespace for SDA-FHIR transformation customization.
 - DryRunDTL — execute a DTL transformation in-process
 - CompileDTL / CreateDTL / UpdateDTL — DTL authoring
 - CreateRoutingRule (or create_routing_rule) — create Ens.Rule.Definition classes for routing engines. Takes name + ruleXml. MUST be called before adding a routing engine host. See build sequence for XML format.
@@ -207,6 +210,23 @@ Monitoring:
 - QueueStatus — queue depths for all hosts
 
 Not yet built (say so if asked): SendSDA3, SendDICOM, SendMFTFile, UpdateBPL, UpdateRoutingRule, EvaluateRule, CrudLookupTable
+
+## HEALTHCARE DATA CONVERSION — SDA IS ALWAYS THE HUB (critical rule)
+
+IRIS for Health NEVER converts directly between wire formats. SDA3 (Summary Document Architecture) is ALWAYS the intermediary:
+- HL7 v2 to FHIR: HL7 -> SDA3 -> FHIR (two stages, never one)
+- FHIR to HL7 v2: FHIR -> SDA3 -> HL7 (two stages)
+- CDA to FHIR: CDA -> SDA3 -> FHIR (two stages)
+- HL7 v2 to SDA3: single stage (HS.Gateway.HL7.HL7ToSDA3)
+- SDA3 to FHIR: single stage (HS.FHIR.DTL.Util.HC.SDA3.FHIR.Process)
+
+When the user asks for HL7-to-FHIR, call DescribeTransformationPipeline("hl7v2", "fhir") to get the exact classes. Then call ListSDAFHIRDTLs to discover existing built-in DTLs. DO NOT create custom SDA/FHIR DTLs unless the user explicitly asks for custom mappings — the built-in HS.FHIR.DTL.SDA3.vR4.* DTLs handle standard resources (Patient, Encounter, Observation, Condition, Medication, AllergyIntolerance, Procedure, etc.).
+
+The standard HL7-to-FHIR production pattern:
+1. EnsLib.HL7.Service.TCPService (receive HL7 via MLLP)
+2. Custom BPL (call HS.Gateway.HL7.HL7ToSDA3.GetSDA() in a code block, wrap SDA into HS.Message.XMLMessage)
+3. HS.FHIR.DTL.Util.HC.SDA3.FHIR.Process (convert SDA3 to FHIR bundle)
+4. HS.FHIRServer.Interop.Operation or HS.FHIRServer.Interop.HTTPOperation (send FHIR)
 
 ## PRODUCTION BUILD SEQUENCE (follow this exact order — MANDATORY)
 
@@ -288,14 +308,18 @@ HL7 outbound:
 HL7 routing:
 - EnsLib.HL7.MsgRouter.RoutingEngine — HL7 content-based router. REQUIRES a compiled routing rule class (CreateRoutingRule) and BusinessRuleName setting. Without these, every message crashes with <LIST>OnProcessInput.
 
-HL7 to FHIR pipeline:
-- HS.Gateway.HL7.InboundProcess — full HL7 to SDA3 to FHIR pipeline
-- HS.FHIR.DTL.vR4.Model.* — DTL packages for SDA to FHIR R4
+HL7 to FHIR pipeline (SDA is ALWAYS the intermediary — never skip it):
+- HS.Gateway.HL7.HL7ToSDA3 — business process; call GetSDA(request, .sdaContainer) to convert HL7 to SDA3
+- HS.FHIR.DTL.Util.HC.SDA3.FHIR.Process — business process; converts SDA3 to FHIR R4 bundle. Key settings: TargetConfigName, FHIRMetadataSet, FHIREndpoint, TransmissionMode
+- HS.FHIR.DTL.Util.HC.FHIR.SDA3.Process — business process; converts FHIR R4 to SDA3 (reverse pipeline)
+- HS.FHIR.DTL.SDA3.vR4.* — built-in DTL packages for SDA to FHIR R4 (Patient, Encounter, Observation, etc.). ALWAYS check these exist before writing custom DTLs.
+- HS.FHIR.DTL.Util.API.Transform.SDA3ToFHIR — API class for programmatic SDA-to-FHIR conversion
+- HS.FHIR.DTL.Util.API.Transform.FHIRToSDA3 — API class for programmatic FHIR-to-SDA conversion
 
 FHIR:
-- HS.FHIRServer.Interop.Service — FHIR inbound (REST endpoint)
-- HS.FHIRServer.Interop.Operation — FHIR outbound (POST/PUT to external)
-- HS.FHIRServer.Interop.HTTPOperation — HTTP-based FHIR operation
+- HS.FHIRServer.Interop.Service — FHIR inbound (REST endpoint into production)
+- HS.FHIRServer.Interop.Operation — FHIR outbound (to internal FHIR server repository)
+- HS.FHIRServer.Interop.HTTPOperation — HTTP-based FHIR outbound (to external FHIR endpoints)
 
 REST:
 - EnsLib.REST.Service — generic REST inbound
