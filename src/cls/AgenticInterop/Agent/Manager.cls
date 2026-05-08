@@ -26,7 +26,16 @@ ClassMethod Build(pProvider As %AI.Provider, Output pAgent As %AI.Agent, pAgentC
         Set tSC = pAgent.%Init()
         If 'tSC { Quit }
 
-        // 1a. Apply Agent overlay overrides for runtime fields the
+        // 1b. Strip framework waste tools from the LLM catalog.
+        //     %Init() auto-discovers EVERY non-abstract %AI.Tool subclass
+        //     in the namespace, including %AI.Tools.FileSystem, SQL, and
+        //     ShellTools (~2,100 tokens) plus the Skill.Base abstract
+        //     base class. ToolFilter.%Resolve removes them before each
+        //     LLM request so the model never sees them.
+        Set filter = ##class(AgenticInterop.Policy.ToolFilter).%New()
+        Do pAgent.ToolManager.SetDiscoveryPolicy(filter)
+
+        // 1c. Apply Agent overlay overrides for runtime fields the
         //     framework consumes via OREF properties (system prompt,
         //     temperature). MCPS / SKILLS use Overlay accessors below.
         //     If no override row exists, the helpers fall through to
@@ -47,17 +56,30 @@ ClassMethod Build(pProvider As %AI.Provider, Output pAgent As %AI.Agent, pAgentC
             Try { Set pAgent.MaxIterations = +effMaxIter } Catch  {}
         }
 
-        // 2. Register each MCP listed in Parameter MCPS (overlay-aware).
-        Set mcps = ##class(AgenticInterop.Editor.Overlay).GetEffectiveMCPS(pAgentClass)
-        If mcps '= "" {
-            For i=1:1:$LENGTH(mcps, ",") {
-                Set cls = $ZSTRIP($PIECE(mcps, ",", i), "<>W")
-                If cls = "" { Continue }
-                Set tSC = $classmethod(cls, "RegisterToAgent", pAgent)
-                If 'tSC { Quit }
-            }
+        // 2. Register Tool classes for EXECUTION via UseToolSet.
+        //
+        //    %Init() (step 1) auto-discovers every %AI.Tool subclass and
+        //    adds them to the FindTools catalog, but does NOT register
+        //    individual methods in the executor. UseToolSet is the call
+        //    that makes methods callable via ExecuteTool.
+        //
+        //    We call UseToolSet directly on each Tool class (not through
+        //    the MCP → ToolSet indirection). The old MCP loop called
+        //    UseToolSet on ToolSet.* wrapper classes that <Include>d the
+        //    same Tool.* methods, doubling every tool definition. Now
+        //    we register Tool classes once; the DiscoveryPolicy (step 1b)
+        //    deduplicates the catalog so the LLM sees each tool once.
+        //
+        //    The MCP metadata (NAME, DESCRIPTION, TOOLSETS CSV) is still
+        //    available for the admin UI (MCP list page, overlay editor)
+        //    but is no longer pushed into the ToolManager at runtime.
+        Set tools = "AgenticInterop.Tool.Production,AgenticInterop.Tool.Transform,AgenticInterop.Tool.Testing,AgenticInterop.Tool.Catalog,AgenticInterop.Tool.Monitoring"
+        For i=1:1:$LENGTH(tools, ",") {
+            Set cls = $PIECE(tools, ",", i)
+            Set tSC = pAgent.UseToolSet(cls)
             If 'tSC { Quit }
         }
+        If 'tSC { Quit }
 
         // 3. Register Skills (overlay-aware).
         Set tSC = ##class(AgenticInterop.Agent.SkillLoader).LoadSkills(pAgent, ##class(AgenticInterop.Editor.Overlay).GetEffectiveSKILLS(pAgentClass))
