@@ -11,6 +11,7 @@
 // to /agentic/admin/).
 
 const API = '/api/agentic';
+const ADMIN_VERSION = '2026.05.11.3';
 const TABS = ['agents', 'mcps', 'toolsets', 'tools', 'skills', 'connections', 'catalogs', 'audit'];
 const AUTH_KEY = 'AGENTIC_AUTH';
 
@@ -1199,14 +1200,6 @@ async function renderToolSetDetail() {
     $('btn-save').disabled = false;
     t._overlayKind = 'toolset';
 
-    // %AI.Tool subclass (class-methods) — read-only view of the
-    // class's public ClassMethods. No Include/Available dual-panel;
-    // the class IS the tool provider and all methods are registered.
-    if (t.toolSource === 'class-methods') {
-        renderToolClassDetail(t);
-        return;
-    }
-
     if (!state._toolProviders) {
         try { state._toolProviders = (await get('/editor/tool-providers')).providers || []; }
         catch { state._toolProviders = []; }
@@ -1214,11 +1207,16 @@ async function renderToolSetDetail() {
     const providers = state._toolProviders;
     const currentTools = t.tools || [];
 
-    // Build a lookup of currently-included tools: "providerClass|name" -> true
+    // Build a lookup of currently-included tools: "providerClass|name" -> true.
+    // For %AI.Tool classes (toolSource=class-methods) the detail response
+    // returns methods without providerClass — the class itself IS the
+    // provider, so we fill in providerClass = t.class and mark all enabled.
     const includedLookup = {};
     currentTools.forEach(ct => {
-        const key = (ct.providerClass || '') + '|' + ct.name;
-        if (ct.enabled !== 0) includedLookup[key] = true;
+        const prov = ct.providerClass || (t.toolSource === 'class-methods' ? t.class : '');
+        const key = prov + '|' + ct.name;
+        const isEnabled = (ct.enabled !== undefined) ? (ct.enabled !== 0) : true;
+        if (isEnabled) includedLookup[key] = true;
     });
 
     // Merge ALL tools from ALL providers into one pool.
@@ -1313,65 +1311,6 @@ async function renderToolSetDetail() {
         body.style.display = isOpen ? 'none' : 'block';
         defToggle.querySelector('.chev').textContent = isOpen ? '▶' : '▼';
     });
-}
-
-// Render detail for a %AI.Tool subclass (toolSource = "class-methods").
-// All public ClassMethods are auto-discovered by the framework as tools.
-// Read-only list — no Include/Available dual-panel.
-function renderToolClassDetail(t) {
-    const tools = t.tools || [];
-    $('btn-save').disabled = true;
-
-    let toolRowsHtml = '';
-    if (tools.length === 0) {
-        toolRowsHtml = '<div class="ts-empty">No public ClassMethods found.</div>';
-    } else {
-        toolRowsHtml = tools.map(tool => {
-            const desc = (tool.description || '').replace(/\r?\n/g, ' ').trim();
-            const short = desc.length > 200 ? desc.substring(0, 197) + '...' : desc;
-            const spec = tool.formalSpec || '';
-            // Parse formalSpec into readable parameter list
-            const params = spec ? spec.split(',').map(p => {
-                const parts = p.trim().split(':');
-                const pName = parts[0] || '';
-                const rest = parts.slice(1).join(':');
-                const hasDefault = rest.includes('=');
-                const pType = hasDefault ? rest.split('=')[0] : rest;
-                const pDef = hasDefault ? rest.split('=').slice(1).join('=') : '';
-                return `<span class="tc-param">${escapeHtml(pName)}<span class="tc-param-type">${escapeHtml(pType ? ':' + pType : '')}</span>${pDef ? '<span class="tc-param-def">=' + escapeHtml(pDef) + '</span>' : ''}</span>`;
-            }).join(', ') : '<span class="tc-no-params">none</span>';
-            return `
-                <div class="tc-tool-row">
-                    <div class="tc-tool-name">${escapeHtml(tool.name)}</div>
-                    <div class="tc-tool-params">Parameters: ${params}</div>
-                    ${short ? `<div class="tc-tool-desc">${escapeHtml(short)}</div>` : ''}
-                </div>`;
-        }).join('');
-    }
-
-    $('form').innerHTML = `
-        <div class="field readonly"><label>Class</label><input type="text" value="${escapeAttr(t.class)}" readonly></div>
-        <div class="field readonly">
-            <label>Name</label>
-            <input type="text" value="${escapeAttr(t.name || '')}" readonly>
-        </div>
-        <div class="field">
-            <label>Description</label>
-            <textarea id="f-description" class="short" readonly>${escapeHtml(reflowProse(t.description))}</textarea>
-        </div>
-        <div class="tc-tools-section">
-            <div class="tc-tools-head">
-                <span class="tc-tools-title">Registered tools</span>
-                <span class="ts-panel-count">${tools.length}</span>
-            </div>
-            <div class="tc-tools-body">
-                ${toolRowsHtml}
-            </div>
-        </div>
-        ${t.class ? sourcePanelHtml(t.class) : ''}
-    `;
-    bindSourcePanel($('form'));
-    bindAutoSizeTextareas($('form'));
 }
 
 // Build one tool row element (used in both panels).
@@ -2176,7 +2115,7 @@ function parseJson(s) { try { return s ? JSON.parse(s) : {}; } catch { return {}
     try {
         const ns = await get('/namespace');
         state.namespace = ns.namespace;
-        $('ns-indicator').textContent = 'namespace: ' + ns.namespace;
+        $('ns-indicator').textContent = 'namespace: ' + ns.namespace + '  |  v' + ADMIN_VERSION;
     } catch {
         $('ns-indicator').textContent = 'namespace: ?';
     }

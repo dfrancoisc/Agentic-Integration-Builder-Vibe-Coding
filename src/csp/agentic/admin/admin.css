@@ -219,33 +219,6 @@ body { display: flex; flex-direction: column; }
 .ts-available .ts-tool-btn:hover {
   background: rgba(34,197,94,0.12); border-color: var(--success);
 }
-/* Tool class detail (%AI.Tool subclass — read-only method list) */
-.tc-tools-section {
-  margin-top: 12px; border: 1px solid var(--border); border-radius: 6px;
-  overflow: hidden;
-}
-.tc-tools-head {
-  display: flex; align-items: center; gap: 8px;
-  padding: 8px 12px; background: var(--code); border-bottom: 1px solid var(--border);
-}
-.tc-tools-title { font-weight: 600; font-size: 13px; color: var(--text); }
-.tc-tools-body { max-height: 500px; overflow-y: auto; }
-.tc-tool-row {
-  padding: 10px 12px; border-bottom: 1px solid var(--border);
-  transition: background 0.1s;
-}
-.tc-tool-row:last-child { border-bottom: none; }
-.tc-tool-row:hover { background: rgba(59,130,246,0.04); }
-.tc-tool-name { font-weight: 600; font-size: 13px; color: var(--primary); margin-bottom: 3px; }
-.tc-tool-params {
-  font-size: 11px; color: var(--muted); margin-bottom: 3px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-}
-.tc-param { color: var(--text); }
-.tc-param-type { color: var(--muted); }
-.tc-param-def { color: #888; font-style: italic; }
-.tc-no-params { color: #999; font-style: italic; }
-.tc-tool-desc { font-size: 11px; color: var(--muted); line-height: 1.4; }
 /* Inline code-styled block (read-only signatures, source code preview).
  * Matches .field textarea.tall sizing so the side-by-side flow with
  * editable textareas reads consistently. */
