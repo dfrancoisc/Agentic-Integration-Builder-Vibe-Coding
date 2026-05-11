@@ -11,14 +11,21 @@ ClassMethod IsUserAuthored(pClass As %String) As %Boolean [ CodeMode = expressio
 }
 
 /// GET /api/agentic/editor/toolset/:class
+/// Works for both %AI.ToolSet subclasses (legacy) and %AI.Tool
+/// subclasses (current architecture after token optimization).
 ClassMethod Get(pResponse As %CSP.Response, pClass As %String) As %Status
 {
     Set util = "AgenticInterop.Editor.Util"
     If '##class(%Dictionary.CompiledClass).%ExistsId(pClass) {
-        Quit $classmethod(util, "WriteError", pResponse, "404 Not Found", "ToolSet class does not exist", pClass)
+        Quit $classmethod(util, "WriteError", pResponse, "404 Not Found", "Class does not exist", pClass)
     }
+    ; %AI.Tool subclass — list public ClassMethods as tools
+    If $classmethod(util, "ExtendsClass", pClass, "%AI.Tool") {
+        Quit ..GetToolClass(pResponse, pClass)
+    }
+    ; Legacy %AI.ToolSet subclass path
     If '$classmethod(util, "ExtendsClass", pClass, "%AI.ToolSet") {
-        Quit $classmethod(util, "WriteError", pResponse, "400 Bad Request", "Class is not a %AI.ToolSet subclass", pClass)
+        Quit $classmethod(util, "WriteError", pResponse, "400 Bad Request", "Class is not a %AI.Tool or %AI.ToolSet subclass", pClass)
     }
     // Overlay-aware read — surfaces user customizations on top of
     // shipped class metadata.
@@ -54,6 +61,39 @@ ClassMethod Get(pResponse As %CSP.Response, pClass As %String) As %Status
     If defRaw '= "" {
         Set body.includedClass = ..%ExtractIncludedClass(defRaw)
     }
+    Quit $classmethod(util, "WriteJSON", pResponse, body)
+}
+
+/// Handle GET for %AI.Tool subclasses — introspect public ClassMethods
+/// as tool entries. Each method becomes a tool the LLM can call.
+ClassMethod GetToolClass(pResponse As %CSP.Response, pClass As %String) As %Status [ Internal ]
+{
+    Set util = "AgenticInterop.Editor.Util"
+    Set body = {}
+    Set body.class = pClass
+    Set body.name = $piece(pClass, ".", $length(pClass, "."))
+    Set body.userAuthored = 0
+    Set body.toolSource = "class-methods"
+    ; Read class description
+    Set cdef = ##class(%Dictionary.CompiledClass).%OpenId(pClass)
+    If $isobject(cdef) {
+        Set body.description = $extract(cdef.Description, 1, 500)
+    }
+    ; List public ClassMethods (skip %-prefixed system methods)
+    Set tools = []
+    Set mrs = ##class(%SQL.Statement).%ExecDirect(,
+        "SELECT Name, Description, FormalSpec FROM %Dictionary.CompiledMethod " _
+        "WHERE parent = ? AND ClassMethod = 1 " _
+        "AND Name NOT LIKE '\%%' ESCAPE '\'", pClass)
+    While mrs.%Next() {
+        Set t = {}
+        Set t.name = mrs.%Get("Name")
+        Set t.description = $extract(mrs.%Get("Description"), 1, 300)
+        Set t.formalSpec = mrs.%Get("FormalSpec")
+        Do tools.%Push(t)
+    }
+    Set body.tools = tools
+    Set body.toolCount = tools.%Size()
     Quit $classmethod(util, "WriteJSON", pResponse, body)
 }
 
