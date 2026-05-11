@@ -349,7 +349,7 @@ function renderMCPList() {
 
 function renderToolSetList() {
     const list = $('list');
-    if (!state.list.length) { list.innerHTML = '<div class="empty-state">No ToolSets.</div>'; return; }
+    if (!state.list.length) { list.innerHTML = '<div class="empty-state">No Tool classes found.</div>'; return; }
     list.innerHTML = '';
     for (const t of state.list) {
         const div = document.createElement('div');
@@ -957,7 +957,7 @@ async function renderToolList() {
     const list = $('list');
     list.innerHTML = '<div class="empty-state">Loading tools…</div>';
     if (!state.list.length) {
-        list.innerHTML = '<div class="empty-state">No ToolSets registered. The framework manifest seeds the shipped set on install — if you see this, run the install routine again.</div>';
+        list.innerHTML = '<div class="empty-state">No Tool classes found. AgenticInterop.Tool.* classes extend %AI.Tool and are registered directly by Manager.Build.</div>';
         return;
     }
     list.innerHTML = '';
