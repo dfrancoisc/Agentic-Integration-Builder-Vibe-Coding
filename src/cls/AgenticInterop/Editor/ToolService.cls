@@ -84,11 +84,39 @@ ClassMethod Get(pResponse As %CSP.Response, pToolSet As %String, pName As %Strin
             }
         }
     }
+    ; Fall back to %AI.Tool introspection — the class IS the tool
+    ; provider; each public ClassMethod is a tool the LLM can call.
+    If '$isobject(match), $classmethod(util, "ExtendsClass", pToolSet, "%AI.Tool") {
+        Set mrs = ##class(%SQL.Statement).%ExecDirect(,
+            "SELECT Name, Description, FormalSpec, ReturnType FROM %Dictionary.CompiledMethod " _
+            "WHERE parent = ? AND ClassMethod = 1 AND Name = ?", pToolSet, pName)
+        If mrs.%Next() {
+            Set match = {}
+            Set match.name = mrs.%Get("Name")
+            Set match.description = mrs.%Get("Description")
+            Set match.formalSpec = mrs.%Get("FormalSpec")
+            Set match.returnType = mrs.%Get("ReturnType")
+            Set match.providerClass = pToolSet
+            Set match.toolSource = "class-method"
+            ; Read method body source
+            Set match.implementation = {}
+            Set match.implementation.kind = "objectscript"
+            Try {
+                Set cm = ##class(%Dictionary.CompiledMethod).%OpenId(pToolSet _ "||" _ pName)
+                If $isobject(cm), $isobject(cm.Implementation) {
+                    Set src = ""
+                    Do cm.Implementation.Rewind()
+                    While 'cm.Implementation.AtEnd { Set src = src _ cm.Implementation.Read(8192) }
+                    Set match.implementation.body = src
+                }
+            } Catch {}
+        }
+    }
     If '$isobject(match) {
         Quit $classmethod(util, "WriteError", pResponse, "404 Not Found", "Tool not found in ToolSet", pName)
     }
-    // Surface a curated sample input so the dry-run panel pre-fills
-    // the textarea — one-click test for shipped tools.
+    ; Surface a curated sample input so the dry-run panel pre-fills
+    ; the textarea — one-click test for shipped tools.
     Try {
         Set sample = ..SampleInput(pName)
         If $isobject(sample) { Set match.sampleInput = sample }
