@@ -193,17 +193,53 @@
 <body>
 
 <h1>Agentic Interop for IRIS for Health</h1>
-<p class="subtitle">Architecture diagram — built on the InterSystems %AI Framework (IRIS 2026.2). Updated 2026-05-08.</p>
+<p class="subtitle">Architecture diagram — built on the InterSystems %AI Framework (IRIS 2026.2). Updated 2026-05-11.</p>
 
 <!-- Stats -->
 <div class="stats-bar">
   <div class="stat"><span class="stat-value">58</span><span class="stat-label">Classes</span></div>
-  <div class="stat"><span class="stat-value">42</span><span class="stat-label">LLM Tools</span></div>
+  <div class="stat"><span class="stat-value">48</span><span class="stat-label">LLM Tools</span></div>
   <div class="stat"><span class="stat-value">9</span><span class="stat-label">Skills</span></div>
   <div class="stat"><span class="stat-value">4</span><span class="stat-label">MCP Servers</span></div>
   <div class="stat"><span class="stat-value">2</span><span class="stat-label">RAG Catalogs</span></div>
   <div class="stat"><span class="stat-value">2</span><span class="stat-label">Policies</span></div>
-  <div class="stat"><span class="stat-value">13</span><span class="stat-label">Packages</span></div>
+  <div class="stat"><span class="stat-value">2</span><span class="stat-label">Personas</span></div>
+</div>
+
+<!-- DX vs Builder persona split -->
+<div style="display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 28px; max-width: 1400px; margin-left: auto; margin-right: auto;">
+  <div class="card" style="flex: 1 1 calc(50% - 8px); min-width: 340px; background: #1a2a3a; border-color: #2a4a6a; color: #d0e0f0;">
+    <div class="card-title" style="font-size: 16px;">Developer Experience (DX) <span class="badge" style="background: rgba(88,166,255,0.25); color: #8cc4ff;">VS Code / IDE</span></div>
+    <div class="card-body" style="margin-top: 8px; line-height: 1.7;">
+      InterSystems engineers and partners who author the underlying capabilities.
+      <hr class="section-divider">
+      <ul>
+        <li><strong>Write Tools</strong> — %AI.Tool subclasses in ObjectScript / Embedded Python. Each public ClassMethod = one LLM tool</li>
+        <li><strong>Author Skills</strong> — markdown XData in Skill.Base subclasses. Domain knowledge the agent consults</li>
+        <li><strong>Build Catalogs</strong> — walk %Dictionary, curate descriptions, generate embeddings, persist vector tables</li>
+        <li><strong>Package &amp; Ship</strong> — IPM module installs into any IRIS for Health / Health Connect namespace</li>
+      </ul>
+      <hr class="section-divider">
+      <em style="font-size: 11px; opacity: 0.7;">Developers define what the copilot CAN do. Their output is compiled classes in an IPM package.</em>
+    </div>
+  </div>
+  <div class="card" style="flex: 1 1 calc(50% - 8px); min-width: 340px; background: #2a1a3a; border-color: #4a2a6a; color: #e0d0f0;">
+    <div class="card-title" style="font-size: 16px;">Builder Experience (End User) <span class="badge" style="background: rgba(150,100,220,0.25); color: #c8a8f0;">IRIS Management Portal</span></div>
+    <div class="card-body" style="margin-top: 8px; line-height: 1.7;">
+      Integration engineers inside IRIS for Health who configure and use the copilot. No code required.
+      <hr class="section-divider">
+      <ul>
+        <li><strong>Create Agents</strong> — write system prompts, set temperature/iterations, attach MCP Servers and Skills</li>
+        <li><strong>Assemble MCP Servers</strong> — select Toolsets from the developer-created pool, scope domains</li>
+        <li><strong>Browse Toolsets &amp; Tools</strong> — see names, descriptions, parameters. Decide what to include</li>
+        <li><strong>Attach Skills</strong> — link domain knowledge to agents. Pick which expertise the agent has</li>
+        <li><strong>Configure Connections</strong> — LLM provider setup with health semaphore. Paste key, click Test</li>
+        <li><strong>Chat</strong> — streaming chat with tool cards, confirmation gates, guided prompts</li>
+      </ul>
+      <hr class="section-divider">
+      <em style="font-size: 11px; opacity: 0.7;">Builders decide HOW the copilot behaves. Their work is configuration in the admin UI, not code.</em>
+    </div>
+  </div>
 </div>
 
 <!-- Token optimization callout -->
@@ -1130,9 +1166,11 @@
 <!-- Footer -->
 <div style="margin-top: 48px; padding: 20px 0; border-top: 1px solid var(--line); max-width: 1400px; margin-left: auto; margin-right: auto;">
   <p style="font-size: 12px; color: var(--text-dim);">
-    Agentic Interop for InterSystems IRIS for Health — 58 classes, 42 tools, 9 skills, 4 MCP servers, 2 policies, 2 RAG catalogs.
+    Agentic Interop for InterSystems IRIS for Health — 58 classes, 48 tools, 9 skills, 4 MCP servers, 2 policies, 2 RAG catalogs.
     Built on the %AI Framework (IRIS 2026.2). IPM package: agentic-interop.
-    <br>Updated 2026-05-08. Token optimization: tool definitions 15.6K &rarr; 7K, schema maps 30K &rarr; 7K, system prompt 7.2K &rarr; 1.5K.
+    Two personas: Developer Experience (VS Code / IDE) authors Tools, Skills, and Catalogs.
+    Builder Experience (IRIS Management Portal) configures Agents, MCP Servers, Toolsets, and chats with the copilot.
+    <br>Updated 2026-05-11. Token optimization: tool definitions 15.6K &rarr; 7K, schema maps 30K &rarr; 7K, system prompt 7.2K &rarr; 1.5K.
   </p>
 </div>
 
