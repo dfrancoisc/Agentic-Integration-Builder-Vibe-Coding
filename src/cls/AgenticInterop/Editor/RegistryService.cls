@@ -61,18 +61,18 @@ ClassMethod ListMCPs(pResponse As %CSP.Response, pRequest As %CSP.Request) As %S
 }
 
 /// GET /api/agentic/registry/toolsets
-/// Lists Tool classes (%AI.Tool subclasses) registered in the agent.
-/// The ToolSet wrapper layer was removed during the token optimization
-/// (duplicate registrations). Manager.Build now registers Tool classes
-/// directly via agent.UseToolSet(). This endpoint lists those Tool
-/// classes so the admin UI shows the actual tool surface the LLM sees.
+/// Lists ToolSet classes (%AI.ToolSet subclasses) that MCPs can bind.
+/// Each ToolSet wraps one or more %AI.Tool classes and is the unit of
+/// binding in the Agent -> MCP -> ToolSet -> Tool chain. The MCP editor
+/// shows checkboxes from this list so users can check/uncheck which
+/// ToolSets an MCP binds.
 ClassMethod ListToolSets(pResponse As %CSP.Response, pRequest As %CSP.Request) As %Status
 {
     Set rs = ##class(%SQL.Statement).%ExecDirect(,
         "SELECT Name, Description FROM %Dictionary.CompiledClass " _
-        "WHERE (Super [ '%AI.Tool' OR PrimarySuper [ '~%AI.Tool~') " _
-        "AND Name [ 'AgenticInterop.Tool.' " _
-        "AND Name <> '%AI.Tool' AND Abstract <> 1 " _
+        "WHERE (Super [ '%AI.ToolSet' OR PrimarySuper [ '~%AI.ToolSet~') " _
+        "AND (Name [ 'AgenticInterop.ToolSet.' OR Name [ 'AgenticInterop.User.ToolSet.') " _
+        "AND Name <> '%AI.ToolSet' AND Abstract <> 1 " _
         "ORDER BY Name")
     Set arr = []
     While rs.%Next() {
@@ -83,15 +83,16 @@ ClassMethod ListToolSets(pResponse As %CSP.Response, pRequest As %CSP.Request) A
             "description": ($extract(desc, 1, 300)),
             "name": ($piece(cls, ".", $length(cls, ".")))
         }
-        ; Count public ClassMethods that are actual tools — the %AI
-        ; framework auto-discovers these by name. Skip %-prefixed
-        ; system methods inherited from %AI.Tool / %RegisteredObject.
+        ; Count tools provided by this ToolSet by looking at the
+        ; %AI.Tool class it depends on (convention: ToolSet.X wraps Tool.X)
         Set toolCount = 0
         Try {
+            Set toolCls = $replace(cls, ".ToolSet.", ".Tool.")
+            Set toolCls = $replace(toolCls, ".User.ToolSet.", ".User.Tool.")
             Set mrs = ##class(%SQL.Statement).%ExecDirect(,
                 "SELECT Name FROM %Dictionary.CompiledMethod " _
                 "WHERE parent = ? AND ClassMethod = 1 " _
-                "AND Name NOT LIKE '\%%' ESCAPE '\'", cls)
+                "AND Name NOT LIKE '\%%' ESCAPE '\'", toolCls)
             While mrs.%Next() { Set toolCount = toolCount + 1 }
         } Catch {}
         Set row.toolCount = toolCount

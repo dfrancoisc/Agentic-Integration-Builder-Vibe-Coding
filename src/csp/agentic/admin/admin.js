@@ -541,6 +541,7 @@ function renderConnectionDetail() {
         ${isNew ? '' : semaphore}
     `;
     bindAutoSizeTextareas($('form'));
+    watchFormChanges();
     if (!isNew) {
         $('f-test').addEventListener('click', async () => {
             const btn = $('f-test'); btn.disabled = true;
@@ -1115,6 +1116,7 @@ function renderAgentDetail() {
     `;
     bindSourcePanel($('form'));
     bindAutoSizeTextareas($('form'));
+    watchFormChanges();
     const aResetBtn = $('f-reset-override');
     if (aResetBtn) aResetBtn.addEventListener('click', () => resetOverride('agent', a.class, renderAgentDetail));
     if (isUser && state.registry.mcps.length === 0) loadRegistries(true).then(() => renderAgentDetail());
@@ -1195,6 +1197,7 @@ function renderMCPDetail() {
     `;
     bindSourcePanel($('form'));
     bindAutoSizeTextareas($('form'));
+    watchFormChanges();
     const resetBtn = $('f-reset-override');
     if (resetBtn) resetBtn.addEventListener('click', () => resetOverride('mcp', m.class, renderMCPDetail));
     if (isUser && state.registry.toolsets.length === 0) loadRegistries(true).then(() => renderMCPDetail());
@@ -1321,6 +1324,8 @@ async function renderToolSetDetail() {
         body.style.display = isOpen ? 'none' : 'block';
         defToggle.querySelector('.chev').textContent = isOpen ? '▶' : '▼';
     });
+
+    watchFormChanges();
 }
 
 // Build one tool row element (used in both panels).
@@ -1443,6 +1448,9 @@ function refreshToolCounts() {
     const availCount = $('f-avail-count');
     if (incCount) incCount.textContent = inc;
     if (availCount) availCount.textContent = avail;
+    // Tool rows moved between panels = configuration changed
+    var indicator = $('unsaved-indicator');
+    if (indicator) indicator.className = 'show';
 }
 
 function renderSkillDetail() {
@@ -1468,6 +1476,7 @@ function renderSkillDetail() {
     `;
     bindSourcePanel($('form'));
     bindAutoSizeTextareas($('form'));
+    watchFormChanges();
 }
 
 function renderToolDetail() {
@@ -1540,6 +1549,7 @@ function renderToolDetail() {
     `;
     bindSourcePanel($('form'));
     bindAutoSizeTextareas($('form'));
+    watchFormChanges();
     if (t._toolset && t._originalName) bindToolDryRun(t);
 }
 
@@ -1695,6 +1705,7 @@ async function saveAgent() {
     state.selected = r;
     toast('Saved.', 'success');
     renderAgentDetail();
+    clearDirtyIndicator();
     if (state.tab === 'agents') loadList();
 }
 
@@ -1716,6 +1727,7 @@ async function saveMCP() {
     state.selected = r;
     toast('Saved.', 'success');
     renderMCPDetail();
+    clearDirtyIndicator();
     if (state.tab === 'mcps') loadList();
 }
 
@@ -1752,6 +1764,7 @@ async function saveToolSet() {
     state._toolProviders = null;
     toast('Saved. ToolSet recompiled.', 'success');
     renderToolSetDetail();
+    clearDirtyIndicator();
     if (state.tab === 'toolsets') loadList();
 }
 
@@ -1790,6 +1803,7 @@ async function saveConnection() {
     state.selected = saved;
     toast('Saved.', 'success');
     renderConnectionDetail();
+    clearDirtyIndicator();
     if (state.tab === 'connections') loadList();
 }
 
@@ -1815,6 +1829,7 @@ async function saveTool() {
     state.selected = { ...r, _toolset: t._toolset, _originalName: r.name };
     toast('Saved.', 'success');
     renderToolDetail();
+    clearDirtyIndicator();
     if (state.tab === 'tools') loadList();
 }
 
@@ -1988,6 +2003,53 @@ function sourcePanelHtml(className) {
             </div>
         </div>
     `;
+}
+
+// -------- dirty-state detection --------
+// Captures a snapshot of every form input after rendering, then watches
+// for changes. When anything differs, the "configuration has changed"
+// indicator appears next to the Save button.
+
+let _formSnapshot = null;
+
+function snapshotFormState() {
+    const form = $('form');
+    if (!form) return '';
+    const parts = [];
+    form.querySelectorAll('input, textarea, select').forEach(el => {
+        if (el.type === 'checkbox') {
+            parts.push(el.dataset.value + ':' + (el.checked ? '1' : '0'));
+        } else {
+            parts.push((el.id || el.name || '') + ':' + (el.value || ''));
+        }
+    });
+    return parts.join('|');
+}
+
+function watchFormChanges() {
+    _formSnapshot = snapshotFormState();
+    var indicator = $('unsaved-indicator');
+    if (indicator) indicator.className = '';
+    var form = $('form');
+    if (!form) return;
+    function check() {
+        var current = snapshotFormState();
+        var ind = $('unsaved-indicator');
+        if (!ind) return;
+        if (current !== _formSnapshot) {
+            ind.className = 'show';
+        } else {
+            ind.className = '';
+        }
+    }
+    form.addEventListener('input', check);
+    form.addEventListener('change', check);
+}
+
+function clearDirtyIndicator() {
+    _formSnapshot = snapshotFormState();
+    var indicator = $('unsaved-indicator');
+    if (indicator) indicator.className = '';
 }
 
 // Grow every textarea in the form to fit its content so long descriptions

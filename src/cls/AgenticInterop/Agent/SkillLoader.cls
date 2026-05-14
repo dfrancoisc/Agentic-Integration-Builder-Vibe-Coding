@@ -10,10 +10,10 @@
 Class AgenticInterop.Agent.SkillLoader Extends %RegisteredObject
 {
 
-/// Default v1 skills — the nine specialist skill classes shipped with the
+/// Default v1 skills — the twelve specialist skill classes shipped with the
 /// IPM module. Override in a subclass or pass a different list to
 /// LoadSkills() to customize per Data.Agent row.
-Parameter DEFAULTSKILLS = "AgenticInterop.Skill.Productions,AgenticInterop.Skill.DTL,AgenticInterop.Skill.BPL,AgenticInterop.Skill.RoutingRules,AgenticInterop.Skill.HL7v2,AgenticInterop.Skill.FHIRR4,AgenticInterop.Skill.SDA,AgenticInterop.Skill.RestInProductions,AgenticInterop.Skill.ESBPattern";
+Parameter DEFAULTSKILLS = "AgenticInterop.Skill.Productions,AgenticInterop.Skill.DTL,AgenticInterop.Skill.BPL,AgenticInterop.Skill.RoutingRules,AgenticInterop.Skill.HL7v2,AgenticInterop.Skill.FHIRR4,AgenticInterop.Skill.SDA,AgenticInterop.Skill.RestInProductions,AgenticInterop.Skill.ESBPattern,AgenticInterop.Skill.X12,AgenticInterop.Skill.CDA,AgenticInterop.Skill.Adapters";
 
 /// Instantiate each named Skill class, set ParentAgent, register on the
 /// agent's ToolManager. Returns %Status.

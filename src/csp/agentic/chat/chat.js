@@ -449,6 +449,11 @@ function formatBubbleText(textDiv) {
     let inList = false;
     let listType = '';
     let lastWasBreak = false;
+    // Track how many numbered items we've emitted so that when sub-bullets
+    // or blank lines interrupt a numbered list and we have to close/reopen
+    // the <ol>, we use start="N" to continue the numbering. Reset on
+    // headings or regular paragraphs (= a new logical section).
+    let olCounter = 0;
 
     for (let i = 0; i < lines.length; i++) {
         let line = lines[i];
@@ -456,12 +461,14 @@ function formatBubbleText(textDiv) {
         // Headings: ## or ### at start of line
         if (/^###\s+(.+)/.test(line)) {
             if (inList) { parts.push(listType === 'ul' ? '</ul>' : '</ol>'); inList = false; }
+            olCounter = 0;
             parts.push('<h4 class="chat-h">' + fmtInline(line.replace(/^###\s+/, '')) + '</h4>');
             lastWasBreak = false;
             continue;
         }
         if (/^##\s+(.+)/.test(line)) {
             if (inList) { parts.push(listType === 'ul' ? '</ul>' : '</ol>'); inList = false; }
+            olCounter = 0;
             parts.push('<h3 class="chat-h">' + fmtInline(line.replace(/^##\s+/, '')) + '</h3>');
             lastWasBreak = false;
             continue;
@@ -479,11 +486,13 @@ function formatBubbleText(textDiv) {
             continue;
         }
 
-        // Numbered list: 1. item
+        // Numbered list: 1. item — uses olCounter + start attr so that
+        // sub-bullets between items don't reset to "1."
         if (/^\s*\d+\.\s+(.+)/.test(line)) {
+            olCounter++;
             if (!inList || listType !== 'ol') {
                 if (inList) parts.push(listType === 'ul' ? '</ul>' : '</ol>');
-                parts.push('<ol class="chat-list">');
+                parts.push('<ol class="chat-list" start="' + olCounter + '">');
                 inList = true; listType = 'ol';
             }
             parts.push('<li>' + fmtInline(line.replace(/^\s*\d+\.\s+/, '')) + '</li>');
@@ -498,7 +507,8 @@ function formatBubbleText(textDiv) {
             continue;
         }
 
-        // Regular line with inline formatting
+        // Regular line with inline formatting — resets numbered-list counter
+        olCounter = 0;
         lastWasBreak = false;
         parts.push('<p class="chat-p">' + fmtInline(line) + '</p>');
     }
