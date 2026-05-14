@@ -381,8 +381,10 @@
     /* ---------------- cleanup helpers (REST calls from inject) -------- */
 
     function cleanupFetch(method, path) {
+        var ns = currentNamespace();
         var opts = { method: method, headers: {} };
         if (STATE.bearer) opts.headers['Authorization'] = STATE.bearer;
+        if (ns) opts.headers['X-IRIS-Namespace'] = ns;
         return origFetch('/api/agentic' + path, opts).then(function (r) {
             if (!r.ok) throw new Error('HTTP ' + r.status + ' ' + r.statusText);
             return r.json();
