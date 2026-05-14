@@ -11,20 +11,28 @@ ClassMethod IsUserAuthored(pClass As %String) As %Boolean [ CodeMode = expressio
 }
 
 /// GET /api/agentic/editor/toolset/:class
-/// Works for both %AI.ToolSet subclasses (legacy) and %AI.Tool
-/// subclasses (current architecture after token optimization).
+/// Works for both %AI.ToolSet subclasses and %AI.Tool subclasses.
+/// NOTE: %AI.ToolSet extends %AI.Tool in the framework class hierarchy,
+/// so we MUST check for %AI.ToolSet FIRST (more specific) before falling
+/// back to the %AI.Tool branch. Checking %AI.Tool first would incorrectly
+/// route ToolSet classes to GetToolClass, which lists ClassMethods on the
+/// ToolSet itself (empty) instead of parsing its Definition XData.
 ClassMethod Get(pResponse As %CSP.Response, pClass As %String) As %Status
 {
     Set util = "AgenticInterop.Editor.Util"
     If '##class(%Dictionary.CompiledClass).%ExistsId(pClass) {
         Quit $classmethod(util, "WriteError", pResponse, "404 Not Found", "Class does not exist", pClass)
     }
-    ; %AI.Tool subclass — list public ClassMethods as tools
-    If $classmethod(util, "ExtendsClass", pClass, "%AI.Tool") {
+    ; %AI.ToolSet subclass — parse Definition XData for included tools.
+    ; Must check BEFORE %AI.Tool because %AI.ToolSet extends %AI.Tool.
+    If $classmethod(util, "ExtendsClass", pClass, "%AI.ToolSet") {
+        ; Fall through to the ToolSet handler below
+    }
+    ; %AI.Tool subclass (but NOT a ToolSet) — list public ClassMethods as tools
+    ElseIf $classmethod(util, "ExtendsClass", pClass, "%AI.Tool") {
         Quit ..GetToolClass(pResponse, pClass)
     }
-    ; Legacy %AI.ToolSet subclass path
-    If '$classmethod(util, "ExtendsClass", pClass, "%AI.ToolSet") {
+    Else {
         Quit $classmethod(util, "WriteError", pResponse, "400 Bad Request", "Class is not a %AI.Tool or %AI.ToolSet subclass", pClass)
     }
     // Overlay-aware read — surfaces user customizations on top of
