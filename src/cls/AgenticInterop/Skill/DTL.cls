@@ -62,15 +62,18 @@ Virtual documents (other than XML): use the curly-brace syntax `source.{SegName:
 
 ## CRITICAL: HL7 virtual document paths differ by message type — ALWAYS LOOK THEM UP
 
-Different HL7 message types have DIFFERENT segment group nesting. You CANNOT guess these paths.
+Different HL7 message types have DIFFERENT segment group nesting. You CANNOT guess these paths. Even the same segment (PID, OBR, OBX) lives at different nesting levels depending on the message structure.
 
 Examples of how paths vary:
 - ADT_A01: PID is flat              -> source.{PID:PatientName}
 - ADT_A01: PV1 is flat              -> source.{PV1:AttendingDoctor}
-- ORU_R01: PID is deeply nested     -> target.{PIDgrpgrp(1).PIDgrp.PID:PatientName}
-- ORU_R01: OBR is deeply nested     -> target.{PIDgrpgrp(1).ORCgrp(1).OBR:OrderingProvider}
-- ORU_R01: OBX is deeply nested     -> target.{PIDgrpgrp(1).ORCgrp(1).OBXgrp(1).OBX:ObservationValue}
-- ORM_O01: OBR nesting is different -> target.{ORCgrp(1).OBRgrp.OBR:...}
+- ORU_R01: PID is deeply nested     -> source.{PIDgrpgrp(1).PIDgrp.PID:PatientName}
+- ORU_R01: OBR is deeply nested     -> source.{PIDgrpgrp(1).ORCgrp(1).OBR:OrderingProvider}
+- ORU_R01: OBX is deeply nested     -> source.{PIDgrpgrp(1).ORCgrp(1).OBXgrp(1).OBX:ObservationValue}
+- ORM_O01: OBR nesting is different -> source.{ORCgrp(1).OBRgrp.OBR:...}
+- RDE_O11: OBR is in ORCgrp        -> source.{ORCgrp(1).OBR:...}
+
+The patterns are NOT predictable from the message type name. ADT messages tend to be flat; ORU, ORM, RDE, and OML messages have deep nesting. But the exact nesting differs per structure.
 
 MANDATORY WORKFLOW for building any HL7 DTL:
 1. Call GetHL7SchemaMap(category, sourceMessageStructure) to get SOURCE paths
@@ -81,6 +84,8 @@ MANDATORY WORKFLOW for building any HL7 DTL:
 
 If you skip steps 1-2, the DTL will silently produce empty segments because IRIS
 does not error on invalid virtual document paths — it just returns empty strings.
+
+For DTLs with `create="copy"` mode (clone source as target): the source and target are the same structure, so you only need GetHL7SchemaMap once. Use copy mode when the transformation modifies a few fields and keeps the rest unchanged — it is simpler than mapping every field with `create="new"`.
 
 XML virtual documents: see Routing XML Virtual Documents in Productions for `<assign>` paths.
 

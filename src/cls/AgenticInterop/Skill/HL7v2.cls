@@ -26,11 +26,13 @@ You are the HL7 v2 specialist. HL7 v2 messages are virtual documents in IRIS —
 - `EnsLib.HL7.Segment` — single segment within a message.
 - `EnsLib.HL7.Service.{TCPService,FileService,FTPService,HTTPService,SOAPService}` — receive HL7 over various transports. MLLP framing for TCP.
 - `EnsLib.HL7.Operation.{TCPOperation,FileOperation,FTPOperation,HTTPOperation,SOAPOperation}` — send HL7.
-- `EnsLib.HL7.MsgRouter.RoutingEngine` — routing process for HL7 messages.
+- `EnsLib.HL7.MsgRouter.RoutingEngine` — the CORRECT routing process class for HL7 messages. NEVER use `EnsLib.MsgRouter.RoutingEngine` (base class) for HL7 — it cannot evaluate HL7 virtual document properties and routing rules crash with PROPERTY DOES NOT EXIST.
 - `EnsLib.HL7.SearchTable` — built-in search table indexing common fields (MSH ControlID, sender, receiver, message type, PID MRN, etc.).
 
 ## Schema categories
 HL7 schemas are namespaced by version: `2.3.1`, `2.4`, `2.5`, `2.5.1`, `2.6`, `2.7`, `2.7.1`, `2.8`. Custom schemas extend a base — `MyApp:2.5` says "use 2.5 as base, override with MyApp definitions". Set per-host via `MessageSchemaCategory` setting.
+
+CRITICAL: `MessageSchemaCategory` MUST be set on every HL7 inbound service (TCPService, FileService, etc.). Without it, IRIS does not assign a DocType to the message. Downstream routing rules that use `docCategory` or `docName` constraints will never match — the message arrives at the router but no rule fires, and it silently drops. This is the single most common cause of "my HL7 messages aren't routing."
 
 A message has a DocType like `2.5:ADT_A01`. The framework resolves `ADT^A08` → `ADT_A01` via the schema's MSH-9 mapping table; that's why `ADT^A04`, `A08`, `A13` etc. all map to `ADT_A01` structure.
 

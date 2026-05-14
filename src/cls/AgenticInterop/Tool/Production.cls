@@ -938,6 +938,41 @@ ClassMethod CreateRoutingRule(name As %String, ruleXml As %String) As %DynamicOb
             Set out.error = "Class already exists: " _ name
             Quit
         }
+        ; ---- Validate constraint names in the ruleXml ----
+        ; Only source, msgClass, docCategory, docName are valid for VDocRuleAssist.
+        ; Any other name causes <PROPERTY DOES NOT EXIST>RuntimeConstraintCheck
+        ; at runtime. Catch this early rather than letting the production crash.
+        Set validNames = $listbuild("source","msgClass","docCategory","docName")
+        Set warnings = ""
+        Set searchPos = 1
+        For {
+            Set found = $find(ruleXml, "constraint name=""", searchPos)
+            Quit:found=0
+            Set endQuote = $find(ruleXml, """", found)
+            If endQuote > 0 {
+                Set cName = $extract(ruleXml, found, endQuote - 2)
+                If '$listfind(validNames, cName) {
+                    Set warnings = warnings _ $select(warnings'="": ", ", 1:"") _ cName
+                }
+            }
+            Set searchPos = $select(endQuote>0: endQuote, 1: found + 1)
+        }
+        If warnings '= "" {
+            Set out.ok = 0
+            Set out.created = 0
+            Set out.error = "Invalid constraint name(s): " _ warnings _ ". Valid names for VDocRuleAssist are: source, msgClass, docCategory, docName. Using invalid names causes <PROPERTY DOES NOT EXIST> crash at runtime."
+            Quit
+        }
+        ; ---- Check context attribute for HL7 rules ----
+        ; If ruleXml contains msgClass EnsLib.HL7.Message but context is
+        ; EnsLib.MsgRouter.RoutingEngine (base), warn that it should be
+        ; EnsLib.HL7.MsgRouter.RoutingEngine for HL7 routing.
+        If (ruleXml [ "EnsLib.HL7.Message") && (ruleXml [ "context=""EnsLib.MsgRouter.RoutingEngine""") && '(ruleXml [ "context=""EnsLib.HL7.MsgRouter.RoutingEngine""") {
+            Set out.ok = 0
+            Set out.created = 0
+            Set out.error = "HL7 routing rules MUST use context=""EnsLib.HL7.MsgRouter.RoutingEngine"" (not the base EnsLib.MsgRouter.RoutingEngine). The base engine cannot evaluate HL7 virtual document properties."
+            Quit
+        }
         Set cdef = ##class(%Dictionary.ClassDefinition).%New(name)
         Set cdef.Super = "Ens.Rule.Definition"
         Set cdef.ProcedureBlock = 1

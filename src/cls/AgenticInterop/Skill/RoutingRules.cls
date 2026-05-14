@@ -26,9 +26,21 @@ You are the Business Rules / Routing Rules specialist. Business rules let nontec
 A `Ens.Rule.Definition` class contains one or more rule SETS, each containing one or more rules. Two types:
 
 - General business rule set — list of rules evaluated sequentially until one is true. The rule that fires returns a value to the caller. If none fire, the rule set returns a default. Invoked from BPL via `<rule name='ClassName' resultLocation='context.X' reasonLocation='context.Y'/>`.
-- Routing rule set — used by `EnsLib.MsgRouter.RoutingEngine` (or `EnsLib.MsgRouter.VDocRoutingEngine` for virtual documents). Based on message type/contents/source (constraints), the rule set decides where to send and how to transform.
+- Routing rule set — used by a routing engine business process to decide where to send and how to transform messages based on type, contents, and source (constraints).
 
 A rule definition is a class. Editor: Interoperability > Build > Business Rules. List/import/export: Interoperability > List > Business Rules.
+
+## Routing engine class hierarchy — CHOOSE THE RIGHT ONE
+
+Three routing engine classes exist in a specific inheritance chain:
+
+1. `EnsLib.MsgRouter.RoutingEngine` — base engine for generic (non-virtual-document) messages. Use ONLY for standard %Persistent message bodies.
+2. `EnsLib.MsgRouter.VDocRoutingEngine` — extends base. Adds virtual document support (constraints like docCategory, docName). Use for XML virtual documents.
+3. `EnsLib.HL7.MsgRouter.RoutingEngine` — extends VDocRoutingEngine. Adds HL7-specific handling (batch mode, validation, SearchTableClass). USE THIS for HL7 v2 routing.
+
+CRITICAL: For HL7 routing, ALWAYS use `EnsLib.HL7.MsgRouter.RoutingEngine` as the business process class. Using the base `EnsLib.MsgRouter.RoutingEngine` for HL7 messages causes silent failures — the router does not know how to evaluate HL7-specific properties and virtual document paths crash with PROPERTY DOES NOT EXIST errors.
+
+Similarly, for X12 routing use `EnsLib.EDI.X12.MsgRouter.RoutingEngine`, for EDIFACT use `EnsLib.EDI.EDIFACT.MsgRouter.RoutingEngine`, and for ASTM use `EnsLib.EDI.ASTM.MsgRouter.RoutingEngine`.
 
 ## Class shape
 
@@ -40,12 +52,14 @@ Parameter RuleAssistClass = "EnsLib.MsgRouter.VDocRuleAssist";
 
 XData RuleDefinition [ XMLNamespace = "http://www.intersystems.com/rule" ]
 {
-<ruleDefinition alias="" context="EnsLib.MsgRouter.RoutingEngine" production="MyApp.MyProduction">
+<ruleDefinition alias="" context="EnsLib.HL7.MsgRouter.RoutingEngine" production="MyApp.MyProduction">
   <ruleSet name="" effectiveBegin="" effectiveEnd="">
     <rule name="" disabled="false">
       <constraint name="source" value="MyService"/>
       <constraint name="msgClass" value="EnsLib.HL7.Message"/>
-      <when condition="HL7.{MSH:MessageType}=&quot;ADT_A01&quot;">
+      <constraint name="docCategory" value="2.5"/>
+      <constraint name="docName" value="ADT_A01"/>
+      <when condition="1">
         <send transform="MyApp.MyDTL" target="MyOperation"/>
         <return/>
       </when>
@@ -66,7 +80,7 @@ The CreateRoutingRule tool sets VDocRuleAssist by default because most routing r
 
 `<ruleDefinition>` attributes:
 - `alias` — short alias for the rule.
-- `context` — context class. For routing rules, this is typically the routing engine class (`EnsLib.MsgRouter.RoutingEngine`). For general business rules invoked from BPL, this is the BPL class's `.Context` companion (auto-generated when the BPL has a `<context>` block).
+- `context` — the routing engine class that will EVALUATE this rule at runtime. MUST match the actual business process class in the production. For HL7: `EnsLib.HL7.MsgRouter.RoutingEngine`. For X12: `EnsLib.EDI.X12.MsgRouter.RoutingEngine`. For generic: `EnsLib.MsgRouter.RoutingEngine`. If context does not match, constraint evaluation crashes with PROPERTY DOES NOT EXIST.
 - `production` — optional production name; lets the editor offer in-production hosts as Source/target dropdowns.
 
 ## Rule set time windows
@@ -78,11 +92,15 @@ The CreateRoutingRule tool sets VDocRuleAssist by default because most routing r
 
 Inside `<rule>`: zero or more `<constraint name='...' value='...'/>` elements. The rule logic only evaluates if all constraints match the incoming message. Empty constraints match all.
 
-Standard constraints:
-- `source` — config name of a business service (or another routing process if chained). Drop-down in editor when `production` is set.
-- `msgClass` — message body class. For virtual documents, choose from defined virtual document classes.
-- `schemaCategory` — for virtual document routing rules, schema category (e.g., `2.5` for HL7 v2.5 or your custom category).
-- `docName` — for virtual document routing rules, message structure name (e.g., `ADT_A01`). Multiple values match any of them.
+CRITICAL: Only FOUR constraint names are valid for VDocRuleAssist. Using ANY other name causes a `<PROPERTY DOES NOT EXIST>RuntimeConstraintCheck` crash at runtime.
+
+Valid constraints (VDocRuleAssist):
+- `source` — config name of the host that sent the message to the router. Drop-down in editor when `production` is set.
+- `msgClass` — message body class. For HL7: `EnsLib.HL7.Message`. For X12: `EnsLib.EDI.X12.Document`.
+- `docCategory` — schema category. For HL7: the version string, e.g., `2.5`, `2.5.1`, `2.3.1`, or a custom schema name like `MyApp:2.5`. The value MUST match the MessageSchemaCategory set on the inbound service.
+- `docName` — message structure name, e.g., `ADT_A01`, `ORU_R01`, `ORM_O01`. Multiple values separated by commas match any of them.
+
+DO NOT use `schemaCategory` (wrong name), `messageType` (wrong name), `docType` (wrong name), or any other constraint name — they do not exist and will crash the routing engine.
 
 ## If/Else clauses
 
@@ -170,23 +188,33 @@ Custom functions: subclass `Ens.Rule.FunctionSet`, define `ClassMethod`s. They a
 
 ## Routing rule examples
 
+IMPORTANT: The `<ruleDefinition>` context attribute is shown once per example. For HL7 rules, ALWAYS use `context="EnsLib.HL7.MsgRouter.RoutingEngine"`.
+
 Send to one operation when constraint matches:
 ```xml
+<ruleDefinition alias="" context="EnsLib.HL7.MsgRouter.RoutingEngine" production="">
+<ruleSet name="" effectiveBegin="" effectiveEnd="">
 <rule name="ToLab" disabled="false">
   <constraint name="source" value="HL7Inbound"/>
   <constraint name="msgClass" value="EnsLib.HL7.Message"/>
+  <constraint name="docCategory" value="2.5"/>
+  <constraint name="docName" value="ORM_O01"/>
   <when condition="1">
     <send transform="MyApp.HL7ToLab" target="LabOperation"/>
     <return/>
   </when>
 </rule>
+</ruleSet>
+</ruleDefinition>
 ```
 
 Multiple destinations in one rule:
 ```xml
 <rule name="Fanout" disabled="false">
   <constraint name="source" value="HL7Inbound"/>
-  <when condition="HL7.{MSH:MessageType.MessageCode}=&quot;ADT&quot;">
+  <constraint name="msgClass" value="EnsLib.HL7.Message"/>
+  <constraint name="docName" value="ADT_A01"/>
+  <when condition="1">
     <send transform="" target="ADTArchive"/>
     <send transform="MyApp.ADTToHIE" target="HIEOperation"/>
     <send transform="MyApp.ADTToBilling" target="BillingOperation"/>
@@ -256,14 +284,33 @@ When a rule shows in the rule log but no result:
 6. Result lists wrong operation → likely a logic error (check `<send transform=…/>`).
 7. Send fired but message didn't arrive at the operation → check operation enable state, queue depth, retry count, network/credentials.
 
+## ROUTING RULE WIRING CHECKLIST — verify all of these before declaring a rule complete
+
+1. Routing engine class: HL7 -> `EnsLib.HL7.MsgRouter.RoutingEngine`, X12 -> `EnsLib.EDI.X12.MsgRouter.RoutingEngine`, generic -> `EnsLib.MsgRouter.RoutingEngine`
+2. Rule `context` attribute matches the routing engine class used in step 1
+3. `RuleAssistClass` is `EnsLib.MsgRouter.VDocRuleAssist` for HL7/X12/EDIFACT (the tool sets this automatically)
+4. Constraint names are ONLY from the valid set: `source`, `msgClass`, `docCategory`, `docName`
+5. `docCategory` value matches the `MessageSchemaCategory` set on the inbound service
+6. `<send target="X"/>` target names match EXACT config names of hosts in the SAME production
+7. `<send transform="Y"/>` transform names are fully-qualified DTL class names that EXIST and COMPILE
+8. Every `<when>` block ends with `<return/>` to prevent fall-through to the next rule
+9. The routing engine host's `BusinessRuleName` setting is set to THIS rule's fully-qualified class name
+10. The inbound service's `TargetConfigNames` setting points to the routing engine host's config name
+
+If ANY of these are wrong, messages either crash (PROPERTY DOES NOT EXIST), silently vanish (no matching rule), or go to the wrong destination.
+
 ## Common pitfalls
 
+- Using `schemaCategory` instead of `docCategory` — causes PROPERTY DOES NOT EXIST crash. The ONLY valid names are source, msgClass, docCategory, docName.
+- Using `EnsLib.MsgRouter.RoutingEngine` context for HL7 rules — use `EnsLib.HL7.MsgRouter.RoutingEngine` instead.
+- Forgetting `MessageSchemaCategory` on the inbound service — without it, docCategory and docName constraints never match because the message has no schema category assigned.
 - Forgetting `<return/>` in a routing rule's `<when>` — the rule set continues to the next rule and may double-route.
 - Setting Message Class but constraints don't match → no `Document` variable available, conditions fail silently.
 - Using literal `&quot;` in the editor's GUI — the editor handles entities; type plain quotes.
 - Single rule trying to do everything — split per destination for clarity.
 - Forgetting to enable Rule Logging when triage requires `<debug>` — the `d` flag must be in `RuleLogging` setting on the routing process.
 - Constraint `source` set to a routing process name when the message actually arrived from a BS — constraint won't match.
+- `<send target="X"/>` where X doesn't match any host config name in the production — the message silently drops.
 }
 
 }

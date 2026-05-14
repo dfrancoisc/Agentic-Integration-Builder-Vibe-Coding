@@ -281,8 +281,8 @@ CRITICAL: Every setting has a Target level — "Host" or "Adapter". Passing a se
 ### EnsLib.HL7.Service.TCPService (HL7 MLLP inbound)
 
 Host settings:
-- TargetConfigNames — comma-separated list of downstream host config names (e.g., "MyRouter")
-- MessageSchemaCategory — HL7 schema version (e.g., "2.5")
+- TargetConfigNames — comma-separated list of downstream host config names (e.g., "MyRouter"). REQUIRED — point to the routing engine config name.
+- MessageSchemaCategory — HL7 schema version (e.g., "2.5"). CRITICAL: Without this, IRIS does not assign a DocType to incoming messages. Routing rules that use docCategory or docName constraints will never match. Always set this.
 - SearchTableClass — usually "EnsLib.HL7.SearchTable"
 - AckMode — "Application" (default), "Immediate", "Never"
 
@@ -297,18 +297,28 @@ Example: { "Host": { "TargetConfigNames": "HL7Router", "MessageSchemaCategory": 
 ### EnsLib.HL7.Service.FileService (HL7 file inbound)
 
 Host settings:
-- TargetConfigNames — downstream host config names
-- MessageSchemaCategory — HL7 schema version
+- TargetConfigNames — downstream host config names (REQUIRED — point to the routing engine config name)
+- MessageSchemaCategory — HL7 schema version (e.g., "2.5"). CRITICAL: Without this, IRIS does not assign a DocType to incoming messages. Routing rules that use docCategory or docName constraints will never match because the message has no schema category. This is the #1 cause of "messages arrive at the router but no rule matches."
 
 Adapter settings:
-- FilePath — directory to watch (REQUIRED)
+- FilePath — directory to watch (REQUIRED — directory MUST exist before StartProduction)
 - FileSpec — file pattern (e.g., "*.hl7")
 - ArchivePath — directory for processed files
+
+### Routing engine class selection — CRITICAL
+
+Three routing engines exist in IRIS. ALWAYS use the most specific one for your message type:
+
+- `EnsLib.HL7.MsgRouter.RoutingEngine` — for HL7 v2 messages. ALWAYS use this for HL7 routing. It extends VDocRoutingEngine with HL7-specific batch handling, validation, and SearchTableClass support.
+- `EnsLib.MsgRouter.VDocRoutingEngine` — for XML virtual documents. Use only when routing XML VDocs that are not HL7/X12/EDIFACT/ASTM.
+- `EnsLib.MsgRouter.RoutingEngine` — for generic (non-virtual-document) messages. Use ONLY for standard %Persistent message bodies.
+
+NEVER use `EnsLib.MsgRouter.RoutingEngine` for HL7 messages. It does not understand HL7 virtual document properties. Routing rules with docCategory/docName constraints will crash with `<PROPERTY DOES NOT EXIST>RuntimeConstraintCheck` because the base engine's context class does not have those properties.
 
 ### EnsLib.HL7.MsgRouter.RoutingEngine (HL7 content-based router)
 
 Host settings:
-- BusinessRuleName — fully-qualified rule class name (e.g., "MyApp.Rule.ADTRouting"). REQUIRED — this is how the router knows which rule to evaluate.
+- BusinessRuleName — fully-qualified rule class name (e.g., "MyApp.Rule.ADTRouting"). REQUIRED — this is how the router knows which rule to evaluate. Without this, EVERY message crashes with OnProcessInput error.
 - ResponseFrom — config name of the operation whose response becomes the router's response (blank = no response)
 - BadMessageHandler — config name of a host that receives unparseable messages
 - ActOnTransformError — "Log" (default), "Ignore", "Suspend", "Disable", "BangError"
@@ -320,7 +330,7 @@ Example: { "Host": { "BusinessRuleName": "MyApp.Rule.ADTRouting" } }
 
 ### EnsLib.MsgRouter.RoutingEngine (generic content-based router)
 
-Same as HL7 variant. Host settings: BusinessRuleName, ResponseFrom, BadMessageHandler.
+Same host settings as HL7 variant: BusinessRuleName, ResponseFrom, BadMessageHandler. Use ONLY for non-virtual-document message bodies.
 
 ### EnsLib.HL7.Operation.TCPOperation (HL7 MLLP outbound)
 
@@ -397,7 +407,9 @@ Adapter settings:
 
 ## ROUTING ENGINE WIRING — how routing rules connect to DTLs and operations
 
-A routing engine (EnsLib.HL7.MsgRouter.RoutingEngine or EnsLib.MsgRouter.RoutingEngine) uses a rule class to decide where to send messages. The wiring chain:
+CRITICAL: The routing engine does NOT use TargetConfigNames. TargetConfigNames is set on the SERVICE to point to the router. The ROUTER connects to operations through the rule's `<send target="..."/>` actions. Setting TargetConfigNames on a routing engine has no effect.
+
+A routing engine (EnsLib.HL7.MsgRouter.RoutingEngine for HL7, EnsLib.MsgRouter.RoutingEngine for generic) uses a rule class to decide where to send messages. The wiring chain:
 
 1. Service sends to Router: Service's TargetConfigNames (Host setting) = router's config name
 2. Router evaluates Rule: Router's BusinessRuleName (Host setting) = rule class name

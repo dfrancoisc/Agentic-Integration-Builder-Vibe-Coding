@@ -889,9 +889,19 @@ You are the Business Rules / Routing Rules specialist. Business rules let nontec
 A `Ens.Rule.Definition` class contains one or more rule SETS, each containing one or more rules. Two types:
 
 - General business rule set — list of rules evaluated sequentially until one is true. The rule that fires returns a value to the caller. If none fire, the rule set returns a default. Invoked from BPL via `<rule name='ClassName' resultLocation='context.X' reasonLocation='context.Y'/>`.
-- Routing rule set — used by `EnsLib.MsgRouter.RoutingEngine` (or `EnsLib.MsgRouter.VDocRoutingEngine` for virtual documents). Based on message type/contents/source (constraints), the rule set decides where to send and how to transform.
+- Routing rule set — used by a routing engine business process to decide where to send and how to transform messages based on type, contents, and source (constraints).
 
 A rule definition is a class. Editor: Interoperability > Build > Business Rules. List/import/export: Interoperability > List > Business Rules.
+
+## Routing engine class hierarchy — CHOOSE THE RIGHT ONE
+
+Three routing engine classes exist in a specific inheritance chain:
+
+1. `EnsLib.MsgRouter.RoutingEngine` — base engine for generic (non-virtual-document) messages. Use ONLY for standard %Persistent message bodies.
+2. `EnsLib.MsgRouter.VDocRoutingEngine` — extends base. Adds virtual document support (constraints like docCategory, docName). Use for XML virtual documents.
+3. `EnsLib.HL7.MsgRouter.RoutingEngine` — extends VDocRoutingEngine. Adds HL7-specific handling (batch mode, validation, SearchTableClass). USE THIS for HL7 v2 routing.
+
+CRITICAL: For HL7 routing, ALWAYS use `EnsLib.HL7.MsgRouter.RoutingEngine` as the business process class. Using the base `EnsLib.MsgRouter.RoutingEngine` for HL7 messages causes silent failures — routing rules with docCategory/docName constraints crash with `<PROPERTY DOES NOT EXIST>RuntimeConstraintCheck`.
 
 ## Class shape
 
@@ -899,16 +909,18 @@ A rule definition is a class. Editor: Interoperability > Build > Business Rules.
 Class MyApp.MyRule Extends Ens.Rule.Definition
 {
 
-Parameter RuleAssistClass = "EnsLib.MsgRouter.RuleAssist";
+Parameter RuleAssistClass = "EnsLib.MsgRouter.VDocRuleAssist";
 
 XData RuleDefinition [ XMLNamespace = "http://www.intersystems.com/rule" ]
 {
-<ruleDefinition alias="" context="EnsLib.MsgRouter.RoutingEngine" production="MyApp.MyProduction">
+<ruleDefinition alias="" context="EnsLib.HL7.MsgRouter.RoutingEngine" production="MyApp.MyProduction">
   <ruleSet name="" effectiveBegin="" effectiveEnd="">
     <rule name="" disabled="false">
       <constraint name="source" value="MyService"/>
       <constraint name="msgClass" value="EnsLib.HL7.Message"/>
-      <when condition="HL7.{MSH:MessageType}=&quot;ADT_A01&quot;">
+      <constraint name="docCategory" value="2.5"/>
+      <constraint name="docName" value="ADT_A01"/>
+      <when condition="1">
         <send transform="MyApp.MyDTL" target="MyOperation"/>
         <return/>
       </when>
@@ -920,9 +932,13 @@ XData RuleDefinition [ XMLNamespace = "http://www.intersystems.com/rule" ]
 }
 ```
 
+RuleAssistClass values:
+- `EnsLib.MsgRouter.VDocRuleAssist` — for virtual document routing (HL7, X12, EDIFACT, ASTM). USE THIS for HL7 routing rules.
+- `EnsLib.MsgRouter.RuleAssist` — for general (non-virtual-document) routing rules.
+
 `<ruleDefinition>` attributes:
 - `alias` — short alias for the rule.
-- `context` — context class. For routing rules, this is typically the routing engine class (`EnsLib.MsgRouter.RoutingEngine`). For general business rules invoked from BPL, this is the BPL class's `.Context` companion (auto-generated when the BPL has a `<context>` block).
+- `context` — the routing engine class that will EVALUATE this rule at runtime. MUST match the actual business process class. For HL7: `EnsLib.HL7.MsgRouter.RoutingEngine`. For generic: `EnsLib.MsgRouter.RoutingEngine`. If context does not match, constraint evaluation crashes with PROPERTY DOES NOT EXIST.
 - `production` — optional production name; lets the editor offer in-production hosts as Source/target dropdowns.
 
 ## Rule set time windows
@@ -934,11 +950,15 @@ XData RuleDefinition [ XMLNamespace = "http://www.intersystems.com/rule" ]
 
 Inside `<rule>`: zero or more `<constraint name='...' value='...'/>` elements. The rule logic only evaluates if all constraints match the incoming message. Empty constraints match all.
 
-Standard constraints:
-- `source` — config name of a business service (or another routing process if chained). Drop-down in editor when `production` is set.
-- `msgClass` — message body class. For virtual documents, choose from defined virtual document classes.
-- `schemaCategory` — for virtual document routing rules, schema category (e.g., `2.5` for HL7 v2.5 or your custom category).
-- `docName` — for virtual document routing rules, message structure name (e.g., `ADT_A01`). Multiple values match any of them.
+CRITICAL: Only FOUR constraint names are valid for VDocRuleAssist. Using ANY other name causes a `<PROPERTY DOES NOT EXIST>RuntimeConstraintCheck` crash at runtime.
+
+Valid constraints (VDocRuleAssist):
+- `source` — config name of the host that sent the message to the router. Drop-down in editor when `production` is set.
+- `msgClass` — message body class. For HL7: `EnsLib.HL7.Message`. For X12: `EnsLib.EDI.X12.Document`.
+- `docCategory` — schema category. For HL7: the version string, e.g., `2.5`, `2.5.1`. MUST match the MessageSchemaCategory on the inbound service.
+- `docName` — message structure name, e.g., `ADT_A01`, `ORU_R01`. Multiple values separated by commas match any of them.
+
+DO NOT use `schemaCategory` (wrong name), `messageType` (wrong name), or any other constraint name — they do not exist and crash the routing engine.
 
 ## If/Else clauses
 
@@ -1126,7 +1146,7 @@ When a rule shows in the rule log but no result:
 
 - Developing_Business_Rules.pdf, pp. 1–4 (concepts; rule definitions as classes; package mapping).
 - Developing_Business_Rules.pdf, pp. 5–7 (rule definitions; rule sets; effective range; types).
-- Developing_Business_Rules.pdf, pp. 9–13 (constraints — source/msgClass/schemaCategory/docName; if/else clauses; actions table — assign/return/trace/debug/foreach/send/delete/delegate; foreach action; disabling; passing data to DTL via aux.RuleUserData / aux.RuleActionUserData).
+- Developing_Business_Rules.pdf, pp. 9–13 (constraints — source/msgClass/docCategory/docName; if/else clauses; actions table — assign/return/trace/debug/foreach/send/delete/delegate; foreach action; disabling; passing data to DTL via aux.RuleUserData / aux.RuleActionUserData). NOTE: The PDF uses "Schema Category" as a UI label but the actual XML constraint name is `docCategory`, not `schemaCategory`.
 - Developing_Business_Rules.pdf, pp. 15–19 (context variable; Document variable; operators with precedence; functions; expression examples; boolean expressions with AND/OR precedence).
 - Developing_Business_Rules.pdf, pp. 21–27 (testing; debugging decision trees A–E for routing rule problems).
 - Developing_Business_Rules.pdf, pp. 29–35 (full Utility Functions for Use in Productions catalog — Contains, ConvertDateTime, CurrentDateTime, DoesNotContain, DoesNotIntersectList, DoesNotMatch, DoesNotStartWith, Exists, If, In, InFile, InFileColumn, IntersectsList, Length, Like, Lookup, Matches, Max, Min, Not, NotIn, NotInFile, NotLike, Pad, Piece, ReplaceStr, RegexMatch, Round, Rule, Schedule, StartsWith, Strip, SubString, ToLower, ToUpper, Translate; usage syntax difference business rule vs DTL).
