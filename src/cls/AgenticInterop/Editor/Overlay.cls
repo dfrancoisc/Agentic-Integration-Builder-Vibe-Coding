@@ -192,6 +192,7 @@ ClassMethod GetEffectiveAgent(pClass As %String) As %DynamicObject
     Set out.skillsCsv = skillsCsv
     Set out.skills = $classmethod(util, "CsvToArray", skillsCsv)
     Set out.provider = $classmethod(util, "ParamDefault", pClass, "PROVIDER")
+    Set out.toolBinding = $classmethod(util, "ParamDefault", pClass, "TOOLBINDING")
     Set out.customized = 0
     Set ovr = ..%OpenAgentOverride(pClass)
     If $isobject(ovr) {
@@ -209,6 +210,7 @@ ClassMethod GetEffectiveAgent(pClass As %String) As %DynamicObject
             Set out.skills = $classmethod(util, "CsvToArray", ovr.SkillsCsv)
         }
         If ovr.Provider '= ""      { Set out.provider = ovr.Provider }
+        If ovr.ToolBinding '= ""   { Set out.toolBinding = ovr.ToolBinding }
         Set out.customized = 1
         Set out.updatedBy = ovr.UpdatedBy
         Set out.updatedAt = ovr.UpdatedAt
@@ -240,6 +242,7 @@ ClassMethod SaveAgentOverride(pClass As %String, pProps As %DynamicObject, pUser
         Set ovr.SkillsCsv = pProps.skillsCsv
     }
     If pProps.%IsDefined("provider")      { Set ovr.Provider = pProps.provider }
+    If pProps.%IsDefined("toolBinding")   { Set ovr.ToolBinding = pProps.toolBinding }
     Set ovr.UpdatedBy = pUser
     Set ovr.UpdatedAt = $ZDATETIME($ZTIMESTAMP, 3, 1)
     Quit ovr.%Save()
@@ -286,6 +289,16 @@ ClassMethod GetEffectiveMaxIterations(pClass As %String) As %String
     Set ovr = ..%OpenAgentOverride(pClass)
     If $isobject(ovr), ovr.MaxIterations '= "" Quit ovr.MaxIterations
     Quit $classmethod("AgenticInterop.Editor.Util", "ParamDefault", pClass, "MAXITERATIONS")
+}
+
+/// Returns the effective tool binding mode for the agent.
+/// "mcp" = Agent -> MCP Server -> ToolSet -> Tool (proper chain).
+/// "bypass" = Agent -> Tool (direct, no MCP indirection).
+ClassMethod GetEffectiveToolBinding(pClass As %String) As %String
+{
+    Set ovr = ..%OpenAgentOverride(pClass)
+    If $isobject(ovr), ovr.ToolBinding '= "" Quit ovr.ToolBinding
+    Quit $classmethod("AgenticInterop.Editor.Util", "ParamDefault", pClass, "TOOLBINDING")
 }
 
 ClassMethod %OpenAgentOverride(pClass As %String) As AgenticInterop.Data.AgentOverride [ Internal ]

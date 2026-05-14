@@ -1,8 +1,14 @@
 # Agent Tool Catalog
 
-Each tool below is a public ClassMethod on a `%AI.Tool` subclass (e.g. `AgenticInterop.Tool.Production`, `.Transform`, `.Testing`, `.Catalog`, `.Monitoring`). Tools are composed into `%AI.ToolSet` subclasses via the framework's `<Include Class="..."/>` directive and registered with the agent at build time by `AgenticInterop.Agent.Manager`. The method name is the tool name the LLM sees.
+42 tools across 5 `%AI.Tool` subclasses. Each public ClassMethod on a Tool class becomes a tool the LLM can call. Tools are composed into `%AI.ToolSet` subclasses via the framework's `<Include Class="..."/>` directive and registered with the agent at build time by `AgenticInterop.Agent.Manager`.
 
-This file grows batch-by-batch. Tools marked `[BATCH N]` were finalised in that batch; all others are pending.
+| Tool class | Tools | Domain |
+|---|---|---|
+| AgenticInterop.Tool.Production | 10 | Production CRUD, business host lifecycle, post-build validation |
+| AgenticInterop.Tool.Transform | 14 | DTL/BPL/routing rule CRUD, HL7 schema introspection, lookup tables, SDA-FHIR pipeline |
+| AgenticInterop.Tool.Testing | 6 | HL7/FHIR send, validation, comparison |
+| AgenticInterop.Tool.Catalog | 7 | Vector search, class introspection, namespace utilities, reference lookups |
+| AgenticInterop.Tool.Monitoring | 5 | Event log, error grouping, message status, throughput, queue depth |
 
 Standard output envelope for any non-streaming tool: `{ "ok": true, "data": <result>, "namespace": "<current>" }` on success, `{ "ok": false, "error": { "code": "<code>", "message": "<text>" }, "namespace": "<current>" }` on error. The current namespace is always included so the chatbot can verify the user's expected namespace matches the execution namespace.
 

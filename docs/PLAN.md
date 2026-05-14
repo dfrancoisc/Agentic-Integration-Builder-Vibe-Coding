@@ -345,6 +345,30 @@ This applies across phases. The phase column below indicates when each chatbot c
 - IRIS for Health 2026.1 vs 2026.2: kickoff spec mentioned both. We target 2026.2 because that is what the dev container ships and what the %AI Framework class catalog used for design verification was extracted from.
 - FastEmbed memory: bundled ONNX runs in-process; first-time load is a few hundred MB. Document in README ops section once we hit Phase 5.
 
+## Current stats (2026-05-11)
+
+| Metric | Value |
+|---|---|
+| ObjectScript classes | 58 |
+| Tool classes (%AI.Tool) | 5 |
+| Tools (public ClassMethods) | 42 |
+| ToolSets (%AI.ToolSet) | 5 |
+| MCP servers (%AI.MCP.Service) | 5 |
+| Skills (%AI.Agent.Skill) | 9 |
+| Persistent data classes | 5 |
+| IPM module version | 1.0.0 |
+
+## Product Requirements Document
+
+The full PRD is at [docs/PRD.md](PRD.md) (also available as [PRD.docx](PRD.docx)). It covers:
+
+- Three primary use cases: guided production build, production review and optimization, complex HL7-to-HL7 transformations
+- Performance, scalability, and quality requirements with specific targets
+- DX (Developer Experience) vs Builder (End User) persona separation
+- Tool depth requirements across 9 artifact domains (Productions, DTL, BPL, Routing Rules, Lookup Tables, HL7 Schemas, FHIR R4, SDA, Catalog)
+- Chatbot experience requirements (conversation lifecycle, memory, access control, streaming, guided interaction, reports, audit)
+- Architecture: Agents, MCPs, Tools, Skills, and Catalog vector search
+
 ## Notes for a developer reading this for the first time
 
 - MCPs are real `%AI.MCP.Service` subclasses (revised 2026-05-05 — see "MCP class strategy" above). Transport is opt-in: in-process consumers call `LoadToolSetsToManager` directly, no HTTP loopback. The earlier "logical-only" model was dropped because it duplicated framework state and forfeited the wire-protocol exit.
@@ -352,3 +376,4 @@ This applies across phases. The phase column below indicates when each chatbot c
 - The four primary configuration entities (Agent, MCP, ToolSet, Tool) are class definitions, not %Persistent rows. Source of truth is the compiled class. Read via SQL on `%Dictionary.Compiled*`; write via `%Dictionary.*Definition.%Save()` + `$system.OBJ.Compile()`. Read-after-write must use SQL or `$parameter()`, not `%OpenId` (process-local OREF cache).
 - All multi-class refactors must update docs/MIGRATION.md before the code change, not after.
 - `AgenticInterop.Skill.Base` is a workaround for an `%AI.Agent.Skill.%OnNew` framework bug — see docs/BUG.md. It can be deleted when the upstream fix lands.
+- Known framework bugs and ObjectScript language gotchas are documented in [docs/BUG.md](BUG.md). Read it before writing new code — it will save debugging time.

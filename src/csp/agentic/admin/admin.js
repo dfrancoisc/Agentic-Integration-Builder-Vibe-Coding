@@ -1083,6 +1083,16 @@ function renderAgentDetail() {
                 <input id="f-maxIterations" type="text" value="${escapeAttr(a.maxIterations || '')}" ${ro}>
             </div>
         </div>
+        <div class="field-row">
+            <div class="field">
+                <label>Tool binding</label>
+                <select id="f-toolBinding" ${ro}>
+                    <option value="mcp"${(a.toolBinding||'mcp')==='mcp'?' selected':''}>MCP (Agent -> MCP -> ToolSet -> Tool)</option>
+                    <option value="bypass"${(a.toolBinding)==='bypass'?' selected':''}>Bypass (Agent -> Tool direct)</option>
+                </select>
+                <div class="hint">MCP enforces the full routing chain. Bypass registers tools directly, skipping MCP and ToolSet layers.</div>
+            </div>
+        </div>
         <div class="field">
             <label>Description</label>
             <textarea id="f-description" ${ro}>${escapeHtml(reflowProse(a.description))}</textarea>
@@ -1675,6 +1685,7 @@ async function saveAgent() {
         instructions:  $('f-instructions').value,
         temperature:   $('f-temperature').value,
         maxIterations: $('f-maxIterations').value,
+        toolBinding:   $('f-toolBinding').value,
         provider:      $('f-provider').value,
         mcps:          collectChecked('f-mcps'),
         skills:        collectChecked('f-skills')

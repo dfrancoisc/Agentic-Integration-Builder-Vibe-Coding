@@ -98,6 +98,11 @@ XData UrlMap [ XMLNamespace = "http://www.intersystems.com/urlmap" ]
          filters, plus distinct kinds for dropdowns. -->
     <Route Url="/audit/log"                     Method="GET"    Call="AuditList" />
     <Route Url="/audit/kinds"                   Method="GET"    Call="AuditKinds" />
+
+    <!-- Cleanup: stop stuck productions and delete test artifacts. -->
+    <Route Url="/cleanup/productions"           Method="POST"   Call="CleanupProductions" />
+    <Route Url="/cleanup/artifacts"             Method="GET"    Call="ListCustomArtifacts" />
+    <Route Url="/cleanup/artifacts"             Method="DELETE" Call="DeleteCustomArtifacts" />
 </Routes>
 }
 
@@ -548,6 +553,21 @@ ClassMethod AuditList() As %Status
 ClassMethod AuditKinds() As %Status
 {
     Quit ##class(AgenticInterop.Editor.AuditService).Kinds(%response)
+}
+
+ClassMethod CleanupProductions() As %Status
+{
+    Quit ##class(AgenticInterop.Editor.CleanupService).CleanProductions(%response)
+}
+
+ClassMethod ListCustomArtifacts() As %Status
+{
+    Quit ##class(AgenticInterop.Editor.CleanupService).ListArtifacts(%response)
+}
+
+ClassMethod DeleteCustomArtifacts() As %Status
+{
+    Quit ##class(AgenticInterop.Editor.CleanupService).DeleteArtifacts(%response)
 }
 
 }

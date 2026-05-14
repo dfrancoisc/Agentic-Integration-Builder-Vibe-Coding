@@ -34,6 +34,11 @@ Property SkillsCsv As %String(MAXLEN = 4000);
 
 Property Provider As %String(MAXLEN = 200);
 
+/// "mcp" = Agent -> MCP -> ToolSet -> Tool chain.
+/// "bypass" = Agent -> Tool (direct, no MCP indirection).
+/// Empty = fall through to the class Parameter TOOLBINDING.
+Property ToolBinding As %String(MAXLEN = 16);
+
 Property UpdatedBy As %String(MAXLEN = 128);
 
 Property UpdatedAt As %TimeStamp [ InitialExpression = {$ZDATETIME($ZTIMESTAMP, 3, 1)} ];
@@ -55,6 +60,7 @@ Storage Default
 <Value name="10"><Value>Provider</Value></Value>
 <Value name="11"><Value>UpdatedBy</Value></Value>
 <Value name="12"><Value>UpdatedAt</Value></Value>
+<Value name="13"><Value>ToolBinding</Value></Value>
 </Data>
 <DataLocation>^AgInt.AgentOverrideD</DataLocation>
 <DefaultData>AgentOverrideDefaultData</DefaultData>

@@ -38,6 +38,8 @@
     var HDR_MARK = 'agentic-hdr-chat';   // mat-toolbar-row chat icon marker
     var CONFIG_OVERLAY_ID = 'agentic-config-overlay';
     var CHAT_OVERLAY_ID = 'agentic-chat-overlay';
+    var CLEAN_PROD_MARK = 'agentic-clean-prod';
+    var CLEAN_ART_MARK  = 'agentic-clean-art';
 
     var STATE = { bearer: '', bearerExp: 0 };
 
@@ -186,6 +188,35 @@
             '.dashboard .navbuttons.' + TAB_MARK + '.is-active .agentic-tab-inner { color:#fff; }',
             '.dashboard .navbuttons.' + TAB_MARK + '.is-active .agentic-tab-inner svg path { fill:#fff !important; }',
 
+            // Cleanup buttons — amber for Clean Productions, red for Delete Artifacts
+            '.dashboard .navbuttons.' + CLEAN_PROD_MARK + ',',
+            '.dashboard .navbuttons.' + CLEAN_ART_MARK + ' {',
+            '  display:flex; flex:0 1 auto;',
+            '  margin:5px; height:32px; box-sizing:border-box;',
+            '  border:1px solid #cbcbcb; background:#fff;',
+            '  cursor:pointer; transition:background .15s, border-color .15s;',
+            '}',
+            '.dashboard .navbuttons.' + CLEAN_PROD_MARK + ':hover {',
+            '  background:rgba(217,119,6,.08); border-color:#d97706;',
+            '}',
+            '.dashboard .navbuttons.' + CLEAN_ART_MARK + ':hover {',
+            '  background:rgba(220,38,38,.08); border-color:#dc2626;',
+            '}',
+            '.dashboard .navbuttons.' + CLEAN_PROD_MARK + ' .agentic-tab-inner {',
+            '  display:flex; align-items:center; gap:6px; padding:0 10px;',
+            '  font-family:-apple-system,"Noto Sans",system-ui,sans-serif;',
+            '  font-size:13px; font-weight:600; color:#d97706;',
+            '}',
+            '.dashboard .navbuttons.' + CLEAN_ART_MARK + ' .agentic-tab-inner {',
+            '  display:flex; align-items:center; gap:6px; padding:0 10px;',
+            '  font-family:-apple-system,"Noto Sans",system-ui,sans-serif;',
+            '  font-size:13px; font-weight:600; color:#dc2626;',
+            '}',
+            '.dashboard .navbuttons.' + CLEAN_PROD_MARK + '.is-busy,',
+            '.dashboard .navbuttons.' + CLEAN_ART_MARK + '.is-busy {',
+            '  opacity:0.6; pointer-events:none;',
+            '}',
+
             // Top mat-toolbar chat icon
             'mat-toolbar-row .dropdown.' + HDR_MARK + ' { display:flex; align-items:center; }',
             'mat-toolbar-row .dropdown.' + HDR_MARK + ' button {',
@@ -204,6 +235,8 @@
             // Login-mode hide
             'body.agentic-login-mode .' + TAB_MARK + ',',
             'body.agentic-login-mode .' + HDR_MARK + ',',
+            'body.agentic-login-mode .' + CLEAN_PROD_MARK + ',',
+            'body.agentic-login-mode .' + CLEAN_ART_MARK + ',',
             'body.agentic-login-mode #' + CONFIG_OVERLAY_ID + ',',
             'body.agentic-login-mode #' + CHAT_OVERLAY_ID + ' { display:none !important; }',
 
@@ -345,6 +378,85 @@
         if (tab) tab.classList.toggle('is-active', !!yes);
     }
 
+    /* ---------------- cleanup helpers (REST calls from inject) -------- */
+
+    function cleanupFetch(method, path) {
+        var opts = { method: method, headers: {} };
+        if (STATE.bearer) opts.headers['Authorization'] = STATE.bearer;
+        return origFetch('/api/agentic' + path, opts).then(function (r) {
+            if (!r.ok) throw new Error('HTTP ' + r.status + ' ' + r.statusText);
+            return r.json();
+        });
+    }
+
+    function doCleanProductions() {
+        var btn = document.querySelector('.' + CLEAN_PROD_MARK);
+        if (btn) btn.classList.add('is-busy');
+        cleanupFetch('POST', '/cleanup/productions')
+            .then(function (data) {
+                if (data.ok) {
+                    alert('Production state cleared.\n\n' +
+                          'Namespace: ' + data.namespace + '\n' +
+                          'Previous: ' + (data.previousProduction || '(none)') + '\n' +
+                          'Final state: ' + data.finalState + '\n\n' +
+                          data.message);
+                } else {
+                    alert('Error cleaning productions:\n' + (data.error || 'Unknown error'));
+                }
+            })
+            .catch(function (e) { alert('Clean productions failed:\n' + e.message); })
+            .then(function () { if (btn) btn.classList.remove('is-busy'); });
+    }
+
+    function doDeleteArtifacts() {
+        var btn = document.querySelector('.' + CLEAN_ART_MARK);
+        if (btn) btn.classList.add('is-busy');
+        cleanupFetch('GET', '/cleanup/artifacts')
+            .then(function (data) {
+                if (!data.ok) {
+                    alert('Error listing artifacts:\n' + (data.error || 'Unknown'));
+                    return null;
+                }
+                if (data.totalArtifacts === 0) {
+                    alert('No custom artifacts found in ' + data.namespace + '.\n\n' +
+                          'Only system/core classes exist.');
+                    return null;
+                }
+                var msg = 'Found ' + data.totalArtifacts + ' custom artifact(s) in ' + data.namespace + ':\n\n';
+                if (data.totalProductions > 0) {
+                    msg += 'Productions (' + data.totalProductions + '):\n';
+                    for (var i = 0; i < data.productions.length; i++) msg += '  - ' + data.productions[i]["class"] + '\n';
+                }
+                if (data.totalDTLs > 0) {
+                    msg += 'DTLs (' + data.totalDTLs + '):\n';
+                    for (var i = 0; i < data.dtls.length; i++) msg += '  - ' + data.dtls[i]["class"] + '\n';
+                }
+                if (data.totalBPLs > 0) {
+                    msg += 'BPLs (' + data.totalBPLs + '):\n';
+                    for (var i = 0; i < data.bpls.length; i++) msg += '  - ' + data.bpls[i]["class"] + '\n';
+                }
+                if (data.totalRoutingRules > 0) {
+                    msg += 'Routing Rules (' + data.totalRoutingRules + '):\n';
+                    for (var i = 0; i < data.routingRules.length; i++) msg += '  - ' + data.routingRules[i]["class"] + '\n';
+                }
+                msg += '\nDelete ALL of these?';
+                if (!confirm(msg)) return null;
+                return cleanupFetch('DELETE', '/cleanup/artifacts');
+            })
+            .then(function (result) {
+                if (!result) return;
+                if (result.ok) {
+                    alert('Deleted ' + result.totalDeleted + ' artifact(s).\n' +
+                          (result.totalErrors > 0 ? result.totalErrors + ' error(s) occurred.' : 'No errors.') +
+                          '\n\n' + result.message);
+                } else {
+                    alert('Delete failed:\n' + (result.error || 'Unknown error'));
+                }
+            })
+            .catch(function (e) { alert('Delete artifacts failed:\n' + e.message); })
+            .then(function () { if (btn) btn.classList.remove('is-busy'); });
+    }
+
     /* ---------------- inject AI Hub tab into .dashboard ---------------- */
 
     function ensureTab() {
@@ -364,6 +476,30 @@
             openConfig();
         });
         dash.appendChild(tab);
+        return true;
+    }
+
+    function ensureCleanupButtons() {
+        var dash = document.querySelector('.dashboard');
+        if (!dash) return false;
+        if (dash.querySelector('.' + CLEAN_PROD_MARK)) return true;
+        injectStyles();
+        var cleanBtn = document.createElement('div');
+        cleanBtn.className = 'navbuttons ' + CLEAN_PROD_MARK;
+        cleanBtn.innerHTML = '<div class="agentic-tab-inner"><span>Clean Productions</span></div>';
+        cleanBtn.addEventListener('click', function (e) {
+            e.preventDefault(); e.stopPropagation();
+            doCleanProductions();
+        });
+        dash.appendChild(cleanBtn);
+        var delBtn = document.createElement('div');
+        delBtn.className = 'navbuttons ' + CLEAN_ART_MARK;
+        delBtn.innerHTML = '<div class="agentic-tab-inner"><span>Delete Artifacts</span></div>';
+        delBtn.addEventListener('click', function (e) {
+            e.preventDefault(); e.stopPropagation();
+            doDeleteArtifacts();
+        });
+        dash.appendChild(delBtn);
         return true;
     }
 
@@ -417,6 +553,7 @@
     }
     function tick() {
         ensureTab();
+        ensureCleanupButtons();
         ensureHeaderChat();
         refreshLoginMode();
     }

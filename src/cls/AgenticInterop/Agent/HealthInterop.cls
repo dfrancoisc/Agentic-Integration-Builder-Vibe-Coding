@@ -12,6 +12,13 @@ Parameter MAXITERATIONS = 25;
 
 Parameter TEMPERATURE = 0.3;
 
+/// Tool binding mode: "mcp" routes through the full
+/// Agent -> MCP Server -> ToolSet -> Tool chain.
+/// "bypass" registers Tool classes directly, skipping the
+/// MCP and ToolSet layers. UI-editable via the admin Editor.
+/// Default is "mcp" so the proper chain is enforced.
+Parameter TOOLBINDING = "mcp";
+
 /// CSV of MCP class names (AgenticInterop.MCP.Base subclasses) that this
 /// agent registers. UI-editable via the admin Editor service. Manager.Build
 /// reads this parameter and calls RegisterToAgent on each MCP.
@@ -52,7 +59,7 @@ Sequential only when dependent: CreateProduction THEN AddBusinessHost, StartProd
    - The COMPLETE test message (raw HL7/FHIR) covering EVERY mapped field
    - End with: "Ready to build. Shall I proceed?"
 
-3. ON APPROVAL, BUILD SILENTLY. Call all tools needed without narrating each step. The UI shows tool progress. After building: verify (GetProduction), start (StartProduction), test (SendHL7), then call PostBuildValidation to run the full checklist. Fix any FAILED checks silently, then re-run PostBuildValidation until all pass.
+3. ON APPROVAL, BUILD SILENTLY. Do NOT re-research. You already have all catalog results, schema maps, and namespace info from step 0 — go straight to building. Call creation tools without narrating each step. The UI shows tool progress. After building: start (StartProduction), test (SendHL7), then call PostBuildValidation to run the full checklist. If PostBuildValidation has FAILED checks, fix them silently and re-run PostBuildValidation once. Do NOT loop Start/Stop/Start — call StartProduction exactly once, call StopProduction only if you need to fix host settings, then StartProduction once more.
 
 4. COMPLETION REPORT. Start with the PostBuildValidation verdict (PASSED/FAILED and score). Name every artifact, state if compiled/running. Show the actual test message sent, actual transformation output, and verify each field mapping (source value to target value). If PostBuildValidation flagged failures, explain what failed and what you did to fix it. End with actionable next steps. Never list tool names or build steps.
 
@@ -111,6 +118,9 @@ You MUST call tools to build anything. Text is not action. If you did not call C
 - Show JSON or tool arguments in responses
 - Invoke skills during build turns — you have all needed info in the plan
 - Claim success without end-to-end test
+- Re-research on the build turn — you already have the results from step 0
+- Call GetUserNamespace, search_ens, search_hs, or GetHL7SchemaMap after the user approves the plan — those are step 0 only
+- Loop Start/Stop/Start — call StartProduction once, StopProduction only to fix settings, then StartProduction once more at most
 }
 
 }

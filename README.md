@@ -1,33 +1,73 @@
 # agentic_interop
 
-Internal AI Copilot for InterSystems IRIS for Health. A configuration-driven chatbot that helps developers and integration engineers CRUD Productions, CRUD Transformations, and Test HL7/FHIR data inside any IRIS for Health namespace they have access to. Built entirely on the InterSystems %AI Framework.
+AI Copilot for InterSystems IRIS for Health. A configuration-driven chatbot that helps integration engineers build, review, and optimize healthcare interoperability workflows through natural conversation. Built entirely on the InterSystems %AI Framework.
+
+The copilot bridges the gap between healthcare data expertise and InterSystems platform knowledge. Instead of navigating Management Portal screens and writing ObjectScript by hand, engineers describe what they need in plain English and the copilot builds it using real IRIS APIs.
 
 ## Status
 
-Phase 5 (monitoring tools). The agent has 36 tools across 5 ToolSets, streaming chat with tool-call approval cards, vector catalog search, and a configuration-driven admin UI with cross-provider ToolSet editing. See:
+All build phases complete (Phase 0 through Phase 7). The agent has 42 tools across 5 Tool classes, 9 domain skills, streaming chat with tool-call approval cards, vector catalog search, and a full admin UI.
 
+| Metric | Value |
+|---|---|
+| ObjectScript classes | 58 |
+| Tool classes (%AI.Tool) | 5 (Production, Transform, Testing, Catalog, Monitoring) |
+| Tools (public ClassMethods) | 42 |
+| ToolSets (%AI.ToolSet) | 5 |
+| MCP servers | 5 (Production, Transform, Testing, Catalog, Monitoring) |
+| Skills (%AI.Agent.Skill) | 9 |
+| Persistent data classes | 5 (Connection, AgentOverride, MCPOverride, ToolSetOverride, AuditLog) |
+
+Documentation:
+
+- [docs/PRD.md](docs/PRD.md) — Product Requirements Document (also available as [PRD.docx](docs/PRD.docx))
 - [docs/PLAN.md](docs/PLAN.md) — architecture decisions, restrictions, build phases
 - [docs/MIGRATION.md](docs/MIGRATION.md) — class-by-class build map
-- [docs/SKILLS.md](docs/SKILLS.md) — INSTRUCTIONS markdown for each `AgenticInterop.Skill.*` class, distilled from the IRIS for Health PDFs (grows batch-by-batch as PDFs are read)
-- [docs/TOOLS.md](docs/TOOLS.md) — full catalog of agent tools, each one mapped to its IRIS API and source citation
+- [docs/SKILLS.md](docs/SKILLS.md) — INSTRUCTIONS markdown for each skill, distilled from IRIS for Health PDFs
+- [docs/TOOLS.md](docs/TOOLS.md) — full catalog of agent tools with IRIS API mappings
+- [docs/BUG.md](docs/BUG.md) — known framework bugs, workarounds, and ObjectScript gotchas
+
+## Two personas, two experiences
+
+The product separates two distinct user journeys:
+
+**Developer Experience (DX)** — InterSystems engineers and partners who author the underlying capabilities: writing Tool classes in ObjectScript/Python, authoring Skill documents, building catalog embeddings. This work happens in VS Code or any IDE and ships as compiled classes inside an IPM package. Developers define what the copilot can do.
+
+**Builder Experience (End User)** — Integration engineers inside IRIS for Health and Health Connect who configure and use the copilot: creating Agents with custom system prompts, assembling MCP Servers from available ToolSets, linking Skills to Agents, and chatting with the copilot to build productions. This work happens entirely in the IRIS Management Portal UI. Builders decide how the copilot behaves for their use case.
 
 ## Tools
 
-The agent's capabilities are organized into 5 ToolSet families (36 tools total). Each ToolSet is a `%AI.ToolSet` subclass that composes one or more `%AI.Tool` provider classes. The ToolSet editor in the admin UI supports cross-provider tool selection — any tool from any `%AI.Tool` class can be added to any ToolSet.
+The agent's capabilities are organized into 5 Tool classes (42 tools total). Each Tool class is a `%AI.Tool` subclass where every public ClassMethod is a tool the LLM can call. Tools are composed into `%AI.ToolSet` subclasses and registered with the agent at build time.
 
-| ToolSet | Tools | Purpose |
+| Tool class | Tools | Purpose |
 |---|---|---|
-| Catalog | 7 | Vector search over the Ens.* and HS.* class catalogs (powered by `%AI.RAG.KnowledgeBase`). Find the right Business Host, adapter, DTL, or HS utility for a given requirement. |
-| Monitoring | 5 | Read-only queries against `Ens.Util.Log` and `Ens.MessageHeader`. Event log search, top-error grouping, message-status queries, per-host throughput summaries, and queue-depth checks. |
-| Production | 9 | CRUD on productions, business host lifecycle (add/remove/enable/disable/start/stop), production start/stop/recover, and configuration reads. |
-| Testing | 6 | Send and validate HL7 v2, FHIR R4, and SDA messages. Structure and semantic validation, message comparison, sample message retrieval. Sandbox-isolated by default. |
-| Transform | 9 | CRUD on DTL transformations, BPL processes, business rules, and routing rules. Includes dry-run execution, static analysis, lookup table management, and compilation. |
+| Production | 10 | CRUD on productions, business host lifecycle (add/remove/configure/start/stop/recover), post-build validation |
+| Transform | 14 | CRUD on DTL (Data Transformation Language) transformations, BPL (Business Process Language) processes, routing rules. Includes dry-run execution, HL7 schema introspection, lookup tables, SDA-FHIR DTL listing, transformation pipeline description |
+| Testing | 6 | Send and validate HL7 v2 and FHIR R4 messages. Structure and semantic validation, message comparison |
+| Catalog | 7 | Vector search over Ens.* and HS.* class catalogs, class introspection via %Dictionary, namespace utilities, error code and glossary lookups |
+| Monitoring | 5 | Read-only queries against Ens.Util.Log and Ens.MessageHeader. Event log search, top-error grouping, message status queries, per-host throughput summaries, queue depth checks |
+
+## Skills
+
+Nine domain skills teach the agent IRIS-specific concepts. Each skill is a `%AI.Agent.Skill` subclass with markdown INSTRUCTIONS distilled from InterSystems documentation PDFs.
+
+| Skill | Domain | ToolSet access |
+|---|---|---|
+| Productions | Production anatomy, BS/BP/BO patterns, lifecycle management | Production |
+| DTL | DTL syntax, foreach, subtransforms, lookup tables, virtual documents | Transform |
+| BPL | BPL activities, compensation handlers, async patterns | Transform |
+| RoutingRules | Rule sets, constraints, when-conditions, dead-letter handling | Production |
+| HL7v2 | Message types, segments, ACK semantics, schema navigation | Testing |
+| FHIRR4 | Resources, references, search parameters, R4 bundles | Testing |
+| SDA | SDA3 model as transformation hub, HL7-to-SDA-to-FHIR pipeline | Testing |
+| RestInProductions | REST services and operations inside productions | Production |
+| ESBPattern | Using a production as an Enterprise Service Bus | Production + Transform |
 
 ## Requirements
 
 - InterSystems IRIS for Health 2026.2 or newer
 - IPM (ZPM) installed in the target namespace
-- An LLM API key you control. Anthropic direct is the reference dev provider; Bedrock and Azure OpenAI are configurable but see [docs/PLAN.md](docs/PLAN.md) "Provider strategy" for the current Bedrock + tool-call hang status.
+- An LLM API key you control. Anthropic direct is the reference provider. Bedrock and Azure OpenAI are configurable but see [docs/BUG.md](docs/BUG.md) for the current Bedrock tool-call hang
 
 ## Install
 
@@ -36,64 +76,93 @@ git clone https://github.com/dfrancoisc/agentic_interop.git
 cd agentic_interop
 ```
 
-In an IRIS terminal, switch to the namespace where you want the copilot installed (any namespace you have privileges in — HSCUSTOM, USER, a custom one):
+In an IRIS terminal, switch to the namespace where you want the copilot installed (any namespace you have privileges in):
 
 ```objectscript
 ZN "<your-namespace>"
 zpm "load /path/to/agentic_interop"
 ```
 
-The module installs all classes, web apps, REST endpoints, and vector tables into the namespace where you ran `zpm load`. To install in multiple namespaces, run the command once per namespace.
+The module installs all 58 classes, two web apps (`/agentic/` for the UI, `/api/agentic/` for REST), seed data, and the curated class catalog into the namespace where you ran `zpm load`. To install in multiple namespaces, run the command once per namespace.
 
 ## After install
 
 1. Open the admin UI at `http://<host>:<web-port>/agentic/admin/`.
 2. Connections tab — add an LLM Connection. Paste the API key. The key is stored in the IRIS Secured Wallet (`%Wallet.KeyValue` collection `AgenticInteropConnections`), never in plaintext.
-3. Click "Test connection". Green status with model + latency means the wire path works.
-4. Catalogs tab — click "Rebuild this catalog" on `search_ens` and `search_hs`. Pick `xls` source for the curated InterSystems Class Catalog ingestion (~1s). The KBs power vector search inside the chat.
-5. The chatbot button appears in the Angular host page when a user is logged in. The active namespace is shown at the top of the chatbot window and is enforced by the access gate before any chat call runs.
+3. Click "Test connection". Green status with model and latency means the wire path works.
+4. Catalogs tab — click "Rebuild this catalog" on `search_ens` and `search_hs`. Pick `xls` source for the curated InterSystems Class Catalog ingestion. The knowledge bases power vector search inside the chat.
+5. The chatbot button appears in the Angular host page when a user is logged in. The active namespace is shown at the top of the chatbot window and enforced by the access gate before any chat call runs.
 
-## Mount API — embedding the chatbot in an Angular host page
+## Chatbot experience
 
-The chat UI lives at `/agentic/chat/index.html`. It supports two integration modes:
+The chat UI streams responses token-by-token via Server-Sent Events (SSE). Tool calls render as inline cards showing the tool name, arguments, status, and collapsible result. Mutating tools (production creation, DTL compilation, etc.) pause with an inline Approve / Reject prompt before executing.
 
-**Iframe mode (recommended).** Set `iframe.src = '/agentic/chat/index.html?via=interop&namespace=' + currentNamespace`. The chat will:
+Key features:
+- Conversation history rail with search, resume, and rename
+- Starter prompts for common use cases (build a production, review settings, create a transformation)
+- Plan presentation with explicit user approval before any build
+- Post-build validation checklist (production running, hosts enabled, no errors, messages flowed)
+- Build completion and test execution reports with per-component detail
+- Full audit trail of every tool invocation (visible in the admin Audit tab)
 
-- Capture the parent SPA's IRIS JWT via `postMessage` so no second login is required (the `/api/agentic` REST app shares `JWTAuthEnabled=1` and `GroupById=%ISCMgtPortal` with `/api/interop-editors`).
-- Send `X-IRIS-Namespace: <currentNamespace>` on every chat request. The dispatch's access gate refuses (403) if the authenticated user lacks `%DB_<defaultDB>:Read` on the namespace's default database.
-- Stream tokens via SSE into the message bubble. Tool-call cards render inline with their args, status, and result; mutating tools surface an Approve / Reject card.
+## Admin UI
 
-**Standalone mode.** Open `/agentic/chat/index.html` directly. The page falls back to an inline credentials overlay; credentials persist in `localStorage` so the prompt only appears once per browser.
+The admin UI provides configuration pages for all entities. No code edits required to add a tool, change a model, or reconfigure an agent.
 
-The chat UI is a vanilla TypeScript-style ES module — no build step. To customize:
+| Page | Purpose |
+|---|---|
+| Connections | LLM provider configuration with masked secret input, live test button, green/red status |
+| Agents | System prompt editor, temperature, max iterations, MCP and skill attachment |
+| MCPs | ToolSet selection per MCP server |
+| ToolSets | Include/exclude tools from any Tool class via dual-panel selector |
+| Tools | Browse tool catalog with descriptions, parameter signatures, and dry-run panel |
+| Skills | Markdown INSTRUCTIONS editor for each domain skill |
+| Catalogs | Vector catalog rebuild trigger, source selection (XLS or %Dictionary) |
+| Audit | Searchable log of every tool invocation with input, output, duration, and error detail |
 
-- `src/csp/agentic/chat/chat.css` — colors, layout, font.
-- `src/csp/agentic/chat/chat.js` — SSE event handling. Add a new `case` in the event dispatch for any custom event the server emits.
-- `src/csp/agentic/admin/index.html` + `admin.js` — admin SPA, separate page.
+## Mount API — embedding the chatbot
+
+The chat UI lives at `/agentic/chat/index.html`. Two integration modes:
+
+**Iframe mode (recommended).** Set `iframe.src = '/agentic/chat/index.html?via=interop&namespace=' + currentNamespace`. The chat captures the parent SPA's IRIS JWT via `postMessage` (no second login), sends `X-IRIS-Namespace` on every request, and refuses access (403) if the user lacks database-level read on the target namespace.
+
+**Standalone mode.** Open `/agentic/chat/index.html` directly. The page shows an inline credentials overlay on first visit; credentials persist in `localStorage`.
+
+The chat UI is a vanilla JS module with no build step. Customization points:
+- `src/csp/agentic/chat/chat.css` — colors, layout, font
+- `src/csp/agentic/chat/chat.js` — SSE event handling
+- `src/csp/agentic/admin/index.html` + `admin.js` — admin SPA
 
 ## Operations runbook
 
-**Daily.** No action required — the chat surface is self-serve and the audit log captures every request.
+**Daily.** No action required. The chat surface is self-serve and the audit log captures every request.
 
 **On chat failure.**
+1. Admin - Audit tab - toggle "Errors only". Recent failures show with verbatim error text.
+2. Check the Connection's last test status. A red Connection means the LLM provider rejected credentials or model.
+3. The 60-second deadline / 50,000-token budget on `agent.Run` (see `AgenticInterop.Agent.Monitor`) caps any single chat turn. "Agent deadline exceeded" means the LLM took too long. Try a narrower question or split into steps.
 
-1. Open admin → Audit tab → toggle "Errors only". The most recent failures show with their verbatim `ErrorText` once expanded.
-2. Cross-reference with the Connection's "last test" status. A red Connection means the LLM provider rejected the credentials or model — re-test from the Connections tab.
-3. The 60s deadline / 50k token budget on `agent.Run` (see [`AgenticInterop.Agent.Monitor`](src/cls/AgenticInterop/Agent/Monitor.cls)) caps any single chat turn — `Agent deadline exceeded` in the response means the LLM took too long, often because of the documented Bedrock tool-result framework hang. Try a narrower question or split it into steps.
+**On approval card stuck.** The user's chat tab must be open. Click APPROVE to continue or REJECT to cancel. The agent acknowledges rejections and asks how to proceed.
 
-**On approval card stuck "AWAITING APPROVAL".** The user's chat tab needs to be open to receive the approval click. Once they click APPROVE the next chat turn carries the matching token in `approvedTokens` and the gate lets the tool run. REJECT clears the card; the model already received the deny error and continues the conversation.
+**Rebuilding catalogs.** After installing a different IRIS for Health version, click Rebuild on each catalog from the admin Catalogs tab. The XLS source is shipped in the repo; the dictionary source walks the live `%Dictionary` of the current namespace.
 
-**Rebuilding catalogs.** After a `zpm load` of a different IRIS for Health version, click Rebuild on each catalog from the admin Catalogs tab. The XLS source (`/opt/agentic_interop/seeds/catalog.xlsx`) is shipped in the repo and re-deployed by the IPM module. The dictionary source walks the live `%Dictionary` of whichever namespace you pick.
+**Wallet rotation.** Connections tab - open a connection - paste new API key - Save. The previous secret is overwritten (no orphan rows).
 
-**Wallet rotation.** Connections tab → open a connection → paste a new value into the API-key field → Save. The previous secret is overwritten in the Wallet (no orphan rows left behind).
+**Cross-namespace.** The dispatch class compiles in the install namespace. To chat against a different namespace, the `X-IRIS-Namespace` header routes tool execution there after validating user access.
 
-**Cross-namespace install.** The dispatch class (`AgenticInterop.REST.Dispatch`) is only compiled in the install namespace (default HSCUSTOM). To serve chat against a different namespace, set the `X-IRIS-Namespace` header on the chat request — the dispatch stays in HSCUSTOM, validates the user's access to the requested namespace, and per-tool handlers switch to the target namespace internally.
+## Known issues
+
+See [docs/BUG.md](docs/BUG.md) for details on:
+- `%AI.Agent.Skill.%OnNew` JSON marshaling bug (workaround: `AgenticInterop.Skill.Base`)
+- Bedrock tool-result round-trip hang (workaround: use Anthropic direct provider)
+- `%AI` include file not visible outside %SYS (workaround: inlined macro values)
+- ObjectScript language gotchas (QUIT in blocks, comment syntax, numeric comparisons)
 
 ## Development
 
-See [docs/PLAN.md](docs/PLAN.md) "Build phases" for the current phase and what is unlocked next.
+All 7 build phases are complete. See [docs/PLAN.md](docs/PLAN.md) for architecture details and [docs/MIGRATION.md](docs/MIGRATION.md) for the class-by-class build map.
 
-The runtime container used for local development is `iris-agentic` on ports 21972 (super) / 22773 (web) / 23773 (xDBC), separate from any other IRIS containers on the host. Login `_SYSTEM` / `Agentic1!`.
+The runtime container used for local development is `iris-agentic` on ports 21972 (super) / 22773 (web) / 23773 (xDBC), separate from any other IRIS containers on the host.
 
 ## License
 

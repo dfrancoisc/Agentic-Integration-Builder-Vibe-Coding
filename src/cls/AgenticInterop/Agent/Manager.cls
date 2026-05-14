@@ -56,28 +56,48 @@ ClassMethod Build(pProvider As %AI.Provider, Output pAgent As %AI.Agent, pAgentC
             Try { Set pAgent.MaxIterations = +effMaxIter } Catch  {}
         }
 
-        // 2. Register Tool classes for EXECUTION via UseToolSet.
+        // 2. Register tools for EXECUTION — two modes controlled by the
+        //    TOOLBINDING parameter (UI-editable via the Agent overlay).
         //
-        //    %Init() (step 1) auto-discovers every %AI.Tool subclass and
-        //    adds them to the FindTools catalog, but does NOT register
-        //    individual methods in the executor. UseToolSet is the call
-        //    that makes methods callable via ExecuteTool.
+        //    "mcp"    (default) — Agent -> MCP Servers -> ToolSets -> Tools.
+        //             Reads the MCPS parameter, calls RegisterToAgent on each
+        //             MCP class, which reads its own TOOLSETS parameter and
+        //             calls UseToolSet on each ToolSet wrapper class. The
+        //             ToolSet wrapper includes the underlying Tool class via
+        //             XData <Include>. This is the architecturally correct
+        //             chain: tool discovery flows through the MCP layer.
         //
-        //    We call UseToolSet directly on each Tool class (not through
-        //    the MCP → ToolSet indirection). The old MCP loop called
-        //    UseToolSet on ToolSet.* wrapper classes that <Include>d the
-        //    same Tool.* methods, doubling every tool definition. Now
-        //    we register Tool classes once; the DiscoveryPolicy (step 1b)
-        //    deduplicates the catalog so the LLM sees each tool once.
+        //    "bypass" — Agent -> Tools (direct, no MCP indirection).
+        //             Calls UseToolSet directly on each Tool class. Faster
+        //             (skips two levels of indirection) but bypasses the MCP
+        //             and ToolSet metadata layers entirely. Use only when
+        //             debugging or when MCP routing causes issues.
         //
-        //    The MCP metadata (NAME, DESCRIPTION, TOOLSETS CSV) is still
-        //    available for the admin UI (MCP list page, overlay editor)
-        //    but is no longer pushed into the ToolManager at runtime.
-        Set tools = "AgenticInterop.Tool.Production,AgenticInterop.Tool.Transform,AgenticInterop.Tool.Testing,AgenticInterop.Tool.Catalog,AgenticInterop.Tool.Monitoring"
-        For i=1:1:$LENGTH(tools, ",") {
-            Set cls = $PIECE(tools, ",", i)
-            Set tSC = pAgent.UseToolSet(cls)
-            If 'tSC { Quit }
+        //    In both modes, %Init() (step 1) has already auto-discovered
+        //    every %AI.Tool subclass for the LLM catalog. UseToolSet
+        //    registers the methods in the executor (making them callable).
+        //    The DiscoveryPolicy (step 1b) deduplicates the catalog so the
+        //    LLM sees each tool exactly once regardless of binding mode.
+        Set bindingMode = ##class(AgenticInterop.Editor.Overlay).GetEffectiveToolBinding(pAgentClass)
+        If bindingMode = "" { Set bindingMode = "mcp" }
+
+        If bindingMode = "mcp" {
+            ; ── Agent -> MCP Servers -> ToolSets -> Tools ──
+            Set mcps = ##class(AgenticInterop.Editor.Overlay).GetEffectiveMCPS(pAgentClass)
+            For i=1:1:$LENGTH(mcps, ",") {
+                Set mcpClass = $ZSTRIP($PIECE(mcps, ",", i), "<>W")
+                If mcpClass = "" { Continue }
+                Set tSC = $classmethod(mcpClass, "RegisterToAgent", pAgent)
+                If 'tSC { Quit }
+            }
+        } Else {
+            ; ── Bypass: Agent -> Tools (direct) ──
+            Set tools = "AgenticInterop.Tool.Production,AgenticInterop.Tool.Transform,AgenticInterop.Tool.Testing,AgenticInterop.Tool.Catalog,AgenticInterop.Tool.Monitoring"
+            For i=1:1:$LENGTH(tools, ",") {
+                Set cls = $PIECE(tools, ",", i)
+                Set tSC = pAgent.UseToolSet(cls)
+                If 'tSC { Quit }
+            }
         }
         If 'tSC { Quit }
 

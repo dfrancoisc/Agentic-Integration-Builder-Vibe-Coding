@@ -249,3 +249,125 @@ A WRC ticket should reference:
 - Compare with `%AI.Provider` which calls `.%ToJSON()` on the
   DynamicObject before passing to `$ZF`
 - Reproduces with `##class(<any subclass>).%New()` in any namespace
+
+---
+
+# Known framework issue — Bedrock tool-result round-trip hang
+
+## TL;DR
+
+When the `%AI.Agent` sends a `tool_result` message back to AWS Bedrock
+after executing a tool call, the Rust HTTP layer hangs indefinitely.
+The agent never receives the next LLM turn. This is model-independent
+and endpoint-independent.
+
+## Environment where it reproduces
+
+- IRIS for Health 2026.2 AI build 162.0 (`linux ubuntu 24.4.0 aarch64`)
+- Container `iris-agentic` (this project's runtime)
+- Bedrock provider configured via `%AI.Provider.Create("bedrock", ...)`
+- Reproduces with both `agent.Run()` and `agent.StreamChat()`
+- Reproduces with Claude Sonnet 4, Claude Haiku, and other Bedrock models
+- Does NOT reproduce with Anthropic direct provider — Anthropic tool
+  calls work correctly end-to-end
+
+## Root cause
+
+Below the ObjectScript API surface. The Rust LLM bridge handles the
+HTTP round-trip to the Bedrock Converse API. After posting the
+`tool_result` content block, the bridge never returns control to the
+ObjectScript caller. The connection appears to stall at the HTTP layer,
+not at the model-inference layer (Bedrock CloudWatch shows no second
+request arriving).
+
+This is NOT the same as the Skill `%OnNew` bug above — that is a JSON
+marshaling error. This is a transport-layer hang with no error output.
+
+## Impact
+
+- Any `%AI.Agent` workflow that uses tools cannot complete via Bedrock.
+  The first tool call executes successfully, the result is marshaled,
+  but the follow-up LLM turn never fires.
+- Bedrock chat WITHOUT tools works correctly — `ChatComplete` with no
+  tool definitions returns as expected.
+- The admin UI allows Bedrock connections. The health check passes
+  (it uses a toolless `ChatComplete`). But the first chat message that
+  triggers a tool call will hang.
+
+## Workaround
+
+Use Anthropic direct (`provider: "anthropic"`) as the runtime provider.
+The admin UI supports provider switching with no code changes. Bedrock
+rows remain in the Connection table and will function when the upstream
+fix lands.
+
+The `AgenticInterop.Agent.Monitor` class enforces a 60-second deadline
+and a 50,000-token budget on `agent.Run()`. If the hang occurs, the
+monitor kills the process after the deadline and returns an error to
+the chat UI. This prevents infinite resource consumption but does not
+fix the underlying issue.
+
+## When this can be removed
+
+When InterSystems patches the Rust LLM bridge to correctly handle the
+Bedrock Converse API tool-result round-trip. A WRC ticket is open.
+
+---
+
+# Known framework limitation — `%AI` include file not visible outside %SYS
+
+## TL;DR
+
+The `%AI.INC` include file that defines macros like `$$$IrisLLMLibrary`,
+`$$$LLMBUILDSKILLFROMJSON`, etc., is only accessible from the `%SYS`
+namespace. Classes compiled in user namespaces (HSCUSTOM, USER, etc.)
+cannot use `[ IncludeCode = %AI ]` — the macros do not resolve.
+
+## Workaround
+
+`AgenticInterop.Skill.Base` inlines the macro values as integer literals
+(see the table in the Skill `%OnNew` bug section above). These values
+were extracted from `%AI.INC` in `%SYS` and are stable across the
+2026.2 AI 162.0 build. If a future IRIS version changes these values,
+the inlined constants must be updated to match.
+
+---
+
+# ObjectScript language gotchas (not framework bugs)
+
+These are language behaviors that caused bugs during development.
+Documented here so future contributors avoid the same traps.
+
+## `QUIT value` inside try/catch or if blocks
+
+`quit value` only works at the method's top-level scope. Inside a block
+(try, catch, if, for, while), `quit` without arguments exits the block,
+and `quit value` is a syntax error or silently exits the block without
+returning. Capture the return value to a local variable, exit the block,
+then `quit local` at top level. Or use `RETURN value` which works from
+any depth.
+
+## `//` comments inside method bodies
+
+In ObjectScript, `//` comments only work at the class level (outside
+method bodies). Inside a ClassMethod or Method body, use `;` for
+single-line comments. Bare `//` inside method bodies causes `#1002`
+compile errors.
+
+## Numeric comparison operators
+
+`>=`, `<=`, `>`, `<` are NUMERIC operators in ObjectScript. The
+expression `ch >= "A" && ch <= "Z"` always evaluates to true because
+both sides coerce to 0. Use `$ascii(ch)` for character-range checks:
+`$ascii(ch) >= 65 && $ascii(ch) <= 90`.
+
+## `%FromJSON` instance form
+
+`{}.%FromJSON(string)` returns `""` on this IRIS build. Use the
+class-method form: `##class(%DynamicAbstractObject).%FromJSON(string)`.
+
+## `$get` on %DynamicObject properties
+
+`$get(obj.property, default)` throws `<INVALID CLASS>` when `obj` is a
+`%DynamicObject`. Use `$select(obj.%IsDefined("property"):obj.property, 1:default)`
+or capture to a local variable first.

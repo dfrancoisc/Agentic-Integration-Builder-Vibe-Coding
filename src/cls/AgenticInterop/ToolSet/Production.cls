@@ -3,16 +3,17 @@
 /// the framework's auto-discovery picks up every public ClassMethod
 /// as a tool.
 ///
-/// Mutating tool dispatches (Start/Stop/Create/Delete/Add/Remove/
-/// Update*) flow through AgenticInterop.Policy.ConfirmationGate so
-/// the user explicitly approves each action via the inline gate card.
+/// Covers production CRUD, business host management, routing rules,
+/// and post-build validation. Mutating tools (Start/Stop/Create/
+/// Delete/Add/Remove/Update*, CreateRoutingRule) flow through the
+/// confirmation gate.
 Class AgenticInterop.ToolSet.Production Extends %AI.ToolSet [ DependsOn = AgenticInterop.Tool.Production ]
 {
 
 XData Definition [ MimeType = application/xml ]
 {
 <ToolSet Name="Production">
-    <Description>Production CRUD, lifecycle, and business host management. Read-only inventory + describe; mutating start/stop/create/delete/host-edit operations gated by the confirmation policy.</Description>
+    <Description>Production CRUD, lifecycle, business host management, and routing rules. Read-only inventory + describe + validation; mutating start/stop/create/delete/host-edit/routing-rule operations gated by the confirmation policy.</Description>
     <Include Class="AgenticInterop.Tool.Production"/>
 </ToolSet>
 }
