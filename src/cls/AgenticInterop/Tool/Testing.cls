@@ -595,4 +595,59 @@ ClassMethod BuildHL7TestMessage(docType As %String, fields As %DynamicObject) As
     Quit out
 }
 
+/// Build a test HL7 message from named fields AND send it to a
+/// production business service in ONE call. This is the PREFERRED
+/// way to test an HL7 production — it combines BuildHL7TestMessage
+/// and SendHL7 so the agent never needs to hand-craft raw HL7.
+///
+/// ALWAYS use this instead of SendHL7 for testing. SendHL7 requires
+/// a raw HL7 string which the LLM will hand-craft with wrong field
+/// positions (e.g., PV1 AttendingDoctor at field 6 instead of 7).
+/// This tool uses SetValueAt() internally to place every value at the
+/// correct schema position, then immediately sends the message.
+///
+/// docType:     schema-qualified message type (e.g. "2.5:ADT_A01")
+/// fields:      JSON object mapping field paths to values (same as
+///              BuildHL7TestMessage)
+/// targetHost:  production business service to send to
+///
+/// Returns: { ok, docType, rawMessage, segmentCount, fieldCount,
+///   sendResult: { ok, messages, errors }, hint }
+ClassMethod BuildAndSendHL7TestMessage(docType As %String, fields As %DynamicObject, targetHost As %String) As %DynamicObject
+{
+    Set out = {}
+    Set out.tool = "build_and_send_hl7_test_message"
+    ; Step 1: Build the message using BuildHL7TestMessage
+    Set buildResult = ..BuildHL7TestMessage(docType, fields)
+    If 'buildResult.ok {
+        Set out.ok = 0
+        Set out.error = "Build failed: " _ buildResult.error
+        Quit out
+    }
+    Set out.docType = buildResult.docType
+    Set out.rawMessage = buildResult.rawMessage
+    Set out.segmentCount = buildResult.segmentCount
+    Set out.fieldCount = buildResult.fieldCount
+    If buildResult.%IsDefined("failedFields") {
+        Set out.failedFields = buildResult.failedFields
+    }
+    ; Step 2: Send the built message using SendHL7
+    If $get(targetHost) = "" {
+        Set out.ok = 1
+        Set out.hint = "Message built successfully but no targetHost specified. Pass targetHost to also send the message."
+        Quit out
+    }
+    Set sendResult = ..SendHL7(buildResult.rawMessage, targetHost)
+    Set out.sendResult = sendResult
+    If 'sendResult.ok {
+        Set out.ok = 0
+        Set out.error = "Message built OK but send failed: " _ sendResult.error
+        Set out.hint = "The rawMessage is valid HL7. Check that the production is running and the targetHost name is correct."
+        Quit out
+    }
+    Set out.ok = 1
+    Set out.hint = "Message built with correct field positions via SetValueAt() and sent to " _ targetHost _ ". Check the transformed output in the production message trace."
+    Quit out
+}
+
 }
