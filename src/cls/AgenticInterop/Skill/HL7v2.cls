@@ -77,7 +77,34 @@ On services, `Validation` setting controls per-message validation:
 
 `BadMessageHandler` setting names a host that receives messages failing validation — typically a logging operation. `Alert On Bad Message` setting also fires alerts on validation failures.
 
+## Building HL7 test messages — NEVER count pipes manually
+
+ALWAYS use the `BuildHL7TestMessage` tool to construct test messages. Pass the docType (e.g., "2.5:ADT_A01") and a JSON object mapping schema field paths to values. The tool uses `SetValueAt()` internally, which places each value at the correct field position in the segment using the schema definition.
+
+Why: Manually constructing raw HL7 by counting pipe separators is error-prone. PV1 has 38 fields — placing the attending doctor at field 7 requires exactly 6 empty pipes after field 1. One missing or extra pipe shifts every subsequent field. `BuildHL7TestMessage` eliminates this class of error entirely.
+
+Example fields object for an ADT^A01 test message:
+```json
+{
+  "MSH:SendingApplication": "ADT_SYS",
+  "MSH:SendingFacility": "HOSPITAL",
+  "MSH:MessageType": "ADT^A01^ADT_A01",
+  "PID:PatientIdentifierList(1).IDNumber": "PAT12345",
+  "PID:PatientIdentifierList(1).AssigningAuthority.NamespaceID": "HOSP",
+  "PID:PatientIdentifierList(1).IdentifierTypeCode": "MR",
+  "PID:PatientName(1).FamilyName.Surname": "SMITH",
+  "PID:PatientName(1).GivenName": "JOHN",
+  "PV1:PatientClass": "I",
+  "PV1:AttendingDoctor(1).IDNumber": "ATT54321",
+  "PV1:AttendingDoctor(1).FamilyName.Surname": "JONES",
+  "PV1:AttendingDoctor(1).GivenName": "MARY"
+}
+```
+
+Use `GetHL7SegmentFields(category, segmentType)` to see all available field names, positions, data types, and sub-components for any segment.
+
 ## Common pitfalls
+- Hand-crafting raw HL7 messages by counting pipe separators — use BuildHL7TestMessage instead.
 - Hardcoded segment paths that don't account for repeat groups (use `{OBXgrp(i).OBX}` not `{OBX}`).
 - Forgetting the schema is base + custom — references like `{ZXX:Field}` need the custom schema loaded.
 - ACK mode `Immediate` losing application errors — use `Application` for any consumer that can fail.

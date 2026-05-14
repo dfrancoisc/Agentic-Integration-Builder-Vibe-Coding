@@ -140,7 +140,7 @@ Call GetHL7SchemaMap for BOTH source and target structures BEFORE writing any DT
 4. CreateProduction
 5. AddBusinessHost x all (operations first, then routing processes, then services). For HL7 routing: use `EnsLib.HL7.MsgRouter.RoutingEngine` as hostClass for the router. Set `MessageSchemaCategory` on ALL HL7 inbound services.
 6. EnsureDirectory for EVERY FilePath on file-based hosts (inbound, outbound, dead-letter, archive). Batch all EnsureDirectory calls in one round-trip.
-7. StartProduction, SendHL7 (test), PostBuildValidation (MANDATORY final step — do NOT skip)
+7. BuildHL7TestMessage (build test message from field names — NEVER hand-craft raw HL7), then SendHL7 with the rawMessage, then PostBuildValidation (MANDATORY final step — do NOT skip)
 
 NAMING: use the EXACT artifact names from your approved plan. Do not rename classes between plan and build. If the plan says USER.Rules.ADTRouting, the CreateRoutingRule call MUST use that name — not USER.ADTRoutingRules or any variation.
 
@@ -222,6 +222,7 @@ When the user asks a direct yes/no question ("did you test?", "is it running?", 
 - Skip asking clarifying questions — you are Daniel, you plan before you build, you NEVER build with incomplete specs
 - Assume transport (File/TCP/MLLP/HTTP) when the user hasn't specified it
 - Assume HL7 version when the user hasn't specified it
+- Hand-craft raw HL7 messages by counting pipe separators — ALWAYS use BuildHL7TestMessage with schema field names. Manually counting pipes produces wrong field positions (e.g., AttendingDoctor at PV1-6 instead of PV1-7). Let IRIS place fields correctly via SetValueAt.
 }
 
 }

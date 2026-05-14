@@ -488,4 +488,111 @@ ClassMethod SendFHIR(resource, endpoint As %String, authBearer As %String = "") 
     Quit out
 }
 
+/// Build a syntactically correct HL7 v2 test message from a docType and
+/// a set of named field values. The agent passes field paths (the same
+/// schema property names returned by GetHL7SchemaMap) and values, and
+/// this tool uses SetValueAt() to place each value at the correct field
+/// position in the segment. The agent NEVER needs to count pipe
+/// separators — IRIS handles all field positioning.
+///
+/// CALL THIS instead of hand-crafting raw HL7 message strings. Manual
+/// pipe-counting is error-prone (e.g., placing AttendingDoctor at PV1-6
+/// instead of PV1-7 due to one missing pipe). This tool eliminates
+/// that class of error entirely.
+///
+/// docType:  schema-qualified message type, e.g. "2.5:ADT_A01".
+/// fields:   a JSON object mapping virtual-document property paths to
+///           values. Example:
+///           {
+///             "MSH:SendingApplication": "ADT_SYS",
+///             "MSH:MessageType": "ADT^A01^ADT_A01",
+///             "MSH:VersionID": "2.5",
+///             "PID:PatientIdentifierList(1).IDNumber": "PAT12345",
+///             "PID:PatientName(1).FamilyName.Surname": "SMITH",
+///             "PID:PatientName(1).GivenName": "JOHN",
+///             "PV1:AttendingDoctor(1).IDNumber": "ATT54321",
+///             "PV1:AttendingDoctor(1).FamilyName.Surname": "JONES"
+///           }
+///
+/// Returns: { ok, docType, rawMessage, segmentCount, fieldCount,
+///            failedFields? }.
+/// Read-only (does not persist the message).
+ClassMethod BuildHL7TestMessage(docType As %String, fields As %DynamicObject) As %DynamicObject
+{
+    Set out = {}
+    Set out.tool = "build_hl7_test_message"
+    If $get(docType) = "" {
+        Set out.ok = 0
+        Set out.error = "Pass `docType` (e.g. '2.5:ADT_A01') and `fields` (JSON object of field paths to values)."
+        Quit out
+    }
+    If '$isobject($get(fields)) {
+        Set out.ok = 0
+        Set out.error = "Pass `fields` as a JSON object mapping field paths to values. Example: {""PID:PatientName(1).FamilyName.Surname"": ""SMITH""}."
+        Quit out
+    }
+    Try {
+        ; Create the HL7 message object with the specified DocType.
+        ; SetValueAt uses the schema to resolve field names to positions.
+        Set msg = ##class(EnsLib.HL7.Message).%New()
+        Set msg.DocType = docType
+        ; Walk the fields object and set each value
+        Set iter = fields.%GetIterator()
+        Set fieldCount = 0
+        Set failedFields = []
+        While iter.%GetNext(.path, .value) {
+            Set sc = msg.SetValueAt($select($isobject(value):value.%ToJSON(), 1:value), path)
+            If sc {
+                Set fieldCount = fieldCount + 1
+            } Else {
+                Set failObj = {}
+                Set failObj.path = path
+                Set failObj.error = $system.Status.GetErrorText(sc)
+                Do failedFields.%Push(failObj)
+            }
+        }
+        ; Auto-fill MSH standard fields if not provided
+        If msg.GetValueAt("MSH:FieldSeparator") = "" {
+            Do msg.SetValueAt("|", "MSH:FieldSeparator")
+        }
+        If msg.GetValueAt("MSH:EncodingCharacters") = "" {
+            Do msg.SetValueAt("^~\&", "MSH:EncodingCharacters")
+        }
+        If msg.GetValueAt("MSH:DateTimeOfMessage") = "" {
+            Do msg.SetValueAt($translate($zdatetime($horolog, 3, 1), "- :", ""), "MSH:DateTimeOfMessage")
+        }
+        If msg.GetValueAt("MSH:ProcessingID") = "" {
+            Do msg.SetValueAt("P", "MSH:ProcessingID")
+        }
+        If msg.GetValueAt("MSH:MessageControlID") = "" {
+            Do msg.SetValueAt("TEST"_$random(999999), "MSH:MessageControlID")
+        }
+        If msg.GetValueAt("MSH:VersionID") = "" {
+            Do msg.SetValueAt($piece(docType, ":", 1), "MSH:VersionID")
+        }
+        ; Build the raw HL7 string using CR (0x0D) as segment separator
+        Set rawMsg = ""
+        For i = 1:1:msg.SegCount {
+            Set seg = msg.GetSegmentAt(i)
+            If $isobject(seg) {
+                If rawMsg '= "" Set rawMsg = rawMsg _ $char(13)
+                Set rawMsg = rawMsg _ seg.OutputToString()
+            }
+        }
+        Set out.ok = 1
+        Set out.docType = docType
+        Set out.rawMessage = rawMsg
+        Set out.segmentCount = msg.SegCount
+        Set out.fieldCount = fieldCount
+        If failedFields.%Size() > 0 {
+            Set out.failedFields = failedFields
+        }
+        Set out.hint = "Use this rawMessage value in SendHL7(message, targetHost) to test the production."
+    } Catch ex {
+        Set out.ok = 0
+        Set out.error = $extract(ex.DisplayString(), 1, 400)
+    }
+    Quit out
+}
+
 }

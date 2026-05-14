@@ -929,4 +929,137 @@ ClassMethod GetHL7SchemaMap(category As %String, messageStructure As %String) As
     Return out
 }
 
+/// Return detailed field metadata for a single HL7 segment type in a
+/// given schema category. Each field includes its position number,
+/// property name, data type, required/optional status, maximum length,
+/// and sub-components. Use this to understand segment structure before
+/// building DTLs or test messages.
+///
+/// CALL THIS when the agent needs to know which fields exist in a
+/// segment, their exact positions, and their data types. This is
+/// complementary to GetHL7SchemaMap (which returns message-level
+/// segment paths) — this tool goes one level deeper into a single
+/// segment.
+///
+/// category:      schema version, e.g. "2.5", "2.5.1", "2.3.1".
+/// segmentType:   segment name, e.g. "PV1", "PID", "OBR", "OBX".
+///
+/// Returns: { ok, category, segmentType, fields: [ { position,
+///   name, dataType, required, maxLength, description, subComponents? } ] }.
+/// Read-only.
+ClassMethod GetHL7SegmentFields(category As %String, segmentType As %String) As %DynamicObject
+{
+    Set out = {}
+    Set out.tool = "get_hl7_segment_fields"
+    Set out.category = $get(category)
+    Set out.segmentType = $get(segmentType)
+    If $get(category) = "" || ($get(segmentType) = "") {
+        Set out.ok = 0
+        Set out.error = "Pass `category` (e.g. '2.5') and `segmentType` (e.g. 'PV1')."
+        Return out
+    }
+    Try {
+        ; Check segment exists in schema
+        Set segDef = $get(^EnsHL7.Schema(category, "SS", segmentType))
+        If segDef = "" {
+            Set out.ok = 0
+            Set out.error = "Segment '" _ segmentType _ "' not found in schema '" _ category _ "'."
+            ; List available segments
+            Set out.available = []
+            Set seg = ""
+            Set count = 0
+            For {
+                Set seg = $order(^EnsHL7.Schema(category, "SS", seg))
+                Quit:seg=""
+                Do out.available.%Push(seg)
+                Set count = count + 1
+                Quit:count>50
+            }
+            Return out
+        }
+        ; --- Segment definition is a $list of $lists ---
+        ; segDef = $lb($lb("cat:DT","",maxLen,"opt"), ...) with one
+        ; entry per field, 1-indexed. Field N's data type is:
+        ;   $piece($lg($lg(segDef, N), 1), ":", 2)
+        ; This is 100% reliable (no text-scanning heuristics).
+        ;
+        ; --- Walk the map sub-node for top-level fields ---
+        ; Keys are dotted field paths ("attendingdoctor",
+        ; "attendingdoctor.familyname.surname"). Values encode the
+        ; actual HL7 position: "7()" = field 7 repeating,
+        ; "17().2.1" = field 17 sub-component 2.1. We only emit
+        ; TOP-LEVEL fields (no dot in name).
+        Set out.fields = []
+        Set fieldKey = ""
+        Set tmpArr = []
+        For {
+            Set fieldKey = $order(^EnsHL7.Schema(category, "SS", segmentType, "map", fieldKey))
+            Quit:fieldKey=""
+            ; Skip sub-components (dotted names like "admittingdoctor.familyname")
+            Continue:fieldKey["."
+            Set mapVal = $get(^EnsHL7.Schema(category, "SS", segmentType, "map", fieldKey))
+            ; Extract actual HL7 position: "7()" -> 7, "41" -> 41
+            Set posStr = $translate(mapVal, "()", "")
+            Set realPos = +posStr
+            ; Detect repeating from "()" suffix
+            Set isRepeating = (mapVal [ "()")
+            ; Look up data type from the $list-of-$lists structure
+            Set fldDef = $listget(segDef, realPos, "")
+            If $listvalid(fldDef) {
+                Set dtName = $piece($listget(fldDef, 1, ""), ":", 2)
+            } Else {
+                Set dtName = ""
+            }
+            ; Build field entry
+            Set entry = {}
+            Set entry.position = realPos
+            Set entry.name = fieldKey
+            Set entry.dataType = dtName
+            Set entry.repeating = isRepeating
+            ; Walk data type definition for sub-component names
+            If dtName '= "" {
+                Set subKey = ""
+                Set subs = []
+                For {
+                    Set subKey = $order(^EnsHL7.Schema(category, "DT", dtName, "names", subKey))
+                    Quit:subKey=""
+                    Continue:subKey["."
+                    Do subs.%Push(subKey)
+                }
+                If subs.%Size() > 0 {
+                    Set entry.subComponents = subs
+                }
+            }
+            Do tmpArr.%Push(entry)
+        }
+        ; Sort by actual HL7 position (insertion sort — segments have <60 fields)
+        Set sorted = []
+        For i=0:1:tmpArr.%Size()-1 {
+            Set entry = tmpArr.%Get(i)
+            Set inserted = 0
+            For j=0:1:sorted.%Size()-1 {
+                If entry.position < sorted.%Get(j).position {
+                    ; Insert before j — rebuild array
+                    Set newArr = []
+                    For k=0:1:sorted.%Size()-1 {
+                        If k = j Do newArr.%Push(entry) Set inserted = 1
+                        Do newArr.%Push(sorted.%Get(k))
+                    }
+                    Set sorted = newArr
+                    Quit
+                }
+            }
+            If 'inserted Do sorted.%Push(entry)
+        }
+        Set out.fields = sorted
+        Set out.fieldCount = sorted.%Size()
+        Set out.ok = 1
+        Set out.hint = "Fields sorted by HL7 position. Use name in BuildHL7TestMessage fields: " _ segmentType _ ":FieldName. For sub-components: " _ segmentType _ ":FieldName.SubComponent. Repeating fields use (1) syntax: " _ segmentType _ ":FieldName(1).SubComponent."
+    } Catch ex {
+        Set out.ok = 0
+        Set out.error = $extract(ex.DisplayString(), 1, 400)
+    }
+    Return out
+}
+
 }
