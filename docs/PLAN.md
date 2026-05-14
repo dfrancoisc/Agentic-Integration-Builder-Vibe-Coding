@@ -44,8 +44,8 @@ These are user-set rules captured at kickoff. Any deviation must be documented i
 │                                                                  │
 │  ┌────────────────────────────────────────────────────────────┐  │
 │  │  AgenticInterop.Agent.HealthInterop (extends %AI.Agent)    │  │
-│  │  Router agent: slim system prompt + namespace context.     │  │
-│  │  Tool catalog = 9 Skill classes (as sub-agent tools) plus  │  │
+│  │  Router agent with Daniel persona (system integrator).     │  │
+│  │  Tool catalog = 12 Skill classes (as sub-agent tools) plus │  │
 │  │  cross-cutting tools (get_user_namespace, search_ens,      │  │
 │  │  search_hs).                                               │  │
 │  └────────────────────────────────────────────────────────────┘  │
@@ -62,6 +62,9 @@ These are user-set rules captured at kickoff. Any deviation must be documented i
 │  │   • Skill.SDA             → ToolSet.Testing                │  │
 │  │   • Skill.RestInProductions → ToolSet.Production           │  │
 │  │   • Skill.ESBPattern      → ToolSet.Production + Transform │  │
+│  │   • Skill.X12             → ToolSet.Testing                │  │
+│  │   • Skill.CDA             → ToolSet.Transform              │  │
+│  │   • Skill.Adapters        → ToolSet.Production             │  │
 │  └────────────────────────────────────────────────────────────┘  │
 │                                ▼                                 │
 │  ┌────────────────────────────────────────────────────────────┐  │
@@ -218,7 +221,9 @@ Skills are %AI.Agent.Skill SUBCLASSES — declarative sub-agents shipped with th
 
 This satisfies restriction #1 (always use the %AI Framework) — Skill is the framework's first-class concept for declarative sub-agent specialists.
 
-The nine v1 skill classes (in src/cls/AgenticInterop/Skill/):
+The agent operates under the Daniel persona — a senior system integrator and healthcare interoperability architect. The persona document (docs/system_integrator_persona.md) defines identity, expertise, working philosophy, and behavioral rules. The system prompt references this persona and all twelve skills.
+
+The twelve v1 skill classes (in src/cls/AgenticInterop/Skill/):
 
 | Skill class | Sub-agent toolset access | Source PDFs |
 |---|---|---|
@@ -231,6 +236,9 @@ The nine v1 skill classes (in src/cls/AgenticInterop/Skill/):
 | SDA | ToolSet.Testing | (curated from existing iris-sda skill) |
 | RestInProductions | ToolSet.Production | Using_REST_Services_and_Operations_in_Productions |
 | ESBPattern | ToolSet.Production + ToolSet.Transform | Using_a_Production_as_an_ESB |
+| X12 | ToolSet.Testing | HIPAA EDI (270/271/276/277/278/834/835/837), envelope structures, SEF schema loading, virtual property paths, search tables |
+| CDA | ToolSet.Transform | CDA/C-CDA document structure, XSLT pipelines (not DTLs), import/export profiles, SDA intermediary pattern |
+| Adapters | ToolSet.Production | File/TCP/MLLP/HTTP/REST/FTP/SFTP/SQL/JDBC/MQTT/SOAP adapter selection matrix, key settings, passthrough classes |
 
 Each Skill's INSTRUCTIONS XData is distilled strictly from the source PDFs and existing curated skills — no hallucinated APIs, no invented class names. Source citations live in docs/SKILLS.md alongside each skill's content.
 
@@ -345,16 +353,16 @@ This applies across phases. The phase column below indicates when each chatbot c
 - IRIS for Health 2026.1 vs 2026.2: kickoff spec mentioned both. We target 2026.2 because that is what the dev container ships and what the %AI Framework class catalog used for design verification was extracted from.
 - FastEmbed memory: bundled ONNX runs in-process; first-time load is a few hundred MB. Document in README ops section once we hit Phase 5.
 
-## Current stats (2026-05-11)
+## Current stats (2026-05-14)
 
 | Metric | Value |
 |---|---|
-| ObjectScript classes | 58 |
+| ObjectScript classes | 61 |
 | Tool classes (%AI.Tool) | 5 |
 | Tools (public ClassMethods) | 42 |
 | ToolSets (%AI.ToolSet) | 5 |
 | MCP servers (%AI.MCP.Service) | 5 |
-| Skills (%AI.Agent.Skill) | 9 |
+| Skills (%AI.Agent.Skill) | 12 |
 | Persistent data classes | 5 |
 | IPM module version | 1.0.0 |
 
@@ -365,7 +373,8 @@ The full PRD is at [docs/PRD.md](PRD.md) (also available as [PRD.docx](PRD.docx)
 - Three primary use cases: guided production build, production review and optimization, complex HL7-to-HL7 transformations
 - Performance, scalability, and quality requirements with specific targets
 - DX (Developer Experience) vs Builder (End User) persona separation
-- Tool depth requirements across 9 artifact domains (Productions, DTL, BPL, Routing Rules, Lookup Tables, HL7 Schemas, FHIR R4, SDA, Catalog)
+- Tool depth requirements across 12 artifact domains (Productions, DTL, BPL, Routing Rules, Lookup Tables, HL7 Schemas, FHIR R4, SDA, Catalog, X12/HIPAA, CDA/C-CDA, Adapters)
+- Daniel system integrator persona (docs/system_integrator_persona.md) defining agent identity, expertise, and behavioral rules
 - Chatbot experience requirements (conversation lifecycle, memory, access control, streaming, guided interaction, reports, audit)
 - Architecture: Agents, MCPs, Tools, Skills, and Catalog vector search
 
@@ -377,3 +386,4 @@ The full PRD is at [docs/PRD.md](PRD.md) (also available as [PRD.docx](PRD.docx)
 - All multi-class refactors must update docs/MIGRATION.md before the code change, not after.
 - `AgenticInterop.Skill.Base` is a workaround for an `%AI.Agent.Skill.%OnNew` framework bug — see docs/BUG.md. It can be deleted when the upstream fix lands.
 - Known framework bugs and ObjectScript language gotchas are documented in [docs/BUG.md](BUG.md). Read it before writing new code — it will save debugging time.
+- The agent operates under the Daniel persona (docs/system_integrator_persona.md). The persona defines identity, core expertise (healthcare standards, IRIS platform, adapters, transformation pipelines, security), working philosophy (research first, optimize for out-of-the-box, plan thoroughly), knowledge sources (skills, catalogs, docs, community, tool results), and behavioral rules (direct answers, backtick formatting, no fabrication, mandatory testing).

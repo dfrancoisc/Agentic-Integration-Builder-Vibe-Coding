@@ -47,8 +47,13 @@ Each Skill class has Parameter TOOLS pointing at the toolsets the sub-agent can 
 | SDA | src/cls/AgenticInterop/Skill/SDA.cls | AgenticInterop.ToolSet.Testing | (existing iris-sda skill) | 2 (scaffold), batch 4 |
 | RestInProductions | src/cls/AgenticInterop/Skill/RestInProductions.cls | AgenticInterop.ToolSet.Production | Using_REST_Services_and_Operations_in_Productions | 2 (scaffold), batch 4 |
 | ESBPattern | src/cls/AgenticInterop/Skill/ESBPattern.cls | AgenticInterop.ToolSet.Production,AgenticInterop.ToolSet.Transform | Using_a_Production_as_an_ESB | 2 (scaffold), batch 3 |
+| X12 | src/cls/AgenticInterop/Skill/X12.cls | AgenticInterop.ToolSet.Testing | HIPAA EDI (270/271/276/277/278/834/835/837), envelope structures, SEF schemas, virtual property paths | persona batch |
+| CDA | src/cls/AgenticInterop/Skill/CDA.cls | AgenticInterop.ToolSet.Transform | CDA/C-CDA structure, XSLT pipelines (not DTLs), import/export profiles, SDA intermediary | persona batch |
+| Adapters | src/cls/AgenticInterop/Skill/Adapters.cls | AgenticInterop.ToolSet.Production | File/TCP/HTTP/REST/FTP/SQL/MQTT/SOAP adapter selection matrix, key settings, passthrough classes | persona batch |
 
 The PDFs Routing_DICOM_Documents_in_Productions, Enabling_Productions_to_Use_Managed_File_Transfer_Services, and Using_Virtual_Documents_in_Productions are read in batch 4 and their content is distributed into the matching Skill INSTRUCTIONS above (e.g., DICOM into Productions, MFT into Productions, virtual documents into Productions/HL7v2) rather than producing standalone Skill classes — per the user's narrowed skill list.
+
+Additionally, docs/system_integrator_persona.md defines the Daniel persona (senior system integrator) that the agent system prompt references. The persona covers identity, core expertise (healthcare standards, IRIS platform, adapters, transformation pipelines, security), working philosophy, knowledge sources, and behavioral rules.
 
 ## Agent runtime
 

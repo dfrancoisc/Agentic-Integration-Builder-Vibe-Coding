@@ -6,16 +6,16 @@ The copilot bridges the gap between healthcare data expertise and InterSystems p
 
 ## Status
 
-All build phases complete (Phase 0 through Phase 7). The agent has 42 tools across 5 Tool classes, 9 domain skills, streaming chat with tool-call approval cards, vector catalog search, and a full admin UI.
+All build phases complete (Phase 0 through Phase 7). The agent operates under the Daniel persona — a senior system integrator and healthcare interoperability architect who plans before building, searches before creating, and tests before declaring success. 42 tools across 5 Tool classes, 12 domain skills, streaming chat with tool-call approval cards, vector catalog search, and a full admin UI.
 
 | Metric | Value |
 |---|---|
-| ObjectScript classes | 58 |
+| ObjectScript classes | 61 |
 | Tool classes (%AI.Tool) | 5 (Production, Transform, Testing, Catalog, Monitoring) |
 | Tools (public ClassMethods) | 42 |
 | ToolSets (%AI.ToolSet) | 5 |
 | MCP servers | 5 (Production, Transform, Testing, Catalog, Monitoring) |
-| Skills (%AI.Agent.Skill) | 9 |
+| Skills (%AI.Agent.Skill) | 12 |
 | Persistent data classes | 5 (Connection, AgentOverride, MCPOverride, ToolSetOverride, AuditLog) |
 
 Documentation:
@@ -23,6 +23,7 @@ Documentation:
 - [docs/PRD.md](docs/PRD.md) — Product Requirements Document (also available as [PRD.docx](docs/PRD.docx))
 - [docs/PLAN.md](docs/PLAN.md) — architecture decisions, restrictions, build phases
 - [docs/MIGRATION.md](docs/MIGRATION.md) — class-by-class build map
+- [docs/system_integrator_persona.md](docs/system_integrator_persona.md) — Daniel persona: identity, expertise, working philosophy, behavioral rules
 - [docs/SKILLS.md](docs/SKILLS.md) — INSTRUCTIONS markdown for each skill, distilled from IRIS for Health PDFs
 - [docs/TOOLS.md](docs/TOOLS.md) — full catalog of agent tools with IRIS API mappings
 - [docs/BUG.md](docs/BUG.md) — known framework bugs, workarounds, and ObjectScript gotchas
@@ -49,7 +50,7 @@ The agent's capabilities are organized into 5 Tool classes (42 tools total). Eac
 
 ## Skills
 
-Nine domain skills teach the agent IRIS-specific concepts. Each skill is a `%AI.Agent.Skill` subclass with markdown INSTRUCTIONS distilled from InterSystems documentation PDFs.
+Twelve domain skills teach the agent IRIS-specific concepts. Each skill is a `%AI.Agent.Skill` subclass with markdown INSTRUCTIONS distilled from InterSystems documentation PDFs.
 
 | Skill | Domain | ToolSet access |
 |---|---|---|
@@ -62,6 +63,9 @@ Nine domain skills teach the agent IRIS-specific concepts. Each skill is a `%AI.
 | SDA | SDA3 model as transformation hub, HL7-to-SDA-to-FHIR pipeline | Testing |
 | RestInProductions | REST services and operations inside productions | Production |
 | ESBPattern | Using a production as an Enterprise Service Bus | Production + Transform |
+| X12 | HIPAA EDI transactions (837/835/270/271/278/834), envelope structures, schemas | Testing |
+| CDA | CDA/C-CDA documents, XSLT pipelines, import/export profiles, SDA conversion | Transform |
+| Adapters | File/TCP/HTTP/REST/FTP/SQL/MQTT/SOAP adapter selection and configuration | Production |
 
 ## Requirements
 
@@ -83,7 +87,7 @@ ZN "<your-namespace>"
 zpm "load /path/to/agentic_interop"
 ```
 
-The module installs all 58 classes, two web apps (`/agentic/` for the UI, `/api/agentic/` for REST), seed data, and the curated class catalog into the namespace where you ran `zpm load`. To install in multiple namespaces, run the command once per namespace.
+The module installs all 61 classes, two web apps (`/agentic/` for the UI, `/api/agentic/` for REST), seed data, and the curated class catalog into the namespace where you ran `zpm load`. To install in multiple namespaces, run the command once per namespace.
 
 ## After install
 

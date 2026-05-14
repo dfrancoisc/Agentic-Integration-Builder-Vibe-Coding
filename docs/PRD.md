@@ -12,7 +12,7 @@ System integrators and integration engineers working with IRIS for Health who ne
 
 ### How it works
 
-A single orchestrator agent (Health Interop) receives the user's request, searches a vector catalog of IRIS classes to find the right components, presents a plan, and on approval executes the build using tools organized across toolsets. Domain skills (e.g., Productions, DTL, BPL, Routing Rules, HL7v2, FHIR R4, SDA, REST) give the agent deep knowledge of IRIS-specific concepts. The agent operates through MCP servers (e.g., Production, Transform, Testing, Catalog) that scope tool access by domain.
+A single orchestrator agent (Health Interop) operates under the Daniel persona — a senior system integrator and healthcare interoperability architect who plans before building, searches before creating, and tests before declaring success (see docs/system_integrator_persona.md). The agent receives the user's request, searches a vector catalog of IRIS classes to find the right components, presents a plan, and on approval executes the build using tools organized across toolsets. Twelve domain skills (Productions, DTL, BPL, Routing Rules, HL7v2, FHIR R4, SDA, REST, ESB, X12/HIPAA, CDA/C-CDA, Adapters) give the agent deep knowledge of IRIS-specific concepts. The agent operates through MCP servers (Production, Transform, Testing, Catalog) that scope tool access by domain.
 
 ### Two personas, two experiences
 
@@ -171,7 +171,12 @@ Behavior rules:
 
 #### Skills (domain knowledge documents)
 
-Productions, DTL, BPL, Routing Rules, HL7v2, FHIR R4, SDA, REST in Productions, ESB Patterns. Each skill is a markdown document injected into the agent's system prompt that teaches IRIS-specific concepts, common patterns, and anti-patterns. Skills are authored by developers (DX) and attached to agents by builders (End User UI).
+Productions, DTL, BPL, Routing Rules, HL7v2, FHIR R4, SDA, REST in Productions, ESB Patterns, X12/HIPAA, CDA/C-CDA, and Adapters. Each skill is a markdown document injected into the agent's system prompt that teaches IRIS-specific concepts, common patterns, and anti-patterns. Skills are authored by developers (DX) and attached to agents by builders (End User UI).
+
+The three newest skills cover:
+- X12/HIPAA: EDI transaction sets (837/835/270/271/278/834), envelope structures (ISA/GS/ST), SEF schema loading, virtual property paths, and HIPAA 4010/5010 schemas
+- CDA/C-CDA: CDA document structure, XSLT pipelines for SDA conversion (not DTLs), import/export profile configuration, C-CDA 2.1 specifics, and the SDA intermediary pattern for CDA-to-FHIR conversion
+- Adapters: complete adapter selection matrix for File, TCP/MLLP, HTTP/REST, FTP/SFTP, SQL/JDBC, MQTT, and SOAP transports, including passthrough classes, key settings, and common pitfalls
 
 #### Catalog Vector Search
 
