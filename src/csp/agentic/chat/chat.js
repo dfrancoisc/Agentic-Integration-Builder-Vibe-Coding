@@ -54,7 +54,7 @@ const BUILTIN_EXAMPLES = [
     {
         cat: 'BUILD',
         title: "ADT-to-ORU transformation with file output",
-        prompt: "Build a complete production that: (1) receives HL7 v2.5 ADT^A01 admission messages over MLLP on port 5000 with automatic acknowledgment, (2) transforms each ADT into an ORU^R01 observation report where the patient identifier becomes the filler order number, the attending doctor becomes the ordering provider, and the patient name is carried as an OBX observation value, (3) routes the transformed ORU messages to an outbound folder at /tmp/lis-outbound/ for pickup by the downstream LIS, and (4) sends any messages that fail transformation to a separate dead-letter folder at /tmp/dead-letter/ for manual review. Use the HL7 v2.5 schema for both source and target, and make sure the routing engine has a compiled business rule."
+        prompt: "Build a complete production that: (1) receives HL7 v2.5 ADT^A01 admission messages over an inbound folder with automatic acknowledgment, (2) transforms each ADT into an ORU^R01 observation report where the patient identifier becomes the filler order number, the attending doctor becomes the ordering provider, and the patient name is carried as an OBX observation value, (3) routes the transformed ORU messages to an outbound folder for pickup by the downstream LIS, and (4) sends any messages that fail transformation to a separate dead-letter folder at /tmp/dead-letter/ for manual review. Use the HL7 v2.5 schema for both source and target, and make sure the routing engine has a compiled business rule."
     },
     {
         cat: 'TRANSFORM',

@@ -976,4 +976,45 @@ ClassMethod CreateRoutingRule(name As %String, ruleXml As %String) As %DynamicOb
     Quit out
 }
 
+/// Create a directory (and any missing parent directories) on the
+/// IRIS server filesystem. Idempotent: succeeds if directory already
+/// exists. Call this for EVERY FilePath configured on file-based
+/// business hosts (EnsLib.HL7.Service.FileService,
+/// EnsLib.HL7.Operation.FileOperation, etc.) BEFORE starting the
+/// production. Without the directories, file-based hosts error on
+/// startup. Also create archive/processed subdirectories when the
+/// service uses ArchivePath.
+ClassMethod EnsureDirectory(path As %String) As %DynamicObject
+{
+    Set out = {}
+    Set out.tool = "ensure_directory"
+    Set out.path = path
+    If $get(path) = "" {
+        Set out.ok = 0
+        Set out.error = "path is required."
+        Quit out
+    }
+    Try {
+        If ##class(%Library.File).DirectoryExists(path) {
+            Set out.ok = 1
+            Set out.existed = 1
+            Set out.message = "Directory already exists: " _ path
+        } Else {
+            Set created = ##class(%Library.File).CreateDirectoryChain(path)
+            If created {
+                Set out.ok = 1
+                Set out.existed = 0
+                Set out.message = "Created directory: " _ path
+            } Else {
+                Set out.ok = 0
+                Set out.error = "Failed to create directory: " _ path _ ". Check filesystem permissions."
+            }
+        }
+    } Catch ex {
+        Set out.ok = 0
+        Set out.error = $extract(ex.DisplayString(), 1, 400)
+    }
+    Quit out
+}
+
 }
