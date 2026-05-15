@@ -555,3 +555,134 @@ button[disabled] { opacity: 0.5; cursor: not-allowed; }
 
 code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .empty-state { color: var(--muted); padding: 40px 20px; text-align: center; font-size: 13px; }
+
+/* ─── Transforms tab ─── hub-and-spoke diagram, pipeline detail table,
+ * cross-format path mapper. Full-width layout (no detail pane). */
+
+.tf-hub { padding: 0 16px; }
+
+.tf-diagram {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    gap: 20px;
+    align-items: start;
+    padding: 16px 0;
+}
+.tf-column { display: flex; flex-direction: column; gap: 6px; }
+.tf-col-label {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--muted); font-weight: 600; margin-bottom: 8px; text-align: center;
+}
+.tf-col-hub {
+    display: flex; flex-direction: column; align-items: center;
+    gap: 6px; padding-top: 28px;
+}
+.tf-hub-box {
+    width: 90px; height: 90px; border-radius: 50%;
+    background: rgba(59, 130, 246, 0.10); border: 2px solid var(--primary);
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 16px; color: var(--primary);
+}
+.tf-hub-sub {
+    font-size: 11px; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.04em;
+}
+
+/* Pipeline arrow cards — one per direction. Clicking selects for
+ * detail browsing. Inbound arrows flow right-to-left (format → SDA3);
+ * outbound flow left-to-right (SDA3 → format). */
+.tf-arrow {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 12px;
+    border: 1px solid var(--border); border-radius: 4px;
+    cursor: pointer; transition: border-color 0.15s, background 0.15s;
+}
+.tf-arrow:hover { border-color: var(--primary); background: rgba(59, 130, 246, 0.05); }
+.tf-arrow.selected {
+    border-color: var(--primary); background: rgba(59, 130, 246, 0.10);
+    box-shadow: inset 3px 0 0 0 var(--primary);
+}
+.tf-format {
+    font-weight: 600; font-size: 13px; white-space: nowrap; min-width: 76px;
+}
+.tf-inbound .tf-format { text-align: right; }
+.tf-line {
+    flex: 1; display: flex; align-items: center; gap: 6px;
+}
+.tf-inbound .tf-line { justify-content: flex-end; }
+.tf-outbound .tf-line { justify-content: flex-start; }
+.tf-count { font-weight: 700; font-size: 14px; color: var(--primary); }
+.tf-kind {
+    font-size: 10px; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.04em;
+}
+.tf-arrow-glyph {
+    flex: 0 0 auto; color: var(--muted); font-size: 12px;
+}
+
+/* Pipeline detail panel — shown below the diagram when a pipeline
+ * is selected. Contains a filter input + scrollable class table. */
+#tf-detail {
+    margin: 0 16px 16px 16px; padding: 16px;
+    border: 1px solid var(--border); border-radius: 6px;
+    background: var(--panel);
+}
+.tf-detail-head { margin-bottom: 12px; }
+.tf-detail-head .row1 { font-weight: 600; font-size: 15px; }
+
+.tf-table {
+    width: 100%; border-collapse: collapse; font-size: 12px;
+}
+.tf-table th {
+    text-align: left; padding: 8px 10px;
+    color: var(--muted); font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.04em; font-size: 11px;
+    border-bottom: 1px solid var(--border); background: var(--panel-2);
+    position: sticky; top: 0; z-index: 1;
+}
+.tf-table td {
+    padding: 6px 10px; border-bottom: 1px solid var(--border);
+    vertical-align: top; line-height: 1.4;
+}
+.tf-table tbody tr:hover td { background: var(--panel-2); }
+.tf-table .tf-sub td { color: var(--muted); }
+.tf-table .tf-desc {
+    max-width: 420px; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap;
+}
+.tf-table code {
+    font-size: 11px; background: transparent; color: var(--text);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/* Cross-format path mapper — pick source and target formats,
+ * see the two-leg path through SDA3 with toggle. */
+.tf-cf-path {
+    display: flex; align-items: center; gap: 0;
+    padding: 16px; background: var(--code);
+    border: 1px solid var(--border); border-radius: 4px;
+    flex-wrap: wrap;
+}
+.tf-cf-node {
+    padding: 10px 18px;
+    border: 2px solid var(--border); border-radius: 6px;
+    font-weight: 600; font-size: 14px; white-space: nowrap;
+    background: var(--panel);
+}
+.tf-cf-node.tf-cf-hub {
+    border-color: var(--primary);
+    background: rgba(59, 130, 246, 0.08); color: var(--primary);
+}
+.tf-cf-step {
+    display: flex; flex-direction: column; align-items: center;
+    gap: 2px; padding: 0 12px;
+}
+.tf-cf-step .tf-cf-line {
+    width: 36px; height: 2px; background: var(--border); position: relative;
+}
+.tf-cf-step .tf-cf-line::after {
+    content: ''; position: absolute; right: -2px; top: -4px;
+    border: 5px solid transparent; border-left-color: var(--border);
+}
+.tf-cf-step .badge { font-size: 10px; white-space: nowrap; }
+.tf-cf-links { margin-top: 10px; display: flex; flex-direction: column; gap: 4px; }

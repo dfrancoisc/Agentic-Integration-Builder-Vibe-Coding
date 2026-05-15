@@ -99,6 +99,10 @@ XData UrlMap [ XMLNamespace = "http://www.intersystems.com/urlmap" ]
     <Route Url="/audit/log"                     Method="GET"    Call="AuditList" />
     <Route Url="/audit/kinds"                   Method="GET"    Call="AuditKinds" />
 
+    <!-- Transformation Catalog: read-only inventory of shipped HS.*
+         transformation classes organized by pipeline direction. -->
+    <Route Url="/transforms/inventory"          Method="GET"    Call="TransformInventory" />
+
     <!-- Cleanup: stop stuck productions and delete test artifacts. -->
     <Route Url="/cleanup/productions"           Method="POST"   Call="CleanupProductions" />
     <Route Url="/cleanup/artifacts"             Method="GET"    Call="ListCustomArtifacts" />
@@ -553,6 +557,11 @@ ClassMethod AuditList() As %Status
 ClassMethod AuditKinds() As %Status
 {
     Quit ##class(AgenticInterop.Editor.AuditService).Kinds(%response)
+}
+
+ClassMethod TransformInventory() As %Status
+{
+    Quit ##class(AgenticInterop.Editor.TransformService).Inventory(%response)
 }
 
 ClassMethod CleanupProductions() As %Status

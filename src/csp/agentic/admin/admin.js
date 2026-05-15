@@ -12,7 +12,7 @@
 
 const API = '/api/agentic';
 const ADMIN_VERSION = '2026.05.11.3';
-const TABS = ['agents', 'mcps', 'toolsets', 'tools', 'skills', 'connections', 'catalogs', 'audit'];
+const TABS = ['agents', 'mcps', 'toolsets', 'tools', 'skills', 'connections', 'catalogs', 'transforms', 'audit'];
 const AUTH_KEY = 'AGENTIC_AUTH';
 
 // [CSP cookie fix] Force credentials:'omit' on every fetch from this
@@ -250,11 +250,11 @@ function setTab(tab) {
     // Tabs without a per-row detail pane (audit, catalogs) get the
     // whole viewport — body[data-layout=full] hides #detail-panel
     // and lets #list-panel flex to 100% width.
-    document.body.dataset.layout = (tab === 'audit' || tab === 'catalogs') ? 'full' : 'split';
+    document.body.dataset.layout = (tab === 'audit' || tab === 'catalogs' || tab === 'transforms') ? 'full' : 'split';
     $('list-title').textContent = ({
-        agents: 'Agents', mcps: 'MCPs', toolsets: 'ToolSets', tools: 'Tools', skills: 'Skills', connections: 'Connections', catalogs: 'Catalogs', audit: 'Audit'
+        agents: 'Agents', mcps: 'MCPs', toolsets: 'ToolSets', tools: 'Tools', skills: 'Skills', connections: 'Connections', catalogs: 'Catalogs', transforms: 'Transforms', audit: 'Audit'
     })[tab];
-    $('btn-new').style.display = (tab === 'tools' || tab === 'skills' || tab === 'catalogs' || tab === 'audit') ? 'none' : 'inline-block';
+    $('btn-new').style.display = (tab === 'tools' || tab === 'skills' || tab === 'catalogs' || tab === 'audit' || tab === 'transforms') ? 'none' : 'inline-block';
     $('detail-panel').hidden = true;
     loadList();
 }
@@ -297,6 +297,8 @@ async function loadList() {
             const data = await get('/catalog/status');
             state.list = [data];
             renderCatalogList();
+        } else if (state.tab === 'transforms') {
+            await loadTransformInventory();
         } else if (state.tab === 'audit') {
             await loadAuditList();
         } else if (state.tab === 'tools') {
@@ -831,6 +833,339 @@ async function rebuildCatalog(scope, btn, statusEl) {
     } finally {
         btn.disabled = false;
     }
+}
+
+// ─── Transforms tab ──────────────────────────────────────────────
+// Transformation Catalog: read-only inventory of all HS.*
+// transformation classes shipped with IRIS for Health. SDA3 is the
+// universal pivot format. The diagram shows inbound (external→SDA3)
+// and outbound (SDA3→external) pipelines. Click a pipeline to browse
+// its classes. The Cross-Format Mapper shows how two external formats
+// connect through SDA3.
+
+let _tfData = null;      // cached inventory response
+let _tfSelected = null;  // currently-selected pipeline id
+
+async function loadTransformInventory() {
+    const list = $('list');
+    list.innerHTML = '<div class="empty-state">Loading transformation inventory...</div>';
+    try {
+        _tfData = await get('/transforms/inventory');
+        _tfSelected = null;
+        renderTransformsTab();
+    } catch (e) {
+        list.innerHTML = '<div class="empty-state">Failed: ' + escapeHtml(e.message) + '</div>';
+    }
+}
+
+function renderTransformsTab() {
+    const list = $('list');
+    list.innerHTML = '';
+    if (!_tfData || !_tfData.ok) {
+        list.innerHTML = '<div class="empty-state">No data.</div>';
+        return;
+    }
+
+    const pipelines = _tfData.pipelines || [];
+    const inbound = pipelines.filter(function(p) { return p.target === 'SDA3'; });
+    const outbound = pipelines.filter(function(p) { return p.source === 'SDA3'; });
+
+    // Header card
+    var header = document.createElement('div');
+    header.className = 'list-item';
+    header.style.cursor = 'default';
+    header.innerHTML =
+        '<div class="row1">Transformation Inventory</div>' +
+        '<div class="row2 desc">All HS.* transformation classes shipped with IRIS for Health. ' +
+        'SDA3 (Summary Document Architecture) is the universal pivot format - every external format maps to and from SDA3.</div>' +
+        '<div class="row2" style="margin-top:4px;">' +
+            '<span class="badge user">' + _tfData.totalClasses + ' classes total</span> ' +
+            '<span class="badge">' + pipelines.length + ' pipelines</span>' +
+        '</div>';
+    list.appendChild(header);
+
+    // Hub-and-spoke diagram
+    var hub = document.createElement('div');
+    hub.className = 'tf-hub';
+    hub.innerHTML = tfBuildDiagram(inbound, outbound);
+    list.appendChild(hub);
+
+    // Pipeline detail panel (hidden until a pipeline is selected)
+    var detail = document.createElement('div');
+    detail.id = 'tf-detail';
+    detail.style.display = 'none';
+    list.appendChild(detail);
+
+    // Cross-Format Mapper
+    var cross = document.createElement('div');
+    cross.className = 'list-item';
+    cross.style.cursor = 'default';
+    cross.innerHTML = tfBuildCrossFormat();
+    list.appendChild(cross);
+
+    // Wire pipeline click handlers
+    hub.querySelectorAll('[data-pipeline]').forEach(function(el) {
+        el.addEventListener('click', function() { tfSelectPipeline(el.dataset.pipeline); });
+    });
+
+    // Wire cross-format handlers
+    var cfSrc = cross.querySelector('#tf-cf-source');
+    var cfTgt = cross.querySelector('#tf-cf-target');
+    var cfSda = cross.querySelector('#tf-cf-showsda');
+    if (cfSrc) cfSrc.addEventListener('change', tfUpdateCrossFormat);
+    if (cfTgt) cfTgt.addEventListener('change', tfUpdateCrossFormat);
+    if (cfSda) cfSda.addEventListener('change', tfUpdateCrossFormat);
+}
+
+function tfBuildDiagram(inbound, outbound) {
+    var inHtml = '';
+    for (var i = 0; i < inbound.length; i++) {
+        var p = inbound[i];
+        inHtml +=
+            '<div class="tf-arrow tf-inbound" data-pipeline="' + p.id + '">' +
+                '<div class="tf-format">' + escapeHtml(p.source) + '</div>' +
+                '<div class="tf-line">' +
+                    '<span class="tf-count">' + p.count + '</span> ' +
+                    '<span class="tf-kind">' + escapeHtml(p.kind) + '</span>' +
+                '</div>' +
+                '<div class="tf-arrow-glyph">&#x25B6;</div>' +
+            '</div>';
+    }
+
+    var outHtml = '';
+    for (var j = 0; j < outbound.length; j++) {
+        var q = outbound[j];
+        outHtml +=
+            '<div class="tf-arrow tf-outbound" data-pipeline="' + q.id + '">' +
+                '<div class="tf-arrow-glyph">&#x25B6;</div>' +
+                '<div class="tf-line">' +
+                    '<span class="tf-count">' + q.count + '</span> ' +
+                    '<span class="tf-kind">' + escapeHtml(q.kind) + '</span>' +
+                '</div>' +
+                '<div class="tf-format">' + escapeHtml(q.target) + '</div>' +
+            '</div>';
+    }
+
+    return '<div class="tf-diagram">' +
+        '<div class="tf-column tf-col-in">' +
+            '<div class="tf-col-label">Inbound (to SDA3)</div>' +
+            inHtml +
+        '</div>' +
+        '<div class="tf-column tf-col-hub">' +
+            '<div class="tf-hub-box">SDA3</div>' +
+            '<div class="tf-hub-sub">pivot format</div>' +
+        '</div>' +
+        '<div class="tf-column tf-col-out">' +
+            '<div class="tf-col-label">Outbound (from SDA3)</div>' +
+            outHtml +
+        '</div>' +
+    '</div>';
+}
+
+function tfSelectPipeline(pipelineId) {
+    _tfSelected = pipelineId;
+    var detail = $('tf-detail');
+    if (!detail) return;
+
+    var pipeline = (_tfData.pipelines || []).find(function(p) { return p.id === pipelineId; });
+    if (!pipeline) { detail.style.display = 'none'; return; }
+
+    // Highlight selected arrow in the diagram
+    document.querySelectorAll('.tf-arrow').forEach(function(el) {
+        el.classList.toggle('selected', el.dataset.pipeline === pipelineId);
+    });
+
+    detail.style.display = 'block';
+    detail.innerHTML = tfRenderPipelineDetail(pipeline);
+
+    // Wire search input
+    var searchInput = detail.querySelector('#tf-search');
+    if (searchInput) {
+        searchInput.addEventListener('input', function() {
+            tfFilterTable(pipeline, searchInput.value.trim().toLowerCase());
+        });
+    }
+
+    // Scroll into view
+    detail.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function tfRenderPipelineDetail(pipeline) {
+    var classes = pipeline.classes || [];
+    var hasFhir = pipeline.id.indexOf('fhir') !== -1;
+    var isSdaToTarget = pipeline.source === 'SDA3';
+
+    // Build table
+    var hdr = '<th style="width:auto;">Class</th>';
+    if (hasFhir) {
+        hdr += '<th style="width:140px;">SDA Type</th>';
+        hdr += '<th style="width:140px;">FHIR Resource</th>';
+    }
+    hdr += '<th style="width:auto;">Description</th>';
+
+    var rows = '';
+    for (var i = 0; i < classes.length; i++) {
+        var cls = classes[i];
+        var rc = cls.isSubTransform ? ' class="tf-sub"' : '';
+        rows += '<tr' + rc + ' data-name="' + escapeAttr(cls.name.toLowerCase()) + '">';
+        rows += '<td><code>' + escapeHtml(cls.shortName) + '</code>';
+        if (cls.isSubTransform) rows += ' <span class="badge abstract">sub</span>';
+        rows += '</td>';
+        if (hasFhir) {
+            var sdaType = isSdaToTarget ? cls.sourceType : cls.targetType;
+            var fhirRes = isSdaToTarget ? cls.targetType : cls.sourceType;
+            rows += '<td>' + escapeHtml(sdaType || '') + '</td>';
+            rows += '<td>' + escapeHtml(fhirRes || '') + '</td>';
+        }
+        rows += '<td class="tf-desc">' + escapeHtml(cls.description || '') + '</td>';
+        rows += '</tr>';
+    }
+
+    if (classes.length === 0) {
+        var cols = hasFhir ? 4 : 2;
+        rows = '<tr><td colspan="' + cols + '" style="text-align:center;color:var(--muted);padding:16px;">No classes found.</td></tr>';
+    }
+
+    return '<div class="tf-detail-head">' +
+            '<div class="row1">' + escapeHtml(pipeline.source) + '  &#x2192;  ' + escapeHtml(pipeline.target) + '</div>' +
+            '<div class="row2" style="margin-top:4px;">' +
+                '<span class="badge user">' + pipeline.count + ' classes</span> ' +
+                '<span class="badge">' + escapeHtml(pipeline.kind) + '</span>' +
+            '</div>' +
+        '</div>' +
+        '<div class="field" style="margin:8px 0;">' +
+            '<input id="tf-search" type="text" placeholder="Filter by class name, SDA type, or FHIR resource..." style="max-width:400px;">' +
+        '</div>' +
+        '<div style="max-height:420px; overflow:auto; border:1px solid var(--border); border-radius:4px;">' +
+            '<table class="tf-table"><thead><tr>' + hdr + '</tr></thead>' +
+            '<tbody id="tf-tbody">' + rows + '</tbody></table>' +
+        '</div>';
+}
+
+function tfFilterTable(pipeline, query) {
+    var tbody = $('tf-tbody');
+    if (!tbody) return;
+    var trs = tbody.querySelectorAll('tr');
+    var shown = 0;
+    trs.forEach(function(tr) {
+        var name = tr.dataset.name || '';
+        var text = tr.textContent.toLowerCase();
+        var match = !query || name.indexOf(query) !== -1 || text.indexOf(query) !== -1;
+        tr.style.display = match ? '' : 'none';
+        if (match) shown++;
+    });
+}
+
+function tfBuildCrossFormat() {
+    var formats = ['HL7 v2', 'FHIR R4', 'FHIR STU3', 'CDA', 'X12'];
+    var opts = '<option value="">Select...</option>';
+    for (var i = 0; i < formats.length; i++) {
+        opts += '<option value="' + formats[i] + '">' + formats[i] + '</option>';
+    }
+
+    return '<div class="row1">Cross-Format Path</div>' +
+        '<div class="row2 desc">Select a source and target format to see how they connect through SDA3. ' +
+        'Toggle the SDA3 intermediary to see the simplified or full transformation chain.</div>' +
+        '<div class="field-row" style="margin-top:8px;">' +
+            '<div class="field" style="margin:0;">' +
+                '<label>Source Format</label>' +
+                '<select id="tf-cf-source" style="min-width:130px;">' + opts + '</select>' +
+            '</div>' +
+            '<div class="field" style="margin:0;">' +
+                '<label>Target Format</label>' +
+                '<select id="tf-cf-target" style="min-width:130px;">' + opts + '</select>' +
+            '</div>' +
+            '<div class="field" style="margin:0;display:flex;align-items:flex-end;">' +
+                '<label style="display:flex;align-items:center;gap:6px;cursor:pointer;text-transform:none;letter-spacing:0;">' +
+                    '<input type="checkbox" id="tf-cf-showsda" checked style="width:auto;"> Show SDA3 intermediary' +
+                '</label>' +
+            '</div>' +
+        '</div>' +
+        '<div id="tf-cf-result" style="margin-top:12px;"></div>';
+}
+
+function tfUpdateCrossFormat() {
+    var srcEl = $('tf-cf-source');
+    var tgtEl = $('tf-cf-target');
+    var sdaEl = $('tf-cf-showsda');
+    var result = $('tf-cf-result');
+    if (!result) return;
+    var src = srcEl ? srcEl.value : '';
+    var tgt = tgtEl ? tgtEl.value : '';
+    var showSda = sdaEl ? sdaEl.checked : true;
+
+    if (!src || !tgt) { result.innerHTML = ''; return; }
+    if (src === tgt) {
+        result.innerHTML = '<div style="color:var(--muted);font-size:12px;">Source and target are the same format.</div>';
+        return;
+    }
+
+    var pipelines = _tfData ? _tfData.pipelines || [] : [];
+    var inbound = pipelines.find(function(p) { return p.source === src && p.target === 'SDA3'; });
+    var outbound = pipelines.find(function(p) { return p.source === 'SDA3' && p.target === tgt; });
+
+    var html = '<div class="tf-cf-path">';
+
+    if (showSda) {
+        // Full path: Source -> SDA3 -> Target
+        html += '<div class="tf-cf-node">' + escapeHtml(src) + '</div>';
+        html += '<div class="tf-cf-step">';
+        if (inbound) {
+            html += '<span class="badge user">' + inbound.count + ' ' + escapeHtml(inbound.kind) + '</span>';
+        } else {
+            html += '<span class="badge abstract">not available</span>';
+        }
+        html += '<div class="tf-cf-line"></div>';
+        html += '</div>';
+        html += '<div class="tf-cf-node tf-cf-hub">SDA3</div>';
+        html += '<div class="tf-cf-step">';
+        if (outbound) {
+            html += '<span class="badge user">' + outbound.count + ' ' + escapeHtml(outbound.kind) + '</span>';
+        } else {
+            html += '<span class="badge abstract">not available</span>';
+        }
+        html += '<div class="tf-cf-line"></div>';
+        html += '</div>';
+        html += '<div class="tf-cf-node">' + escapeHtml(tgt) + '</div>';
+    } else {
+        // Collapsed: Source -> Target (via SDA3 noted on arrow)
+        html += '<div class="tf-cf-node">' + escapeHtml(src) + '</div>';
+        html += '<div class="tf-cf-step">';
+        if (inbound && outbound) {
+            html += '<span class="badge user">via SDA3 (' + inbound.count + ' + ' + outbound.count + ' classes)</span>';
+        } else if (!inbound && !outbound) {
+            html += '<span class="badge abstract">path not available</span>';
+        } else {
+            var partial = inbound ? (inbound.count + ' inbound') : (outbound.count + ' outbound');
+            html += '<span class="badge" style="background:rgba(245,158,11,0.15);color:var(--warn);">partial: ' + partial + ' only</span>';
+        }
+        html += '<div class="tf-cf-line"></div>';
+        html += '</div>';
+        html += '<div class="tf-cf-node">' + escapeHtml(tgt) + '</div>';
+    }
+    html += '</div>';
+
+    // Browse links below the path
+    html += '<div class="tf-cf-links">';
+    if (inbound) {
+        html += '<button class="link-btn" data-pipeline="' + inbound.id + '">' +
+            'Browse ' + escapeHtml(src) + ' to SDA3 classes (' + inbound.count + ')</button>';
+    }
+    if (outbound) {
+        html += '<button class="link-btn" data-pipeline="' + outbound.id + '">' +
+            'Browse SDA3 to ' + escapeHtml(tgt) + ' classes (' + outbound.count + ')</button>';
+    }
+    if (!inbound && !outbound) {
+        html += '<div style="color:var(--muted);font-size:12px;">No transformation pipeline exists for this combination on this IRIS instance.</div>';
+    }
+    html += '</div>';
+
+    result.innerHTML = html;
+
+    // Wire browse buttons to select the pipeline
+    result.querySelectorAll('[data-pipeline]').forEach(function(btn) {
+        btn.addEventListener('click', function() { tfSelectPipeline(btn.dataset.pipeline); });
+    });
 }
 
 // Phase 7 audit trail. One scrollable table of recent audit rows
