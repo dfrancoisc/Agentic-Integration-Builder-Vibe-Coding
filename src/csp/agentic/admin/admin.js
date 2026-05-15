@@ -1063,16 +1063,16 @@ function tfBuildCrossFormat() {
         opts += '<option value="' + formats[i] + '">' + formats[i] + '</option>';
     }
 
-    return '<div class="row1">Cross-Format Path</div>' +
-        '<div class="row2 desc">Select a source and target format to see how they connect through SDA3. ' +
-        'Toggle the SDA3 intermediary to see the simplified or full transformation chain.</div>' +
+    return '<div class="row1">End-to-End Transformation Trace</div>' +
+        '<div class="row2 desc">Select source and target formats to trace the full transformation path through SDA3. ' +
+        'Each row shows the specific DTL or mapping class that handles a given data type at each leg of the journey.</div>' +
         '<div class="field-row" style="margin-top:8px;">' +
             '<div class="field" style="margin:0;">' +
-                '<label>Source Format</label>' +
+                '<label>Data From</label>' +
                 '<select id="tf-cf-source" style="min-width:130px;">' + opts + '</select>' +
             '</div>' +
             '<div class="field" style="margin:0;">' +
-                '<label>Target Format</label>' +
+                '<label>Data To</label>' +
                 '<select id="tf-cf-target" style="min-width:130px;">' + opts + '</select>' +
             '</div>' +
             '<div class="field" style="margin:0;display:flex;align-items:flex-end;">' +
@@ -1104,67 +1104,286 @@ function tfUpdateCrossFormat() {
     var inbound = pipelines.find(function(p) { return p.source === src && p.target === 'SDA3'; });
     var outbound = pipelines.find(function(p) { return p.source === 'SDA3' && p.target === tgt; });
 
-    var html = '<div class="tf-cf-path">';
-
-    if (showSda) {
-        // Full path: Source -> SDA3 -> Target
-        html += '<div class="tf-cf-node">' + escapeHtml(src) + '</div>';
-        html += '<div class="tf-cf-step">';
-        if (inbound) {
-            html += '<span class="badge user">' + inbound.count + ' ' + escapeHtml(inbound.kind) + '</span>';
-        } else {
-            html += '<span class="badge abstract">not available</span>';
-        }
-        html += '<div class="tf-cf-line"></div>';
-        html += '</div>';
-        html += '<div class="tf-cf-node tf-cf-hub">SDA3</div>';
-        html += '<div class="tf-cf-step">';
-        if (outbound) {
-            html += '<span class="badge user">' + outbound.count + ' ' + escapeHtml(outbound.kind) + '</span>';
-        } else {
-            html += '<span class="badge abstract">not available</span>';
-        }
-        html += '<div class="tf-cf-line"></div>';
-        html += '</div>';
-        html += '<div class="tf-cf-node">' + escapeHtml(tgt) + '</div>';
-    } else {
-        // Collapsed: Source -> Target (via SDA3 noted on arrow)
-        html += '<div class="tf-cf-node">' + escapeHtml(src) + '</div>';
-        html += '<div class="tf-cf-step">';
-        if (inbound && outbound) {
-            html += '<span class="badge user">via SDA3 (' + inbound.count + ' + ' + outbound.count + ' classes)</span>';
-        } else if (!inbound && !outbound) {
-            html += '<span class="badge abstract">path not available</span>';
-        } else {
-            var partial = inbound ? (inbound.count + ' inbound') : (outbound.count + ' outbound');
-            html += '<span class="badge" style="background:rgba(245,158,11,0.15);color:var(--warn);">partial: ' + partial + ' only</span>';
-        }
-        html += '<div class="tf-cf-line"></div>';
-        html += '</div>';
-        html += '<div class="tf-cf-node">' + escapeHtml(tgt) + '</div>';
+    if (!inbound && !outbound) {
+        result.innerHTML = '<div style="color:var(--muted);font-size:12px;">No transformation pipeline exists for this combination on this IRIS instance.</div>';
+        return;
     }
+
+    var trace = tfComputeTrace(inbound, outbound);
+    result.innerHTML = tfRenderTraceTable(trace, showSda, src, tgt, inbound, outbound);
+
+    // Wire filter input
+    var filterInput = result.querySelector('#tf-trace-filter');
+    if (filterInput) {
+        filterInput.addEventListener('input', function() {
+            tfFilterTrace(filterInput.value.trim().toLowerCase());
+        });
+    }
+
+    // Wire browse-pipeline links
+    result.querySelectorAll('[data-pipeline]').forEach(function(btn) {
+        btn.addEventListener('click', function() { tfSelectPipeline(btn.dataset.pipeline); });
+    });
+}
+
+// Compute the end-to-end trace by joining inbound and outbound
+// pipelines on the SDA3 type. Each inbound class produces a
+// targetType (SDA type) and each outbound class consumes a
+// sourceType (SDA type). Monolithic pipelines (HL7, CDA, X12) have
+// no per-type classes — a single class handles all types.
+function tfComputeTrace(inbound, outbound) {
+    var inMap = {};
+    var outMap = {};
+    var inIsTyped = false;
+    var outIsTyped = false;
+
+    // Inbound: targetType = SDA type the class produces
+    if (inbound) {
+        var classes = inbound.classes || [];
+        for (var i = 0; i < classes.length; i++) {
+            var cls = classes[i];
+            if (cls.isSubTransform) continue;
+            var sdaType = cls.targetType || '';
+            if (sdaType) {
+                inIsTyped = true;
+                if (!inMap[sdaType]) inMap[sdaType] = [];
+                inMap[sdaType].push(cls);
+            }
+        }
+        if (!inIsTyped) {
+            inMap['*'] = [];
+            for (var i = 0; i < classes.length; i++) {
+                if (!classes[i].isSubTransform) inMap['*'].push(classes[i]);
+            }
+        }
+    }
+
+    // Outbound: sourceType = SDA type the class consumes
+    if (outbound) {
+        var classes = outbound.classes || [];
+        for (var j = 0; j < classes.length; j++) {
+            var cls = classes[j];
+            if (cls.isSubTransform) continue;
+            var sdaType = cls.sourceType || '';
+            if (sdaType) {
+                outIsTyped = true;
+                if (!outMap[sdaType]) outMap[sdaType] = [];
+                outMap[sdaType].push(cls);
+            }
+        }
+        if (!outIsTyped) {
+            outMap['*'] = [];
+            for (var j = 0; j < classes.length; j++) {
+                if (!classes[j].isSubTransform) outMap['*'].push(classes[j]);
+            }
+        }
+    }
+
+    // Join on SDA type
+    var rows = [];
+
+    if (inIsTyped && outIsTyped) {
+        // Both typed — full outer join on SDA type
+        var allTypes = {};
+        var key;
+        for (key in inMap) allTypes[key] = true;
+        for (key in outMap) allTypes[key] = true;
+        var sorted = Object.keys(allTypes).sort();
+        for (var t = 0; t < sorted.length; t++) {
+            var sda = sorted[t];
+            var inCls = inMap[sda] || [];
+            var outCls = outMap[sda] || [];
+            rows.push({
+                sdaType: sda,
+                inClasses: inCls,
+                outClasses: outCls,
+                sourceType: inCls.length > 0 ? (inCls[0].sourceType || '') : '',
+                targetType: outCls.length > 0 ? (outCls[0].targetType || '') : '',
+                status: inCls.length > 0 && outCls.length > 0 ? 'complete' :
+                        inCls.length > 0 ? 'inbound-only' : 'outbound-only'
+            });
+        }
+    } else if (inIsTyped && !outIsTyped) {
+        // Inbound typed, outbound monolithic
+        var outMono = outMap['*'] || [];
+        var sorted = Object.keys(inMap).sort();
+        for (var t = 0; t < sorted.length; t++) {
+            var sda = sorted[t];
+            rows.push({
+                sdaType: sda,
+                inClasses: inMap[sda],
+                outClasses: outMono,
+                sourceType: inMap[sda][0].sourceType || '',
+                targetType: '',
+                status: 'complete',
+                outMonolithic: true
+            });
+        }
+    } else if (!inIsTyped && outIsTyped) {
+        // Inbound monolithic, outbound typed
+        var inMono = inMap['*'] || [];
+        var sorted = Object.keys(outMap).sort();
+        for (var t = 0; t < sorted.length; t++) {
+            var sda = sorted[t];
+            rows.push({
+                sdaType: sda,
+                inClasses: inMono,
+                outClasses: outMap[sda],
+                sourceType: '',
+                targetType: outMap[sda][0].targetType || '',
+                status: 'complete',
+                inMonolithic: true
+            });
+        }
+    } else {
+        // Both monolithic
+        var inMono = inMap['*'] || [];
+        var outMono = outMap['*'] || [];
+        rows.push({
+            sdaType: '(all types)',
+            inClasses: inMono,
+            outClasses: outMono,
+            sourceType: '',
+            targetType: '',
+            status: inMono.length > 0 && outMono.length > 0 ? 'complete' : 'partial',
+            inMonolithic: true,
+            outMonolithic: true
+        });
+    }
+
+    return rows;
+}
+
+// Render the trace as a scrollable table. With SDA3 shown the
+// columns are: # | Inbound Transform | SDA3 Type | Outbound Transform | Status.
+// Without SDA3 the columns collapse to: # | Source Type | Target Type | Transform Chain | Status.
+function tfRenderTraceTable(rows, showSda, src, tgt, inbound, outbound) {
+    var complete = rows.filter(function(r) { return r.status === 'complete'; }).length;
+    var inOnly = rows.filter(function(r) { return r.status === 'inbound-only'; }).length;
+    var outOnly = rows.filter(function(r) { return r.status === 'outbound-only'; }).length;
+    var total = rows.length;
+
+    // Summary bar
+    var html = '<div class="tf-trace-summary">' +
+        '<span class="badge user">' + total + ' data types</span> ' +
+        '<span class="badge">' + complete + ' complete paths</span>';
+    if (inOnly > 0) html += ' <span class="badge" style="background:rgba(245,158,11,0.12);color:var(--warn);">' + inOnly + ' inbound only</span>';
+    if (outOnly > 0) html += ' <span class="badge" style="background:rgba(245,158,11,0.12);color:var(--warn);">' + outOnly + ' outbound only</span>';
     html += '</div>';
 
-    // Browse links below the path
-    html += '<div class="tf-cf-links">';
+    // Path indicator
+    html += '<div class="tf-trace-path-bar">';
+    html += '<span class="tf-trace-path-node">' + escapeHtml(src) + '</span>';
+    if (inbound) {
+        html += '<span class="tf-trace-path-arrow">' + inbound.count + ' ' + escapeHtml(inbound.kind) + '</span>';
+    } else {
+        html += '<span class="tf-trace-path-arrow tf-trace-path-missing">no pipeline</span>';
+    }
+    html += '<span class="tf-trace-path-node tf-trace-path-hub">SDA3</span>';
+    if (outbound) {
+        html += '<span class="tf-trace-path-arrow">' + outbound.count + ' ' + escapeHtml(outbound.kind) + '</span>';
+    } else {
+        html += '<span class="tf-trace-path-arrow tf-trace-path-missing">no pipeline</span>';
+    }
+    html += '<span class="tf-trace-path-node">' + escapeHtml(tgt) + '</span>';
+    html += '</div>';
+
+    // Filter + browse links
+    html += '<div style="display:flex;align-items:center;gap:12px;margin:8px 0;">';
+    html += '<input id="tf-trace-filter" type="text" placeholder="Filter by SDA type, class name, or resource..." style="max-width:360px;flex:1;">';
     if (inbound) {
         html += '<button class="link-btn" data-pipeline="' + inbound.id + '">' +
-            'Browse ' + escapeHtml(src) + ' to SDA3 classes (' + inbound.count + ')</button>';
+            'Browse ' + escapeHtml(src) + ' to SDA3</button>';
     }
     if (outbound) {
         html += '<button class="link-btn" data-pipeline="' + outbound.id + '">' +
-            'Browse SDA3 to ' + escapeHtml(tgt) + ' classes (' + outbound.count + ')</button>';
-    }
-    if (!inbound && !outbound) {
-        html += '<div style="color:var(--muted);font-size:12px;">No transformation pipeline exists for this combination on this IRIS instance.</div>';
+            'Browse SDA3 to ' + escapeHtml(tgt) + '</button>';
     }
     html += '</div>';
 
-    result.innerHTML = html;
+    // Table header
+    var hdr = '<th style="width:36px;">#</th>';
+    if (showSda) {
+        hdr += '<th>' + escapeHtml(src) + ' &#x2192; SDA3</th>';
+        hdr += '<th style="width:160px;">SDA3 Type</th>';
+        hdr += '<th>SDA3 &#x2192; ' + escapeHtml(tgt) + '</th>';
+    } else {
+        hdr += '<th>' + escapeHtml(src) + ' Type</th>';
+        hdr += '<th>' + escapeHtml(tgt) + ' Type</th>';
+        hdr += '<th>Transform Chain</th>';
+    }
+    hdr += '<th style="width:90px;">Status</th>';
 
-    // Wire browse buttons to select the pipeline
-    result.querySelectorAll('[data-pipeline]').forEach(function(btn) {
-        btn.addEventListener('click', function() { tfSelectPipeline(btn.dataset.pipeline); });
+    // Table rows
+    var tbody = '';
+    for (var i = 0; i < rows.length; i++) {
+        var r = rows[i];
+        var inNames = r.inClasses.map(function(c) { return c.shortName; }).join(', ');
+        var outNames = r.outClasses.map(function(c) { return c.shortName; }).join(', ');
+        var inFull = r.inClasses.map(function(c) { return c.name; }).join('\n');
+        var outFull = r.outClasses.map(function(c) { return c.name; }).join('\n');
+
+        // Status badge
+        var statusHtml;
+        if (r.status === 'complete') {
+            statusHtml = '<span class="tf-trace-st tf-st-ok">complete</span>';
+        } else if (r.status === 'inbound-only') {
+            statusHtml = '<span class="tf-trace-st tf-st-warn">inbound only</span>';
+        } else if (r.status === 'outbound-only') {
+            statusHtml = '<span class="tf-trace-st tf-st-warn">outbound only</span>';
+        } else {
+            statusHtml = '<span class="tf-trace-st tf-st-warn">partial</span>';
+        }
+
+        // Display class names; mark monolithic ones
+        var inDisplay = inNames || '<span class="tf-trace-none">-</span>';
+        var outDisplay = outNames || '<span class="tf-trace-none">-</span>';
+        if (r.inMonolithic && inNames) inDisplay += ' <span class="tf-trace-mono">(all types)</span>';
+        if (r.outMonolithic && outNames) outDisplay += ' <span class="tf-trace-mono">(all types)</span>';
+
+        var searchText = (r.sdaType + ' ' + inNames + ' ' + outNames + ' ' +
+            (r.sourceType || '') + ' ' + (r.targetType || '')).toLowerCase();
+
+        tbody += '<tr data-search="' + escapeAttr(searchText) + '">';
+        tbody += '<td style="color:var(--muted);text-align:center;">' + (i + 1) + '</td>';
+
+        if (showSda) {
+            tbody += '<td title="' + escapeAttr(inFull) + '"><code>' + inDisplay + '</code></td>';
+            tbody += '<td class="tf-trace-sda">' + escapeHtml(r.sdaType) + '</td>';
+            tbody += '<td title="' + escapeAttr(outFull) + '"><code>' + outDisplay + '</code></td>';
+        } else {
+            tbody += '<td>' + escapeHtml(r.sourceType || r.sdaType) + '</td>';
+            tbody += '<td>' + escapeHtml(r.targetType || r.sdaType) + '</td>';
+            tbody += '<td title="' + escapeAttr(inFull + ' → ' + outFull) + '">' +
+                '<code>' + inDisplay + '</code>' +
+                ' <span style="color:var(--muted);font-size:11px;">&#x2192;</span> ' +
+                '<code>' + outDisplay + '</code></td>';
+        }
+        tbody += '<td>' + statusHtml + '</td>';
+        tbody += '</tr>';
+    }
+
+    if (rows.length === 0) {
+        var cols = showSda ? 5 : 5;
+        tbody = '<tr><td colspan="' + cols + '" style="text-align:center;color:var(--muted);padding:16px;">No transformation path found.</td></tr>';
+    }
+
+    html += '<div style="max-height:500px; overflow:auto; border:1px solid var(--border); border-radius:4px;">' +
+        '<table class="tf-table"><thead><tr>' + hdr + '</tr></thead>' +
+        '<tbody id="tf-trace-tbody">' + tbody + '</tbody></table>' +
+        '</div>';
+
+    return html;
+}
+
+// Filter the trace table rows by free-text search
+function tfFilterTrace(query) {
+    var tbody = $('tf-trace-tbody');
+    if (!tbody) return;
+    var trs = tbody.querySelectorAll('tr');
+    trs.forEach(function(tr) {
+        var text = tr.dataset.search || tr.textContent.toLowerCase();
+        tr.style.display = (!query || text.indexOf(query) !== -1) ? '' : 'none';
     });
 }
 
