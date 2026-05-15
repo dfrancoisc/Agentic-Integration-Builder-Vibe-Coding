@@ -727,3 +727,38 @@ code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
     font-size: 10px; color: var(--muted); font-style: italic; font-family: inherit;
 }
 .tf-trace-none { color: var(--muted); }
+
+/* Clickable trace rows */
+.tf-trace-row { cursor: pointer; }
+.tf-trace-row:hover td { background: var(--panel-2) !important; }
+
+/* Field-level expansion inside trace table */
+.tf-field-cell { padding: 0 !important; border-bottom: 2px solid var(--primary) !important; }
+.tf-field-detail {
+    padding: 12px 16px; background: var(--code);
+    border-top: 1px solid var(--border);
+}
+.tf-field-header { margin-bottom: 8px; }
+.tf-field-note {
+    color: var(--muted); font-size: 12px; font-style: italic;
+    padding: 6px 0;
+}
+.tf-field-table {
+    width: 100%; border-collapse: collapse; font-size: 11px;
+    margin-top: 6px;
+}
+.tf-field-table th {
+    text-align: left; padding: 5px 8px;
+    color: var(--muted); font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.04em; font-size: 10px;
+    border-bottom: 1px solid var(--border); background: var(--panel);
+}
+.tf-field-table td {
+    padding: 3px 8px; border-bottom: 1px solid rgba(42,49,60,0.5);
+    vertical-align: top; line-height: 1.4;
+}
+.tf-field-table tbody tr:hover td { background: rgba(59,130,246,0.04); }
+.tf-field-table code {
+    font-size: 11px; background: transparent; color: var(--text);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}

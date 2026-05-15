@@ -99,6 +99,132 @@ ClassMethod BP(pArr As %DynamicArray, pId As %String, pSrc As %String, pTgt As %
     Do pArr.%Push(pipeline)
 }
 
+/// Extract field-level mappings from a DTL class's XData definition.
+/// Parses <assign>, <subtransform>, and <foreach> elements to return
+/// individual source-to-target field paths. Non-DTL classes (Programmatic,
+/// XSLT) have no XData DTL block; the response indicates that.
+///
+///   GET /api/agentic/transforms/dtl-fields?class=HS.FHIR.DTL.SDA3.vR4.Allergy.AllergyIntolerance
+ClassMethod DTLFields(pResponse As %CSP.Response) As %Status
+{
+    Set util = "AgenticInterop.Editor.Util"
+    Set className = $get(%request.Data("class",1))
+
+    Set out = {}
+    Set out.ok = 1
+    Set out.className = className
+    Set out.sourceClass = ""
+    Set out.targetClass = ""
+    Set out.mappings = []
+
+    If className = "" {
+        Set out.ok = 0
+        Set out.error = "Missing required parameter: class"
+        Quit $classmethod(util, "WriteJSON", pResponse, out)
+    }
+
+    ; Check class exists
+    If '##class(%Dictionary.ClassDefinition).%ExistsId(className) {
+        Set out.ok = 0
+        Set out.error = "Class not found: " _ className
+        Quit $classmethod(util, "WriteJSON", pResponse, out)
+    }
+
+    ; Open XData DTL
+    Set xdataId = className _ "||DTL"
+    Set xdata = ##class(%Dictionary.XDataDefinition).%OpenId(xdataId)
+    If '$IsObject(xdata) {
+        Set out.ok = 0
+        Set out.error = "No DTL definition found (class may be programmatic or XSLT)"
+        Quit $classmethod(util, "WriteJSON", pResponse, out)
+    }
+
+    ; Parse XML stream using %XML.TextReader
+    Set stream = xdata.Data
+    Do stream.Rewind()
+    Set sc = ##class(%XML.TextReader).ParseStream(stream, .reader)
+    If $system.Status.IsError(sc) {
+        Set out.ok = 0
+        Set out.error = "Failed to parse DTL XML"
+        Quit $classmethod(util, "WriteJSON", pResponse, out)
+    }
+
+    ; Walk all XML element nodes and extract field-level actions
+    While reader.Read() {
+        If reader.NodeType '= "element" Continue
+        Set tag = reader.LocalName
+
+        If tag = "transform" {
+            ; Pull sourceClass / targetClass from the root <transform> element
+            For ai = 1:1:reader.AttributeCount {
+                Do reader.MoveToAttributeIndex(ai)
+                If reader.LocalName = "sourceClass" Set out.sourceClass = reader.Value
+                If reader.LocalName = "targetClass" Set out.targetClass = reader.Value
+            }
+            Do reader.MoveToElement()
+        }
+        ElseIf tag = "assign" {
+            Set m = {}
+            Set m.type = "assign"
+            Set m.source = ""
+            Set m.target = ""
+            Set m.action = ""
+            For ai = 1:1:reader.AttributeCount {
+                Do reader.MoveToAttributeIndex(ai)
+                If reader.LocalName = "value" Set m.source = reader.Value
+                If reader.LocalName = "property" Set m.target = reader.Value
+                If reader.LocalName = "action" Set m.action = reader.Value
+            }
+            Do reader.MoveToElement()
+            ; Derive clean field names by stripping "source." / "target." prefixes
+            Set m.sourceField = ..StripObjPrefix(m.source)
+            Set m.targetField = ..StripObjPrefix(m.target)
+            Do out.mappings.%Push(m)
+        }
+        ElseIf tag = "subtransform" {
+            Set m = {}
+            Set m.type = "subtransform"
+            Set m.class = ""
+            Set m.sourceObj = ""
+            Set m.targetObj = ""
+            For ai = 1:1:reader.AttributeCount {
+                Do reader.MoveToAttributeIndex(ai)
+                If reader.LocalName = "class" Set m.class = reader.Value
+                If reader.LocalName = "sourceObj" Set m.sourceObj = reader.Value
+                If reader.LocalName = "targetObj" Set m.targetObj = reader.Value
+            }
+            Do reader.MoveToElement()
+            Set m.sourceField = ..StripObjPrefix(m.sourceObj)
+            Set m.targetField = ..StripObjPrefix(m.targetObj)
+            Do out.mappings.%Push(m)
+        }
+        ElseIf tag = "foreach" {
+            Set m = {}
+            Set m.type = "foreach"
+            Set m.property = ""
+            For ai = 1:1:reader.AttributeCount {
+                Do reader.MoveToAttributeIndex(ai)
+                If reader.LocalName = "property" Set m.property = reader.Value
+            }
+            Do reader.MoveToElement()
+            Do out.mappings.%Push(m)
+        }
+    }
+
+    Set out.count = out.mappings.%Size()
+    Quit $classmethod(util, "WriteJSON", pResponse, out)
+}
+
+/// Strip the "source." or "target." prefix from a DTL expression
+/// to expose the clean field path. If the expression starts with
+/// a function call (##class(...)), returns the full expression.
+ClassMethod StripObjPrefix(pExpr As %String) As %String [ Private ]
+{
+    If $extract(pExpr, 1, 7) = "source." Quit $extract(pExpr, 8, *)
+    If $extract(pExpr, 1, 7) = "target." Quit $extract(pExpr, 8, *)
+    Quit pExpr
+}
+
 /// Parse Types — sets sourceType and targetType on the class object
 /// based on the remainder of the class name (after prefix stripping)
 /// and the parse mode.

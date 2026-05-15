@@ -102,6 +102,7 @@ XData UrlMap [ XMLNamespace = "http://www.intersystems.com/urlmap" ]
     <!-- Transformation Catalog: read-only inventory of shipped HS.*
          transformation classes organized by pipeline direction. -->
     <Route Url="/transforms/inventory"          Method="GET"    Call="TransformInventory" />
+    <Route Url="/transforms/dtl-fields"         Method="GET"    Call="DTLFields" />
 
     <!-- Cleanup: stop stuck productions and delete test artifacts. -->
     <Route Url="/cleanup/productions"           Method="POST"   Call="CleanupProductions" />
@@ -562,6 +563,11 @@ ClassMethod AuditKinds() As %Status
 ClassMethod TransformInventory() As %Status
 {
     Quit ##class(AgenticInterop.Editor.TransformService).Inventory(%response)
+}
+
+ClassMethod DTLFields() As %Status
+{
+    Quit ##class(AgenticInterop.Editor.TransformService).DTLFields(%response)
 }
 
 ClassMethod CleanupProductions() As %Status

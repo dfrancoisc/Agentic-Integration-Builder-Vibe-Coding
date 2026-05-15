@@ -1124,6 +1124,292 @@ function tfUpdateCrossFormat() {
     result.querySelectorAll('[data-pipeline]').forEach(function(btn) {
         btn.addEventListener('click', function() { tfSelectPipeline(btn.dataset.pipeline); });
     });
+
+    // Wire trace row click → expand field-level detail
+    result.querySelectorAll('.tf-trace-row').forEach(function(tr) {
+        tr.addEventListener('click', function() { tfToggleFieldRow(parseInt(tr.dataset.idx)); });
+    });
+}
+
+// DTL field-mapping cache: className → response JSON
+var _tfFieldCache = {};
+var _tfTraceRows = [];
+var _tfTraceSrc = '';
+var _tfTraceTgt = '';
+var _tfTraceShowSda = true;
+
+// Fetch DTL field mappings for a class (cached)
+async function tfFetchFields(className) {
+    if (_tfFieldCache[className]) return _tfFieldCache[className];
+    try {
+        var data = await get('/transforms/dtl-fields?class=' + encodeURIComponent(className));
+        _tfFieldCache[className] = data;
+        return data;
+    } catch (e) {
+        return { ok: false, error: e.message, mappings: [] };
+    }
+}
+
+// Toggle expand/collapse of a trace row's field-level detail
+async function tfToggleFieldRow(idx) {
+    var fieldRow = $('tf-fields-' + idx);
+    if (!fieldRow) return;
+
+    // Collapse if already expanded
+    if (fieldRow.style.display !== 'none') {
+        fieldRow.style.display = 'none';
+        return;
+    }
+
+    var r = _tfTraceRows[idx];
+    if (!r) return;
+    var cell = fieldRow.querySelector('.tf-field-cell');
+    if (!cell) return;
+
+    cell.innerHTML = '<div style="padding:8px;color:var(--muted);">Loading field mappings...</div>';
+    fieldRow.style.display = '';
+
+    // Fetch DTL fields for inbound and outbound classes (non-monolithic only)
+    var inData = null;
+    var outData = null;
+
+    if (r.inClasses.length > 0 && !r.inMonolithic) {
+        inData = await tfFetchFields(r.inClasses[0].name);
+    }
+    if (r.outClasses.length > 0 && !r.outMonolithic) {
+        outData = await tfFetchFields(r.outClasses[0].name);
+    }
+
+    // Extract correlated field pairs from each DTL
+    var inFields = inData && inData.ok ? tfExtractFieldPairs(inData) : null;
+    var outFields = outData && outData.ok ? tfExtractFieldPairs(outData) : null;
+
+    // Build the joined end-to-end field trace
+    cell.innerHTML = tfRenderFieldTrace(r, inData, outData, inFields, outFields);
+}
+
+// Extract meaningful source→target field pairs from raw DTL mappings.
+// Uses a lookback heuristic: for each target.X write, scans prior
+// assigns for source.Y references to find the input field.
+function tfExtractFieldPairs(dtlData) {
+    var mappings = dtlData.mappings || [];
+    var pairs = [];
+    var srcPattern = /source\.([A-Za-z0-9_.()\[\]]+)/g;
+
+    // Collect all assigns
+    var assigns = mappings.filter(function(m) { return m.type === 'assign'; });
+
+    for (var i = 0; i < assigns.length; i++) {
+        var m = assigns[i];
+        var tgt = m.target || '';
+
+        // Only care about final writes to target.X
+        if (tgt.indexOf('target.') !== 0) continue;
+        var targetField = tgt.substring(7);
+
+        // Skip bookkeeping (index, status, DTL temp vars)
+        if (targetField === '' || targetField === 'extension') continue;
+
+        // Look for source.X in this assign and up to 6 preceding assigns
+        var sourceRefs = [];
+        for (var j = Math.max(0, i - 6); j <= i; j++) {
+            var src = assigns[j].source || '';
+            var match;
+            srcPattern.lastIndex = 0;
+            while ((match = srcPattern.exec(src)) !== null) {
+                sourceRefs.push(match[1]);
+            }
+        }
+
+        // Deduplicate and join
+        var seen = {};
+        var uniqueSrcs = [];
+        for (var k = 0; k < sourceRefs.length; k++) {
+            if (!seen[sourceRefs[k]]) {
+                seen[sourceRefs[k]] = true;
+                uniqueSrcs.push(sourceRefs[k]);
+            }
+        }
+
+        pairs.push({
+            sourceField: uniqueSrcs.length > 0 ? uniqueSrcs.join(', ') : '(computed)',
+            targetField: targetField
+        });
+    }
+
+    // Also add subtransforms as delegated blocks
+    mappings.filter(function(m) { return m.type === 'subtransform'; }).forEach(function(m) {
+        pairs.push({
+            sourceField: m.sourceField || m.sourceObj || '',
+            targetField: m.targetField || m.targetObj || '',
+            isSubtransform: true,
+            className: m.class || ''
+        });
+    });
+
+    return pairs;
+}
+
+// Render the field-level trace for one SDA type row.
+// Joins inbound and outbound DTL field pairs on SDA field name
+// to show the end-to-end path: sourceField → SDA field → targetField
+function tfRenderFieldTrace(row, inData, outData, inFields, outFields) {
+    var html = '<div class="tf-field-detail">';
+
+    // Header with class names
+    html += '<div class="tf-field-header">';
+    html += '<span class="badge user">Field-Level Mappings</span> ';
+    html += '<span style="color:var(--muted);font-size:11px;">SDA type: ' + escapeHtml(row.sdaType) + '</span>';
+    if (inData && inData.ok) {
+        html += ' | <span style="color:var(--muted);font-size:11px;">In: ' + escapeHtml(inData.sourceClass) + ' &#x2192; ' + escapeHtml(inData.targetClass) + '</span>';
+    }
+    if (outData && outData.ok) {
+        html += ' | <span style="color:var(--muted);font-size:11px;">Out: ' + escapeHtml(outData.sourceClass) + ' &#x2192; ' + escapeHtml(outData.targetClass) + '</span>';
+    }
+    html += '</div>';
+
+    // If we have both sides, show joined trace
+    if (inFields && outFields) {
+        html += tfRenderJoinedFields(inFields, outFields);
+    } else if (inFields && !outFields) {
+        // Only inbound available
+        if (outData && !outData.ok) {
+            html += '<div class="tf-field-note">' + escapeHtml(_tfTraceTgt) + ' side: ' + escapeHtml(outData.error || 'not a DTL class') + '</div>';
+        } else if (row.outMonolithic) {
+            html += '<div class="tf-field-note">' + escapeHtml(_tfTraceTgt) + ' side: monolithic transform (handles all types in one class)</div>';
+        }
+        html += tfRenderSingleSide(inFields, _tfTraceSrc + ' Field', 'SDA3 Field');
+    } else if (!inFields && outFields) {
+        // Only outbound available
+        if (inData && !inData.ok) {
+            html += '<div class="tf-field-note">' + escapeHtml(_tfTraceSrc) + ' side: ' + escapeHtml(inData.error || 'not a DTL class') + '</div>';
+        } else if (row.inMonolithic) {
+            html += '<div class="tf-field-note">' + escapeHtml(_tfTraceSrc) + ' side: monolithic transform (handles all types in one class)</div>';
+        }
+        html += tfRenderSingleSide(outFields, 'SDA3 Field', _tfTraceTgt + ' Field');
+    } else {
+        // Neither side has DTL data
+        html += '<div class="tf-field-note">Field-level mappings not available. ';
+        if (row.inMonolithic) html += escapeHtml(_tfTraceSrc) + ' side is programmatic. ';
+        if (row.outMonolithic) html += escapeHtml(_tfTraceTgt) + ' side is programmatic. ';
+        html += 'DTL field extraction only works for DTL-based transforms.</div>';
+    }
+
+    html += '</div>';
+    return html;
+}
+
+// Render a joined field trace: source format → SDA3 → target format
+function tfRenderJoinedFields(inFields, outFields) {
+    // inFields: sourceField = source-format field, targetField = SDA field
+    // outFields: sourceField = SDA field, targetField = target-format field
+    // JOIN on SDA field name
+
+    // Build SDA→outbound map (SDA field → target-format fields)
+    var sdaToOut = {};
+    for (var i = 0; i < outFields.length; i++) {
+        var of = outFields[i];
+        if (of.isSubtransform) continue;
+        var sdaKey = of.sourceField.split(',')[0].trim().split('.')[0];
+        if (!sdaToOut[sdaKey]) sdaToOut[sdaKey] = [];
+        sdaToOut[sdaKey].push(of);
+    }
+
+    // Build trace rows by walking inbound fields
+    var traceRows = [];
+    var usedSda = {};
+
+    for (var i = 0; i < inFields.length; i++) {
+        var inf = inFields[i];
+        if (inf.isSubtransform) continue;
+        var sdaField = inf.targetField;
+        var sdaKey = sdaField.split('.')[0].split('(')[0];
+        usedSda[sdaKey] = true;
+
+        var outs = sdaToOut[sdaKey] || [];
+        if (outs.length > 0) {
+            for (var j = 0; j < outs.length; j++) {
+                traceRows.push({
+                    srcField: inf.sourceField,
+                    sdaField: sdaField,
+                    tgtField: outs[j].targetField
+                });
+            }
+        } else {
+            traceRows.push({
+                srcField: inf.sourceField,
+                sdaField: sdaField,
+                tgtField: '-'
+            });
+        }
+    }
+
+    // Add outbound-only fields (SDA fields not matched by inbound)
+    for (var i = 0; i < outFields.length; i++) {
+        var of = outFields[i];
+        if (of.isSubtransform) continue;
+        var sdaKey = of.sourceField.split(',')[0].trim().split('.')[0];
+        if (!usedSda[sdaKey]) {
+            usedSda[sdaKey] = true;
+            traceRows.push({
+                srcField: '-',
+                sdaField: of.sourceField,
+                tgtField: of.targetField
+            });
+        }
+    }
+
+    if (traceRows.length === 0) {
+        return '<div class="tf-field-note">No field-level mappings could be extracted from these DTLs.</div>';
+    }
+
+    var html = '<table class="tf-field-table"><thead><tr>' +
+        '<th>' + escapeHtml(_tfTraceSrc) + ' Field</th>' +
+        '<th>SDA3 Field</th>' +
+        '<th>' + escapeHtml(_tfTraceTgt) + ' Field</th>' +
+        '</tr></thead><tbody>';
+
+    for (var i = 0; i < traceRows.length; i++) {
+        var tr = traceRows[i];
+        html += '<tr>';
+        html += '<td><code>' + escapeHtml(tr.srcField) + '</code></td>';
+        html += '<td class="tf-trace-sda"><code>' + escapeHtml(tr.sdaField) + '</code></td>';
+        html += '<td><code>' + escapeHtml(tr.tgtField) + '</code></td>';
+        html += '</tr>';
+    }
+
+    html += '</tbody></table>';
+    return html;
+}
+
+// Render a single-side field table (when only one leg is a DTL)
+function tfRenderSingleSide(fields, srcLabel, tgtLabel) {
+    var rows = fields.filter(function(f) { return !f.isSubtransform; });
+    if (rows.length === 0) return '<div class="tf-field-note">No field mappings extracted.</div>';
+
+    var html = '<table class="tf-field-table"><thead><tr>' +
+        '<th>' + escapeHtml(srcLabel) + '</th>' +
+        '<th>' + escapeHtml(tgtLabel) + '</th>' +
+        '</tr></thead><tbody>';
+
+    for (var i = 0; i < rows.length; i++) {
+        html += '<tr>';
+        html += '<td><code>' + escapeHtml(rows[i].sourceField) + '</code></td>';
+        html += '<td><code>' + escapeHtml(rows[i].targetField) + '</code></td>';
+        html += '</tr>';
+    }
+
+    html += '</tbody></table>';
+
+    // Show subtransforms separately
+    var subs = fields.filter(function(f) { return f.isSubtransform; });
+    if (subs.length > 0) {
+        html += '<div style="margin-top:6px;font-size:11px;color:var(--muted);">Delegates to sub-transforms: ';
+        html += subs.map(function(s) { return escapeHtml(s.className.split('.').pop()); }).join(', ');
+        html += '</div>';
+    }
+
+    return html;
 }
 
 // Compute the end-to-end trace by joining inbound and outbound
@@ -1314,7 +1600,14 @@ function tfRenderTraceTable(rows, showSda, src, tgt, inbound, outbound) {
     }
     hdr += '<th style="width:90px;">Status</th>';
 
-    // Table rows
+    // Store trace rows globally so click handlers can reference them
+    _tfTraceRows = rows;
+    _tfTraceSrc = src;
+    _tfTraceTgt = tgt;
+    _tfTraceShowSda = showSda;
+
+    // Table rows — each row is clickable to expand field-level detail
+    var colCount = showSda ? 5 : 5;
     var tbody = '';
     for (var i = 0; i < rows.length; i++) {
         var r = rows[i];
@@ -1344,7 +1637,7 @@ function tfRenderTraceTable(rows, showSda, src, tgt, inbound, outbound) {
         var searchText = (r.sdaType + ' ' + inNames + ' ' + outNames + ' ' +
             (r.sourceType || '') + ' ' + (r.targetType || '')).toLowerCase();
 
-        tbody += '<tr data-search="' + escapeAttr(searchText) + '">';
+        tbody += '<tr class="tf-trace-row" data-idx="' + i + '" data-search="' + escapeAttr(searchText) + '">';
         tbody += '<td style="color:var(--muted);text-align:center;">' + (i + 1) + '</td>';
 
         if (showSda) {
@@ -1361,17 +1654,20 @@ function tfRenderTraceTable(rows, showSda, src, tgt, inbound, outbound) {
         }
         tbody += '<td>' + statusHtml + '</td>';
         tbody += '</tr>';
+        // Expansion row (hidden until clicked)
+        tbody += '<tr class="tf-field-row" id="tf-fields-' + i + '" style="display:none;">' +
+            '<td colspan="' + colCount + '" class="tf-field-cell"></td></tr>';
     }
 
     if (rows.length === 0) {
-        var cols = showSda ? 5 : 5;
-        tbody = '<tr><td colspan="' + cols + '" style="text-align:center;color:var(--muted);padding:16px;">No transformation path found.</td></tr>';
+        tbody = '<tr><td colspan="' + colCount + '" style="text-align:center;color:var(--muted);padding:16px;">No transformation path found.</td></tr>';
     }
 
-    html += '<div style="max-height:500px; overflow:auto; border:1px solid var(--border); border-radius:4px;">' +
+    html += '<div style="max-height:600px; overflow:auto; border:1px solid var(--border); border-radius:4px;">' +
         '<table class="tf-table"><thead><tr>' + hdr + '</tr></thead>' +
         '<tbody id="tf-trace-tbody">' + tbody + '</tbody></table>' +
         '</div>';
+    html += '<div style="color:var(--muted);font-size:11px;margin-top:6px;">Click any row to expand field-level mappings from the DTL definitions.</div>';
 
     return html;
 }
