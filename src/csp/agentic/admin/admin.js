@@ -837,9 +837,10 @@ async function rebuildCatalog(scope, btn, statusEl) {
 
 
 // ─── Transforms tab ──────────────────────────────────────────────
-// Sankey mapping visualization. Visual flow diagram showing how data
-// types map from one external format through SDA3 to another.
-// Click an SDA3 node to drill into field-level mappings.
+// Split-panel mapping tool. Left sidebar: SDA type browser.
+// Right main area: three-column field-level trace (the star).
+// Auto-selects the first SDA type so field mappings are visible
+// immediately after choosing source and target formats.
 
 let _tfData = null;          // cached inventory response
 let _tfFieldCache = {};      // DTL field cache: className → response
@@ -866,18 +867,15 @@ function renderTransformsTab() {
         return;
     }
 
-    // Build format options
     var formats = _tfData.formats || [];
     var opts = '<option value="">Select...</option>';
     for (var i = 0; i < formats.length; i++) {
         opts += '<option value="' + escapeAttr(formats[i]) + '">' + escapeHtml(formats[i]) + '</option>';
     }
 
-    // Main view container
     var view = document.createElement('div');
     view.className = 'tf-view';
 
-    // Controls bar
     view.innerHTML =
         '<div class="tf-controls">' +
             '<div class="tf-ctrl-select">' +
@@ -894,13 +892,12 @@ function renderTransformsTab() {
                 '<select id="tf-sel-tgt">' + opts + '</select>' +
             '</div>' +
         '</div>' +
-        '<div class="tf-stats" id="tf-stats"></div>' +
-        '<div class="tf-canvas" id="tf-canvas"></div>' +
-        '<div class="tf-detail" id="tf-detail" hidden></div>';
+        '<div class="tf-body" id="tf-body">' +
+            '<div class="tf-empty-prompt">Select a source and target format above to explore field-level transformation mappings.</div>' +
+        '</div>';
 
     list.appendChild(view);
 
-    // Wire select handlers
     var srcSel = $('tf-sel-src');
     var tgtSel = $('tf-sel-tgt');
     if (srcSel) srcSel.addEventListener('change', tfUpdateView);
@@ -910,24 +907,19 @@ function renderTransformsTab() {
 function tfUpdateView() {
     var srcSel = $('tf-sel-src');
     var tgtSel = $('tf-sel-tgt');
-    var canvas = $('tf-canvas');
-    var stats = $('tf-stats');
-    var detail = $('tf-detail');
-    if (!canvas) return;
+    var body = $('tf-body');
+    if (!body) return;
 
     var src = srcSel ? srcSel.value : '';
     var tgt = tgtSel ? tgtSel.value : '';
     _tfActiveNode = null;
-    if (detail) detail.hidden = true;
 
     if (!src || !tgt) {
-        canvas.innerHTML = '<div class="empty-state" style="padding:60px 20px;">Select a source and target format to visualize the transformation flow.</div>';
-        stats.innerHTML = '';
+        body.innerHTML = '<div class="tf-empty-prompt">Select a source and target format above to explore field-level transformation mappings.</div>';
         return;
     }
     if (src === tgt) {
-        canvas.innerHTML = '<div class="empty-state" style="padding:60px 20px;">Source and target are the same format.</div>';
-        stats.innerHTML = '';
+        body.innerHTML = '<div class="tf-empty-prompt">Source and target are the same format.</div>';
         return;
     }
 
@@ -936,313 +928,116 @@ function tfUpdateView() {
     var outbound = pipelines.find(function(p) { return p.source === 'SDA3' && p.target === tgt; });
 
     if (!inbound && !outbound) {
-        canvas.innerHTML = '<div class="empty-state" style="padding:60px 20px;">No transformation pipeline exists for this combination.</div>';
-        stats.innerHTML = '';
+        body.innerHTML = '<div class="tf-empty-prompt">No transformation pipeline found for ' + escapeHtml(src) + ' to ' + escapeHtml(tgt) + '.</div>';
         return;
     }
 
     var trace = tfComputeTrace(inbound, outbound);
     _tfCurrentTrace = trace;
 
-    // Stats bar
+    // Build the split layout: sidebar + main
     var complete = trace.filter(function(r) { return r.status === 'complete'; }).length;
     var inOnly = trace.filter(function(r) { return r.status === 'inbound-only'; }).length;
     var outOnly = trace.filter(function(r) { return r.status === 'outbound-only'; }).length;
 
-    stats.innerHTML =
-        '<div class="tf-stat"><span class="tf-stat-value">' + trace.length + '</span> data types</div>' +
-        '<div class="tf-stat"><span class="tf-stat-value">' + complete + '</span> complete</div>' +
-        (inOnly > 0 ? '<div class="tf-stat"><span class="tf-stat-value">' + inOnly + '</span> inbound only</div>' : '') +
-        (outOnly > 0 ? '<div class="tf-stat"><span class="tf-stat-value">' + outOnly + '</span> outbound only</div>' : '') +
-        '<div class="tf-stat-sep">|</div>' +
-        (inbound ? '<div class="tf-stat">' + escapeHtml(src) + ' <span class="tf-stat-value">' + inbound.count + '</span> ' + escapeHtml(inbound.kind) + '</div>' : '') +
-        (outbound ? '<div class="tf-stat">' + escapeHtml(tgt) + ' <span class="tf-stat-value">' + outbound.count + '</span> ' + escapeHtml(outbound.kind) + '</div>' : '');
+    var html = '<div class="tf-split">';
 
-    // Render Sankey
-    tfRenderSankey(canvas, trace, src, tgt, inbound, outbound);
-}
-
-// ── Sankey rendering ─────────────────────────────────────────────
-
-function tfRenderSankey(container, trace, src, tgt, inbound, outbound) {
-    var nodeH = 24;
-    var nodeGap = 6;
-    var pad = 16;
-    var bandW = 8; // band half-width for filled paths
-
-    // Build node lists for each column
-    var leftNodes = [];
-    var centerNodes = [];
-    var rightNodes = [];
-    var hasMonoIn = false;
-    var hasMonoOut = false;
-
+    // ── Left sidebar: SDA type browser
+    html += '<div class="tf-sidebar" id="tf-sidebar">';
+    html += '<div class="tf-sidebar-hdr">';
+    html += '<div class="tf-sidebar-title">SDA3 Data Types</div>';
+    html += '<input type="text" class="tf-sidebar-filter" id="tf-type-filter" placeholder="Filter types..." autocomplete="off">';
+    html += '</div>';
+    html += '<div class="tf-sidebar-list" id="tf-sidebar-list">';
     for (var i = 0; i < trace.length; i++) {
         var r = trace[i];
-        centerNodes.push({ sdaType: r.sdaType, label: r.sdaType, status: r.status, idx: i });
+        var statusCls = r.status === 'complete' ? 'tf-type-complete' :
+                        r.status === 'inbound-only' ? 'tf-type-in' : 'tf-type-out';
+        html += '<div class="tf-type-item ' + statusCls + '" data-idx="' + i + '" data-sda="' + escapeAttr(r.sdaType) + '" data-search="' + escapeAttr(r.sdaType.toLowerCase()) + '">' +
+            '<span class="tf-type-dot"></span>' +
+            '<span class="tf-type-name">' + escapeHtml(r.sdaType) + '</span>' +
+            '</div>';
+    }
+    html += '</div>';
+    html += '<div class="tf-sidebar-footer">';
+    html += '<span>' + trace.length + ' types</span>';
+    html += '<span class="tf-sidebar-ct-ok">' + complete + ' complete</span>';
+    if (inOnly > 0) html += '<span class="tf-sidebar-ct-in">' + inOnly + ' in only</span>';
+    if (outOnly > 0) html += '<span class="tf-sidebar-ct-out">' + outOnly + ' out only</span>';
+    html += '</div>';
+    html += '</div>';
 
-        if (r.inMonolithic) {
-            hasMonoIn = true;
-        } else if (r.inClasses.length > 0) {
-            leftNodes.push({
-                sdaType: r.sdaType,
-                label: r.inClasses[0].shortName,
-                status: r.status, idx: i
+    // ── Right main area: field-level trace
+    html += '<div class="tf-main" id="tf-main">';
+    html += '<div class="tf-main-prompt">Select a data type from the list to view field-level mappings.</div>';
+    html += '</div>';
+
+    html += '</div>'; // end tf-split
+    body.innerHTML = html;
+
+    // Wire sidebar interactions
+    tfWireSidebar(src, tgt);
+
+    // Auto-select first complete type (or first type if none complete)
+    var firstComplete = trace.findIndex(function(r) { return r.status === 'complete'; });
+    var autoIdx = firstComplete >= 0 ? firstComplete : 0;
+    if (trace.length > 0) {
+        tfSelectType(autoIdx, src, tgt);
+    }
+}
+
+// ── Sidebar interactions ────────────────────────────────────────
+
+function tfWireSidebar(src, tgt) {
+    // Click a type → load its field trace
+    var list = $('tf-sidebar-list');
+    if (list) {
+        list.addEventListener('click', function(e) {
+            var item = e.target.closest('.tf-type-item');
+            if (!item) return;
+            var idx = parseInt(item.dataset.idx);
+            tfSelectType(idx, src, tgt);
+        });
+    }
+
+    // Filter input
+    var filter = $('tf-type-filter');
+    if (filter) {
+        filter.addEventListener('input', function() {
+            var q = filter.value.toLowerCase().trim();
+            var items = document.querySelectorAll('.tf-type-item');
+            items.forEach(function(el) {
+                el.style.display = (!q || el.dataset.search.indexOf(q) !== -1) ? '' : 'none';
             });
-        } else {
-            leftNodes.push({ sdaType: r.sdaType, label: '-', status: r.status, idx: i, empty: true });
-        }
-
-        if (r.outMonolithic) {
-            hasMonoOut = true;
-        } else if (r.outClasses.length > 0) {
-            rightNodes.push({
-                sdaType: r.sdaType,
-                label: r.outClasses[0].shortName,
-                status: r.status, idx: i
-            });
-        } else {
-            rightNodes.push({ sdaType: r.sdaType, label: '-', status: r.status, idx: i, empty: true });
-        }
-    }
-
-    // Monolithic nodes
-    var monoInLabel = '';
-    var monoOutLabel = '';
-    if (hasMonoIn) {
-        monoInLabel = (inbound && inbound.classes.length > 0) ? inbound.classes[0].shortName : src;
-        leftNodes = []; // clear individual nodes
-    }
-    if (hasMonoOut) {
-        monoOutLabel = (outbound && outbound.classes.length > 0) ? outbound.classes[0].shortName : tgt;
-        rightNodes = [];
-    }
-
-    // Calculate dimensions
-    var nCenter = centerNodes.length;
-    var contentH = nCenter * (nodeH + nodeGap) + pad * 2;
-    if (contentH < 240) contentH = 240;
-
-    // Build HTML
-    var html = '<div class="tf-sankey" id="tf-sankey" style="height:' + contentH + 'px;">';
-    html += '<svg class="tf-links" id="tf-svg"></svg>';
-
-    // Left column
-    html += '<div class="tf-col tf-col-left">';
-    if (hasMonoIn) {
-        html += '<div class="tf-node tf-node-src tf-node-mono" data-sda="*" data-col="left" style="height:' +
-            (contentH - pad * 2 - nodeGap) + 'px;">' +
-            escapeHtml(monoInLabel) +
-            '<span style="font-size:10px;color:var(--muted);font-style:italic;">all types</span></div>';
-    } else {
-        for (var i = 0; i < leftNodes.length; i++) {
-            var n = leftNodes[i];
-            var opacity = n.empty ? ' style="opacity:0.3;"' : '';
-            html += '<div class="tf-node tf-node-src" data-sda="' + escapeAttr(n.sdaType) +
-                '" data-col="left"' + opacity + '>' + escapeHtml(n.label) + '</div>';
-        }
-    }
-    html += '</div>';
-
-    // Center column (SDA3)
-    html += '<div class="tf-col tf-col-center">';
-    for (var i = 0; i < centerNodes.length; i++) {
-        var n = centerNodes[i];
-        html += '<div class="tf-node tf-node-sda" data-sda="' + escapeAttr(n.sdaType) +
-            '" data-col="center" data-idx="' + n.idx + '">' + escapeHtml(n.label) + '</div>';
-    }
-    html += '</div>';
-
-    // Right column
-    html += '<div class="tf-col tf-col-right">';
-    if (hasMonoOut) {
-        html += '<div class="tf-node tf-node-tgt tf-node-mono" data-sda="*" data-col="right" style="height:' +
-            (contentH - pad * 2 - nodeGap) + 'px;">' +
-            escapeHtml(monoOutLabel) +
-            '<span style="font-size:10px;color:var(--muted);font-style:italic;">all types</span></div>';
-    } else {
-        for (var i = 0; i < rightNodes.length; i++) {
-            var n = rightNodes[i];
-            var opacity = n.empty ? ' style="opacity:0.3;"' : '';
-            html += '<div class="tf-node tf-node-tgt" data-sda="' + escapeAttr(n.sdaType) +
-                '" data-col="right"' + opacity + '>' + escapeHtml(n.label) + '</div>';
-        }
-    }
-    html += '</div>';
-
-    html += '</div>';
-    container.innerHTML = html;
-
-    // Draw links and wire handlers after DOM paint
-    requestAnimationFrame(function() {
-        tfDrawSankeyLinks(hasMonoIn, hasMonoOut, bandW);
-        tfWireSankeyHandlers(container);
-    });
-}
-
-function tfDrawSankeyLinks(hasMonoIn, hasMonoOut, bandW) {
-    var sankey = $('tf-sankey');
-    var svg = $('tf-svg');
-    if (!sankey || !svg) return;
-
-    var sRect = sankey.getBoundingClientRect();
-    var centerNodes = sankey.querySelectorAll('.tf-col-center .tf-node');
-    var leftNodes = sankey.querySelectorAll('.tf-col-left .tf-node');
-    var rightNodes = sankey.querySelectorAll('.tf-col-right .tf-node');
-
-    // Build lookup maps by sda type
-    var leftMap = {};
-    leftNodes.forEach(function(el) { leftMap[el.dataset.sda] = el; });
-    var rightMap = {};
-    rightNodes.forEach(function(el) { rightMap[el.dataset.sda] = el; });
-
-    var paths = '';
-    var nCenter = centerNodes.length;
-
-    centerNodes.forEach(function(cEl, idx) {
-        var cR = cEl.getBoundingClientRect();
-        var cy = cR.top + cR.height / 2 - sRect.top;
-        var cLeft = cR.left - sRect.left;
-        var cRight = cR.right - sRect.left;
-        var row = _tfCurrentTrace[idx];
-        var status = row ? row.status : 'complete';
-        var cls = (status === 'complete') ? 'complete' : 'partial';
-
-        // Left → Center link
-        var lEl = hasMonoIn ? leftMap['*'] : leftMap[cEl.dataset.sda];
-        if (lEl) {
-            var lR = lEl.getBoundingClientRect();
-            var lx = lR.right - sRect.left;
-            var ly;
-            if (hasMonoIn) {
-                // Distribute vertically across the mono node
-                var monoTop = lR.top - sRect.top;
-                var monoH = lR.height;
-                ly = monoTop + (monoH * (idx + 0.5) / nCenter);
-            } else {
-                ly = lR.top + lR.height / 2 - sRect.top;
-            }
-            var mx = (lx + cLeft) / 2;
-            paths += '<path class="tf-link ' + cls + '" data-sda="' + escapeAttr(cEl.dataset.sda) + '" d="' +
-                'M' + lx + ',' + (ly - bandW) +
-                ' C' + mx + ',' + (ly - bandW) + ' ' + mx + ',' + (cy - bandW) + ' ' + cLeft + ',' + (cy - bandW) +
-                ' L' + cLeft + ',' + (cy + bandW) +
-                ' C' + mx + ',' + (cy + bandW) + ' ' + mx + ',' + (ly + bandW) + ' ' + lx + ',' + (ly + bandW) +
-                ' Z"/>';
-        }
-
-        // Center → Right link
-        var rEl = hasMonoOut ? rightMap['*'] : rightMap[cEl.dataset.sda];
-        if (rEl) {
-            var rR = rEl.getBoundingClientRect();
-            var rx = rR.left - sRect.left;
-            var ry;
-            if (hasMonoOut) {
-                var monoTop = rR.top - sRect.top;
-                var monoH = rR.height;
-                ry = monoTop + (monoH * (idx + 0.5) / nCenter);
-            } else {
-                ry = rR.top + rR.height / 2 - sRect.top;
-            }
-            var mx = (cRight + rx) / 2;
-            paths += '<path class="tf-link ' + cls + '" data-sda="' + escapeAttr(cEl.dataset.sda) + '" d="' +
-                'M' + cRight + ',' + (cy - bandW) +
-                ' C' + mx + ',' + (cy - bandW) + ' ' + mx + ',' + (ry - bandW) + ' ' + rx + ',' + (ry - bandW) +
-                ' L' + rx + ',' + (ry + bandW) +
-                ' C' + mx + ',' + (ry + bandW) + ' ' + mx + ',' + (cy + bandW) + ' ' + cRight + ',' + (cy + bandW) +
-                ' Z"/>';
-        }
-    });
-
-    svg.innerHTML = paths;
-}
-
-function tfWireSankeyHandlers(container) {
-    // Hover: highlight connected nodes and links
-    container.querySelectorAll('.tf-node').forEach(function(el) {
-        el.addEventListener('mouseenter', function() {
-            var sda = el.dataset.sda;
-            if (sda === '*') return; // monolithic nodes don't highlight individually
-            tfHighlightSda(container, sda);
         });
-        el.addEventListener('mouseleave', function() {
-            tfClearHighlight(container);
-        });
-    });
-
-    // Click on center (SDA3) node → show field detail
-    container.querySelectorAll('.tf-col-center .tf-node').forEach(function(el) {
-        el.addEventListener('click', function(e) {
-            e.stopPropagation();
-            var idx = parseInt(el.dataset.idx);
-            var row = _tfCurrentTrace[idx];
-            if (!row) return;
-            tfShowDetail(row);
-        });
-    });
-}
-
-function tfHighlightSda(container, sdaType) {
-    // Dim everything, then highlight matched nodes + links
-    container.querySelectorAll('.tf-node').forEach(function(el) {
-        if (el.dataset.sda === sdaType || el.dataset.sda === '*') {
-            el.classList.add('highlight');
-            el.classList.remove('dim');
-        } else {
-            el.classList.add('dim');
-            el.classList.remove('highlight');
-        }
-    });
-    container.querySelectorAll('.tf-link').forEach(function(el) {
-        if (el.dataset.sda === sdaType) {
-            el.classList.add('highlight');
-            el.classList.remove('dim');
-        } else {
-            el.classList.add('dim');
-            el.classList.remove('highlight');
-        }
-    });
-}
-
-function tfClearHighlight(container) {
-    container.querySelectorAll('.tf-node, .tf-link').forEach(function(el) {
-        el.classList.remove('highlight', 'dim');
-    });
-}
-
-// ── Field detail panel — three-column field-level trace ──────────
-// Shows the complete field journey: Source Field → SDA3 Field → Target Field
-// SDA3 is always the visible center pivot. SVG connectors on both sides.
-
-async function tfShowDetail(row) {
-    var detail = $('tf-detail');
-    if (!detail) return;
-
-    var srcSel = $('tf-sel-src');
-    var tgtSel = $('tf-sel-tgt');
-    var src = srcSel ? srcSel.value : '';
-    var tgt = tgtSel ? tgtSel.value : '';
-
-    // Toggle off if clicking same node
-    if (_tfActiveNode === row.sdaType) {
-        _tfActiveNode = null;
-        detail.hidden = true;
-        document.querySelectorAll('.tf-node-sda.active').forEach(function(el) { el.classList.remove('active'); });
-        return;
     }
+}
+
+function tfSelectType(idx, src, tgt) {
+    var row = _tfCurrentTrace[idx];
+    if (!row) return;
 
     _tfActiveNode = row.sdaType;
-    document.querySelectorAll('.tf-node-sda').forEach(function(el) {
-        el.classList.toggle('active', el.dataset.sda === row.sdaType);
+
+    // Highlight active item in sidebar
+    document.querySelectorAll('.tf-type-item').forEach(function(el) {
+        el.classList.toggle('tf-type-active', parseInt(el.dataset.idx) === idx);
     });
 
-    detail.hidden = false;
-    detail.innerHTML =
-        '<div class="tf-detail-title">' + escapeHtml(src) + ' → SDA3.' + escapeHtml(row.sdaType) + ' → ' + escapeHtml(tgt) + '</div>' +
-        '<div id="tf-field-area"><div class="tf-field-loading">Loading field-level DTL mappings…</div></div>';
-    detail.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    // Load field trace into main area
+    var main = $('tf-main');
+    if (!main) return;
 
-    // Fetch DTL fields for BOTH sides in parallel
+    main.innerHTML =
+        '<div class="tf-main-hdr">' +
+            '<div class="tf-main-title">' + escapeHtml(src) + '  &rarr;  SDA3.' + escapeHtml(row.sdaType) + '  &rarr;  ' + escapeHtml(tgt) + '</div>' +
+        '</div>' +
+        '<div id="tf-field-area"><div class="tf-field-loading">Loading field-level DTL mappings...</div></div>';
+
+    tfLoadFieldTrace(row, src, tgt);
+}
+
+async function tfLoadFieldTrace(row, src, tgt) {
     var inData = null;
     var outData = null;
     var fetches = [];
@@ -1255,9 +1050,7 @@ async function tfShowDetail(row) {
     }
     await Promise.all(fetches);
 
-    // Re-assert visibility — guard against stale tfUpdateView hiding the panel
-    if (_tfActiveNode !== row.sdaType) return; // user clicked away during fetch
-    detail.hidden = false;
+    if (_tfActiveNode !== row.sdaType) return; // user switched during fetch
 
     var inMappings = inData && inData.ok ? tfExtractCleanMappings(inData) : null;
     var outMappings = outData && outData.ok ? tfExtractCleanMappings(outData) : null;
@@ -1273,13 +1066,13 @@ async function tfShowDetail(row) {
         return;
     }
 
-    // Build the three-column model and render
     var model = tfBuildFieldModel(inMappings, outMappings);
     tfRenderThreeColumns(area, model, src, tgt, inData, outData, row);
-
-    // Scroll into view after render
-    detail.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
+
+// ── Field detail panel — three-column field-level trace ──────────
+// Shows the complete field journey: Source Field → SDA3 Field → Target Field
+// SDA3 is always the visible center pivot. SVG connectors on both sides.
 
 // ── Clean field extraction ──────────────────────────────────────
 // For each target.X write in the DTL, find the closest source.Y reference
