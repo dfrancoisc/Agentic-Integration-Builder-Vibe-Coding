@@ -103,6 +103,7 @@ XData UrlMap [ XMLNamespace = "http://www.intersystems.com/urlmap" ]
          transformation classes organized by pipeline direction. -->
     <Route Url="/transforms/inventory"          Method="GET"    Call="TransformInventory" />
     <Route Url="/transforms/dtl-fields"         Method="GET"    Call="DTLFields" />
+    <Route Url="/transforms/hl7-fields"         Method="GET"    Call="HL7Fields" />
 
     <!-- Cleanup: stop stuck productions and delete test artifacts. -->
     <Route Url="/cleanup/productions"           Method="POST"   Call="CleanupProductions" />
@@ -568,6 +569,11 @@ ClassMethod TransformInventory() As %Status
 ClassMethod DTLFields() As %Status
 {
     Quit ##class(AgenticInterop.Editor.TransformService).DTLFields(%response)
+}
+
+ClassMethod HL7Fields() As %Status
+{
+    Quit ##class(AgenticInterop.Editor.TransformService).HL7Fields(%response)
 }
 
 ClassMethod CleanupProductions() As %Status

@@ -1042,26 +1042,41 @@ async function tfLoadFieldTrace(row, src, tgt) {
     var outData = null;
     var fetches = [];
 
+    // Inbound: DTL-based or HL7 programmatic extraction
     if (row.inClasses.length > 0 && !row.inMonolithic) {
         fetches.push(tfFetchFields(row.inClasses[0].name).then(function(d) { inData = d; }));
+    } else if (row.inMonolithic && src.indexOf('HL7') !== -1) {
+        // HL7 programmatic: use the HL7 field extraction endpoint
+        fetches.push(get('/transforms/hl7-fields?sdaType=' + encodeURIComponent(row.sdaType)).then(function(d) { inData = d; }));
     }
+
+    // Outbound: DTL-based or HL7 programmatic extraction
     if (row.outClasses.length > 0 && !row.outMonolithic) {
         fetches.push(tfFetchFields(row.outClasses[0].name).then(function(d) { outData = d; }));
+    } else if (row.outMonolithic && tgt.indexOf('HL7') !== -1) {
+        fetches.push(get('/transforms/hl7-fields?sdaType=' + encodeURIComponent(row.sdaType)).then(function(d) { outData = d; }));
     }
+
     await Promise.all(fetches);
 
     if (_tfActiveNode !== row.sdaType) return; // user switched during fetch
 
-    var inMappings = inData && inData.ok ? tfExtractCleanMappings(inData) : null;
-    var outMappings = outData && outData.ok ? tfExtractCleanMappings(outData) : null;
+    // HL7 data arrives pre-processed (sourceField + targetField already set);
+    // DTL data needs extraction through tfExtractCleanMappings
+    var inMappings = null;
+    if (inData && inData.ok) {
+        inMappings = inData.hl7 ? inData.mappings : tfExtractCleanMappings(inData);
+    }
+    var outMappings = null;
+    if (outData && outData.ok) {
+        outMappings = outData.hl7 ? outData.mappings : tfExtractCleanMappings(outData);
+    }
 
     var area = $('tf-field-area');
     if (!area) return;
 
     if (!inMappings && !outMappings) {
-        var msg = 'Field-level mappings require DTL-based transforms. ';
-        if (row.inMonolithic) msg += escapeHtml(src) + ' uses a programmatic/XSLT transform (no DTL to parse). ';
-        if (row.outMonolithic) msg += escapeHtml(tgt) + ' uses a programmatic/XSLT transform (no DTL to parse). ';
+        var msg = 'No field-level mappings available for this data type.';
         area.innerHTML = '<div class="tf-field-loading">' + msg + '</div>';
         return;
     }
@@ -1203,17 +1218,27 @@ function tfRenderThreeColumns(container, model, src, tgt, inData, outData, row) 
         return;
     }
 
-    // Class info line
+    // Class info line — HL7 data has segment/sourceClass, DTL has className
     var info = '';
     if (inData && inData.ok) {
-        info += '<span class="tf-dtl-ref tf-dtl-in">' + escapeHtml(src) + ': ' +
-            escapeHtml(inData.className.split('.').slice(-2).join('.')) + '</span>';
+        if (inData.hl7) {
+            info += '<span class="tf-dtl-ref tf-dtl-in">' + escapeHtml(src) + ': ' +
+                escapeHtml(inData.segment) + ' (programmatic)</span>';
+        } else if (inData.className) {
+            info += '<span class="tf-dtl-ref tf-dtl-in">' + escapeHtml(src) + ': ' +
+                escapeHtml(inData.className.split('.').slice(-2).join('.')) + '</span>';
+        }
     } else if (row.inMonolithic) {
         info += '<span class="tf-dtl-ref tf-dtl-mono">' + escapeHtml(src) + ': programmatic (all types)</span>';
     }
     if (outData && outData.ok) {
-        info += '<span class="tf-dtl-ref tf-dtl-out">' + escapeHtml(tgt) + ': ' +
-            escapeHtml(outData.className.split('.').slice(-2).join('.')) + '</span>';
+        if (outData.hl7) {
+            info += '<span class="tf-dtl-ref tf-dtl-out">' + escapeHtml(tgt) + ': ' +
+                escapeHtml(outData.segment) + ' (programmatic)</span>';
+        } else if (outData.className) {
+            info += '<span class="tf-dtl-ref tf-dtl-out">' + escapeHtml(tgt) + ': ' +
+                escapeHtml(outData.className.split('.').slice(-2).join('.')) + '</span>';
+        }
     } else if (row.outMonolithic) {
         info += '<span class="tf-dtl-ref tf-dtl-mono">' + escapeHtml(tgt) + ': programmatic (all types)</span>';
     }

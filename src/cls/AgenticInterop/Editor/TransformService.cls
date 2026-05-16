@@ -261,4 +261,183 @@ ClassMethod PT(pCls As %DynamicObject, pRest As %String, pMode As %String) [ Pri
     }
 }
 
+/// Extract field-level mappings from HL7 v2 programmatic transforms.
+/// Parses the ObjectScript method code for the given SDA type's HL7
+/// segment(s) in HS.Gateway.HL7.HL7ToSDA3. Returns the same shape as
+/// DTLFields so the UI can join HL7 fields with FHIR DTL fields on
+/// the SDA3 property name.
+///
+///   GET /api/agentic/transforms/hl7-fields?sdaType=Patient
+///   GET /api/agentic/transforms/hl7-fields?segment=PID
+ClassMethod HL7Fields(pResponse As %CSP.Response) As %Status
+{
+    Set util = "AgenticInterop.Editor.Util"
+    Set sdaType = $get(%request.Data("sdaType",1))
+    Set segment = $get(%request.Data("segment",1))
+
+    Set out = {}
+    Set out.ok = 1
+    Set out.hl7 = 1
+    Set out.sdaType = sdaType
+
+    ; Resolve SDA type to segment(s) if not given directly
+    If segment = "" {
+        Set segment = ..HL7SegForSDA(sdaType)
+    }
+
+    If segment = "" {
+        Set out.ok = 0
+        Set out.error = "No HL7 segment mapping for: " _ $select(sdaType'="":sdaType, 1:"(empty)")
+        Quit $classmethod(util, "WriteJSON", pResponse, out)
+    }
+
+    Set out.segment = segment
+    Set out.sourceClass = "HS.Gateway.HL7.HL7ToSDA3"
+    Set out.targetClass = "SDA3"
+    Set out.mappings = []
+
+    ; Parse each segment (comma-separated for multi-segment SDA types)
+    For si = 1:1:$L(segment, ",") {
+        Set seg = $ZSTRIP($P(segment, ",", si), "<>W")
+        If seg = "" Continue
+        Do ..ParseHL7Seg(seg, out.mappings)
+    }
+
+    Set out.count = out.mappings.%Size()
+    Quit $classmethod(util, "WriteJSON", pResponse, out)
+}
+
+/// Map an SDA3 type name to the HL7 v2 segment(s) that populate it.
+/// Derived from the ..start() calls in HS.Gateway.HL7.HL7ToSDA3 and
+/// from knowledge of which PID fields map to which SDA sub-types.
+ClassMethod HL7SegForSDA(pType As %String) As %String [ Private ]
+{
+    ; Direct SDA container types from ..start() calls
+    If pType = "Patient" Quit "PID"
+    If pType = "Encounter" Quit "PV1,PV2"
+    If pType = "Allergy" Quit "AL1,IAM"
+    If pType = "Diagnosis" Quit "DG1"
+    If pType = "SupportContact" Quit "NK1"
+    If pType = "HealthFund" Quit "IN1"
+    If pType = "Procedure" Quit "PR1"
+    If pType = "Guarantor" Quit "GT1"
+    If pType = "Problem" Quit "PRB"
+    If pType = "Document" Quit "TXA"
+    If pType = "Observation" Quit "OBX"
+    If pType = "Vaccination" Quit "RXA"
+    If pType = "Appointment" Quit "SCH"
+
+    ; Sub-types of Patient (live inside PID segment)
+    If pType = "Address" Quit "PID"
+    If pType = "PatientNumber" Quit "PID"
+    If pType = "Name" Quit "PID"
+    If pType = "ContactInfo" Quit "PID"
+
+    ; Medication-related
+    If pType = "Medication" Quit "RXE,RXO,ORC"
+    If pType = "LabOrder" Quit "OBR,ORC"
+    If pType = "RadOrder" Quit "OBR,ORC"
+
+    ; Sub-types that share a segment with their parent
+    If pType [ "CodeTableDetail" Quit "PID"
+
+    ; Fallback: try pType as segment name directly
+    Set methodId = "HS.Gateway.HL7.HL7ToSDA3||" _ pType
+    If ##class(%Dictionary.MethodDefinition).%ExistsId(methodId) Quit pType
+
+    Quit ""
+}
+
+/// Parse one HL7 segment method from HS.Gateway.HL7.HL7ToSDA3 and
+/// extract (HL7 field position, SDA element name) pairs. The code
+/// uses a consistent pattern:
+///
+///   #; PID-7 : DateTimeofBirth
+///   do ..write(cr_"<BirthTime>"_value_"</BirthTime>")
+///
+/// For each field comment, we find the FIRST XML opening tag in the
+/// subsequent write() calls. That tag name is the SDA3 property.
+ClassMethod ParseHL7Seg(pSeg As %String, pArr As %DynamicArray) [ Private ]
+{
+    Set methodId = "HS.Gateway.HL7.HL7ToSDA3||" _ pSeg
+    Set def = ##class(%Dictionary.MethodDefinition).%OpenId(methodId)
+    If '$IsObject(def) Quit
+
+    Set stream = def.Implementation
+    Do stream.Rewind()
+    Set code = stream.Read(64000)
+
+    ; Strip carriage returns (method streams use CR+LF)
+    Set code = $REPLACE(code, $C(13), "")
+    Set lineCount = $L(code, $C(10))
+    Set curField = ""
+    Set curDesc = ""
+    Set foundSda = 0
+
+    For i = 1:1:lineCount {
+        Set line = $P(code, $C(10), i)
+        Set trim = $ZSTRIP(line, "<>W")
+
+        ; ── Check for HL7 field comment ──
+        ; Pattern: #; PID-7 : DateTimeofBirth
+        If ($E(trim, 1, 2) = "#;") {
+            Set rest = $ZSTRIP($E(trim, 3, *), "<W")
+            ; Must start with segment name and a dash+digit
+            Set dashPos = $F(rest, "-")
+            If dashPos > 0 {
+                Set segPart = $E(rest, 1, dashPos - 2)
+                If segPart = pSeg {
+                    Set colonPos = $F(rest, ":")
+                    If colonPos > 0 {
+                        Set pos = $ZSTRIP($E(rest, 1, colonPos - 2), "<>W")
+                        Set desc = $ZSTRIP($E(rest, colonPos, *), "<>W")
+                        ; Skip meta-comments ("see above", "value from")
+                        If desc '= "" && (desc '[ "see ") && (desc '[ "done in") {
+                            Set curField = pos
+                            Set curDesc = desc
+                            Set foundSda = 0
+                        }
+                    }
+                }
+            }
+        }
+
+        ; ── Look for XML write in current field section ──
+        If curField '= "" && 'foundSda && (trim [ "write(") {
+            ; Find pattern: "<TagName>" in the write call
+            Set searchStr = """<"
+            Set wPos = $F(trim, searchStr)
+            While wPos > 0 {
+                ; wPos points after "<", extract tag name up to ">"
+                Set closeGt = $F(trim, ">", wPos)
+                If closeGt > 0 {
+                    Set tagName = $E(trim, wPos, closeGt - 2)
+                    ; Must start with uppercase A-Z (not closing tag "/")
+                    Set ch = $A(tagName)
+                    If (ch >= 65) && (ch <= 90) {
+                        ; Skip common structural sub-elements that are not
+                        ; meaningful SDA property names for joining
+                        Set skip = 0
+                        If tagName = "Code" Set skip = 1
+                        If tagName = "Description" Set skip = 1
+                        If tagName = "SDACodingStandard" Set skip = 1
+                        If tagName = "Text" Set skip = 1
+                        If tagName = "Type" Set skip = 1
+                        If tagName = "SourceFormat" Set skip = 1
+                        If 'skip {
+                            Set m = {}
+                            Set m.sourceField = curField _ " " _ curDesc
+                            Set m.targetField = tagName
+                            Do pArr.%Push(m)
+                            Set foundSda = 1
+                        }
+                    }
+                }
+                ; Move past this tag for the next search
+                Set wPos = $F(trim, searchStr, closeGt)
+            }
+        }
+    }
+}
+
 }
