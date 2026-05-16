@@ -835,23 +835,23 @@ async function rebuildCatalog(scope, btn, statusEl) {
     }
 }
 
-// ─── Transforms tab ──────────────────────────────────────────────
-// Transformation Catalog: read-only inventory of all HS.*
-// transformation classes shipped with IRIS for Health. SDA3 is the
-// universal pivot format. The diagram shows inbound (external→SDA3)
-// and outbound (SDA3→external) pipelines. Click a pipeline to browse
-// its classes. The Cross-Format Mapper shows how two external formats
-// connect through SDA3.
 
-let _tfData = null;      // cached inventory response
-let _tfSelected = null;  // currently-selected pipeline id
+// ─── Transforms tab ──────────────────────────────────────────────
+// Sankey mapping visualization. Visual flow diagram showing how data
+// types map from one external format through SDA3 to another.
+// Click an SDA3 node to drill into field-level mappings.
+
+let _tfData = null;          // cached inventory response
+let _tfFieldCache = {};      // DTL field cache: className → response
+let _tfCurrentTrace = [];    // current trace rows
+let _tfActiveNode = null;    // currently-selected SDA type
 
 async function loadTransformInventory() {
-    const list = $('list');
+    var list = $('list');
     list.innerHTML = '<div class="empty-state">Loading transformation inventory...</div>';
     try {
         _tfData = await get('/transforms/inventory');
-        _tfSelected = null;
+        _tfActiveNode = null;
         renderTransformsTab();
     } catch (e) {
         list.innerHTML = '<div class="empty-state">Failed: ' + escapeHtml(e.message) + '</div>';
@@ -859,244 +859,75 @@ async function loadTransformInventory() {
 }
 
 function renderTransformsTab() {
-    const list = $('list');
+    var list = $('list');
     list.innerHTML = '';
     if (!_tfData || !_tfData.ok) {
         list.innerHTML = '<div class="empty-state">No data.</div>';
         return;
     }
 
-    const pipelines = _tfData.pipelines || [];
-    const inbound = pipelines.filter(function(p) { return p.target === 'SDA3'; });
-    const outbound = pipelines.filter(function(p) { return p.source === 'SDA3'; });
-
-    // Header card
-    var header = document.createElement('div');
-    header.className = 'list-item';
-    header.style.cursor = 'default';
-    header.innerHTML =
-        '<div class="row1">Transformation Inventory</div>' +
-        '<div class="row2 desc">All HS.* transformation classes shipped with IRIS for Health. ' +
-        'SDA3 (Summary Document Architecture) is the universal pivot format - every external format maps to and from SDA3.</div>' +
-        '<div class="row2" style="margin-top:4px;">' +
-            '<span class="badge user">' + _tfData.totalClasses + ' classes total</span> ' +
-            '<span class="badge">' + pipelines.length + ' pipelines</span>' +
-        '</div>';
-    list.appendChild(header);
-
-    // Hub-and-spoke diagram
-    var hub = document.createElement('div');
-    hub.className = 'tf-hub';
-    hub.innerHTML = tfBuildDiagram(inbound, outbound);
-    list.appendChild(hub);
-
-    // Pipeline detail panel (hidden until a pipeline is selected)
-    var detail = document.createElement('div');
-    detail.id = 'tf-detail';
-    detail.style.display = 'none';
-    list.appendChild(detail);
-
-    // Cross-Format Mapper
-    var cross = document.createElement('div');
-    cross.className = 'list-item';
-    cross.style.cursor = 'default';
-    cross.innerHTML = tfBuildCrossFormat();
-    list.appendChild(cross);
-
-    // Wire pipeline click handlers
-    hub.querySelectorAll('[data-pipeline]').forEach(function(el) {
-        el.addEventListener('click', function() { tfSelectPipeline(el.dataset.pipeline); });
-    });
-
-    // Wire cross-format handlers
-    var cfSrc = cross.querySelector('#tf-cf-source');
-    var cfTgt = cross.querySelector('#tf-cf-target');
-    var cfSda = cross.querySelector('#tf-cf-showsda');
-    if (cfSrc) cfSrc.addEventListener('change', tfUpdateCrossFormat);
-    if (cfTgt) cfTgt.addEventListener('change', tfUpdateCrossFormat);
-    if (cfSda) cfSda.addEventListener('change', tfUpdateCrossFormat);
-}
-
-function tfBuildDiagram(inbound, outbound) {
-    var inHtml = '';
-    for (var i = 0; i < inbound.length; i++) {
-        var p = inbound[i];
-        inHtml +=
-            '<div class="tf-arrow tf-inbound" data-pipeline="' + p.id + '">' +
-                '<div class="tf-format">' + escapeHtml(p.source) + '</div>' +
-                '<div class="tf-line">' +
-                    '<span class="tf-count">' + p.count + '</span> ' +
-                    '<span class="tf-kind">' + escapeHtml(p.kind) + '</span>' +
-                '</div>' +
-                '<div class="tf-arrow-glyph">&#x25B6;</div>' +
-            '</div>';
-    }
-
-    var outHtml = '';
-    for (var j = 0; j < outbound.length; j++) {
-        var q = outbound[j];
-        outHtml +=
-            '<div class="tf-arrow tf-outbound" data-pipeline="' + q.id + '">' +
-                '<div class="tf-arrow-glyph">&#x25B6;</div>' +
-                '<div class="tf-line">' +
-                    '<span class="tf-count">' + q.count + '</span> ' +
-                    '<span class="tf-kind">' + escapeHtml(q.kind) + '</span>' +
-                '</div>' +
-                '<div class="tf-format">' + escapeHtml(q.target) + '</div>' +
-            '</div>';
-    }
-
-    return '<div class="tf-diagram">' +
-        '<div class="tf-column tf-col-in">' +
-            '<div class="tf-col-label">Inbound (to SDA3)</div>' +
-            inHtml +
-        '</div>' +
-        '<div class="tf-column tf-col-hub">' +
-            '<div class="tf-hub-box">SDA3</div>' +
-            '<div class="tf-hub-sub">pivot format</div>' +
-        '</div>' +
-        '<div class="tf-column tf-col-out">' +
-            '<div class="tf-col-label">Outbound (from SDA3)</div>' +
-            outHtml +
-        '</div>' +
-    '</div>';
-}
-
-function tfSelectPipeline(pipelineId) {
-    _tfSelected = pipelineId;
-    var detail = $('tf-detail');
-    if (!detail) return;
-
-    var pipeline = (_tfData.pipelines || []).find(function(p) { return p.id === pipelineId; });
-    if (!pipeline) { detail.style.display = 'none'; return; }
-
-    // Highlight selected arrow in the diagram
-    document.querySelectorAll('.tf-arrow').forEach(function(el) {
-        el.classList.toggle('selected', el.dataset.pipeline === pipelineId);
-    });
-
-    detail.style.display = 'block';
-    detail.innerHTML = tfRenderPipelineDetail(pipeline);
-
-    // Wire search input
-    var searchInput = detail.querySelector('#tf-search');
-    if (searchInput) {
-        searchInput.addEventListener('input', function() {
-            tfFilterTable(pipeline, searchInput.value.trim().toLowerCase());
-        });
-    }
-
-    // Scroll into view
-    detail.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-}
-
-function tfRenderPipelineDetail(pipeline) {
-    var classes = pipeline.classes || [];
-    var hasFhir = pipeline.id.indexOf('fhir') !== -1;
-    var isSdaToTarget = pipeline.source === 'SDA3';
-
-    // Build table
-    var hdr = '<th style="width:auto;">Class</th>';
-    if (hasFhir) {
-        hdr += '<th style="width:140px;">SDA Type</th>';
-        hdr += '<th style="width:140px;">FHIR Resource</th>';
-    }
-    hdr += '<th style="width:auto;">Description</th>';
-
-    var rows = '';
-    for (var i = 0; i < classes.length; i++) {
-        var cls = classes[i];
-        var rc = cls.isSubTransform ? ' class="tf-sub"' : '';
-        rows += '<tr' + rc + ' data-name="' + escapeAttr(cls.name.toLowerCase()) + '">';
-        rows += '<td><code>' + escapeHtml(cls.shortName) + '</code>';
-        if (cls.isSubTransform) rows += ' <span class="badge abstract">sub</span>';
-        rows += '</td>';
-        if (hasFhir) {
-            var sdaType = isSdaToTarget ? cls.sourceType : cls.targetType;
-            var fhirRes = isSdaToTarget ? cls.targetType : cls.sourceType;
-            rows += '<td>' + escapeHtml(sdaType || '') + '</td>';
-            rows += '<td>' + escapeHtml(fhirRes || '') + '</td>';
-        }
-        rows += '<td class="tf-desc">' + escapeHtml(cls.description || '') + '</td>';
-        rows += '</tr>';
-    }
-
-    if (classes.length === 0) {
-        var cols = hasFhir ? 4 : 2;
-        rows = '<tr><td colspan="' + cols + '" style="text-align:center;color:var(--muted);padding:16px;">No classes found.</td></tr>';
-    }
-
-    return '<div class="tf-detail-head">' +
-            '<div class="row1">' + escapeHtml(pipeline.source) + '  &#x2192;  ' + escapeHtml(pipeline.target) + '</div>' +
-            '<div class="row2" style="margin-top:4px;">' +
-                '<span class="badge user">' + pipeline.count + ' classes</span> ' +
-                '<span class="badge">' + escapeHtml(pipeline.kind) + '</span>' +
-            '</div>' +
-        '</div>' +
-        '<div class="field" style="margin:8px 0;">' +
-            '<input id="tf-search" type="text" placeholder="Filter by class name, SDA type, or FHIR resource..." style="max-width:400px;">' +
-        '</div>' +
-        '<div style="max-height:420px; overflow:auto; border:1px solid var(--border); border-radius:4px;">' +
-            '<table class="tf-table"><thead><tr>' + hdr + '</tr></thead>' +
-            '<tbody id="tf-tbody">' + rows + '</tbody></table>' +
-        '</div>';
-}
-
-function tfFilterTable(pipeline, query) {
-    var tbody = $('tf-tbody');
-    if (!tbody) return;
-    var trs = tbody.querySelectorAll('tr');
-    var shown = 0;
-    trs.forEach(function(tr) {
-        var name = tr.dataset.name || '';
-        var text = tr.textContent.toLowerCase();
-        var match = !query || name.indexOf(query) !== -1 || text.indexOf(query) !== -1;
-        tr.style.display = match ? '' : 'none';
-        if (match) shown++;
-    });
-}
-
-function tfBuildCrossFormat() {
-    var formats = ['HL7 v2', 'FHIR R4', 'FHIR STU3', 'CDA', 'X12'];
+    // Build format options
+    var formats = _tfData.formats || [];
     var opts = '<option value="">Select...</option>';
     for (var i = 0; i < formats.length; i++) {
-        opts += '<option value="' + formats[i] + '">' + formats[i] + '</option>';
+        opts += '<option value="' + escapeAttr(formats[i]) + '">' + escapeHtml(formats[i]) + '</option>';
     }
 
-    return '<div class="row1">End-to-End Transformation Trace</div>' +
-        '<div class="row2 desc">Select source and target formats to trace the full transformation path through SDA3. ' +
-        'Each row shows the specific DTL or mapping class that handles a given data type at each leg of the journey.</div>' +
-        '<div class="field-row" style="margin-top:8px;">' +
-            '<div class="field" style="margin:0;">' +
+    // Main view container
+    var view = document.createElement('div');
+    view.className = 'tf-view';
+
+    // Controls bar
+    view.innerHTML =
+        '<div class="tf-controls">' +
+            '<div class="tf-ctrl-select">' +
                 '<label>Data From</label>' +
-                '<select id="tf-cf-source" style="min-width:130px;">' + opts + '</select>' +
+                '<select id="tf-sel-src">' + opts + '</select>' +
             '</div>' +
-            '<div class="field" style="margin:0;">' +
+            '<div class="tf-ctrl-arrow">' +
+                '<div class="tf-ctrl-arrow-line"></div>' +
+                '<div class="tf-ctrl-arrow-label">SDA3</div>' +
+                '<div class="tf-ctrl-arrow-line"></div>' +
+            '</div>' +
+            '<div class="tf-ctrl-select">' +
                 '<label>Data To</label>' +
-                '<select id="tf-cf-target" style="min-width:130px;">' + opts + '</select>' +
-            '</div>' +
-            '<div class="field" style="margin:0;display:flex;align-items:flex-end;">' +
-                '<label style="display:flex;align-items:center;gap:6px;cursor:pointer;text-transform:none;letter-spacing:0;">' +
-                    '<input type="checkbox" id="tf-cf-showsda" checked style="width:auto;"> Show SDA3 intermediary' +
-                '</label>' +
+                '<select id="tf-sel-tgt">' + opts + '</select>' +
             '</div>' +
         '</div>' +
-        '<div id="tf-cf-result" style="margin-top:12px;"></div>';
+        '<div class="tf-stats" id="tf-stats"></div>' +
+        '<div class="tf-canvas" id="tf-canvas"></div>' +
+        '<div class="tf-detail" id="tf-detail" hidden></div>';
+
+    list.appendChild(view);
+
+    // Wire select handlers
+    var srcSel = $('tf-sel-src');
+    var tgtSel = $('tf-sel-tgt');
+    if (srcSel) srcSel.addEventListener('change', tfUpdateView);
+    if (tgtSel) tgtSel.addEventListener('change', tfUpdateView);
 }
 
-function tfUpdateCrossFormat() {
-    var srcEl = $('tf-cf-source');
-    var tgtEl = $('tf-cf-target');
-    var sdaEl = $('tf-cf-showsda');
-    var result = $('tf-cf-result');
-    if (!result) return;
-    var src = srcEl ? srcEl.value : '';
-    var tgt = tgtEl ? tgtEl.value : '';
-    var showSda = sdaEl ? sdaEl.checked : true;
+function tfUpdateView() {
+    var srcSel = $('tf-sel-src');
+    var tgtSel = $('tf-sel-tgt');
+    var canvas = $('tf-canvas');
+    var stats = $('tf-stats');
+    var detail = $('tf-detail');
+    if (!canvas) return;
 
-    if (!src || !tgt) { result.innerHTML = ''; return; }
+    var src = srcSel ? srcSel.value : '';
+    var tgt = tgtSel ? tgtSel.value : '';
+    _tfActiveNode = null;
+    if (detail) detail.hidden = true;
+
+    if (!src || !tgt) {
+        canvas.innerHTML = '<div class="empty-state" style="padding:60px 20px;">Select a source and target format to visualize the transformation flow.</div>';
+        stats.innerHTML = '';
+        return;
+    }
     if (src === tgt) {
-        result.innerHTML = '<div style="color:var(--muted);font-size:12px;">Source and target are the same format.</div>';
+        canvas.innerHTML = '<div class="empty-state" style="padding:60px 20px;">Source and target are the same format.</div>';
+        stats.innerHTML = '';
         return;
     }
 
@@ -1105,325 +936,510 @@ function tfUpdateCrossFormat() {
     var outbound = pipelines.find(function(p) { return p.source === 'SDA3' && p.target === tgt; });
 
     if (!inbound && !outbound) {
-        result.innerHTML = '<div style="color:var(--muted);font-size:12px;">No transformation pipeline exists for this combination on this IRIS instance.</div>';
+        canvas.innerHTML = '<div class="empty-state" style="padding:60px 20px;">No transformation pipeline exists for this combination.</div>';
+        stats.innerHTML = '';
         return;
     }
 
     var trace = tfComputeTrace(inbound, outbound);
-    result.innerHTML = tfRenderTraceTable(trace, showSda, src, tgt, inbound, outbound);
+    _tfCurrentTrace = trace;
 
-    // Wire filter input
-    var filterInput = result.querySelector('#tf-trace-filter');
-    if (filterInput) {
-        filterInput.addEventListener('input', function() {
-            tfFilterTrace(filterInput.value.trim().toLowerCase());
+    // Stats bar
+    var complete = trace.filter(function(r) { return r.status === 'complete'; }).length;
+    var inOnly = trace.filter(function(r) { return r.status === 'inbound-only'; }).length;
+    var outOnly = trace.filter(function(r) { return r.status === 'outbound-only'; }).length;
+
+    stats.innerHTML =
+        '<div class="tf-stat"><span class="tf-stat-value">' + trace.length + '</span> data types</div>' +
+        '<div class="tf-stat"><span class="tf-stat-value">' + complete + '</span> complete</div>' +
+        (inOnly > 0 ? '<div class="tf-stat"><span class="tf-stat-value">' + inOnly + '</span> inbound only</div>' : '') +
+        (outOnly > 0 ? '<div class="tf-stat"><span class="tf-stat-value">' + outOnly + '</span> outbound only</div>' : '') +
+        '<div class="tf-stat-sep">|</div>' +
+        (inbound ? '<div class="tf-stat">' + escapeHtml(src) + ' <span class="tf-stat-value">' + inbound.count + '</span> ' + escapeHtml(inbound.kind) + '</div>' : '') +
+        (outbound ? '<div class="tf-stat">' + escapeHtml(tgt) + ' <span class="tf-stat-value">' + outbound.count + '</span> ' + escapeHtml(outbound.kind) + '</div>' : '');
+
+    // Render Sankey
+    tfRenderSankey(canvas, trace, src, tgt, inbound, outbound);
+}
+
+// ── Sankey rendering ─────────────────────────────────────────────
+
+function tfRenderSankey(container, trace, src, tgt, inbound, outbound) {
+    var nodeH = 24;
+    var nodeGap = 6;
+    var pad = 16;
+    var bandW = 8; // band half-width for filled paths
+
+    // Build node lists for each column
+    var leftNodes = [];
+    var centerNodes = [];
+    var rightNodes = [];
+    var hasMonoIn = false;
+    var hasMonoOut = false;
+
+    for (var i = 0; i < trace.length; i++) {
+        var r = trace[i];
+        centerNodes.push({ sdaType: r.sdaType, label: r.sdaType, status: r.status, idx: i });
+
+        if (r.inMonolithic) {
+            hasMonoIn = true;
+        } else if (r.inClasses.length > 0) {
+            leftNodes.push({
+                sdaType: r.sdaType,
+                label: r.inClasses[0].shortName,
+                status: r.status, idx: i
+            });
+        } else {
+            leftNodes.push({ sdaType: r.sdaType, label: '-', status: r.status, idx: i, empty: true });
+        }
+
+        if (r.outMonolithic) {
+            hasMonoOut = true;
+        } else if (r.outClasses.length > 0) {
+            rightNodes.push({
+                sdaType: r.sdaType,
+                label: r.outClasses[0].shortName,
+                status: r.status, idx: i
+            });
+        } else {
+            rightNodes.push({ sdaType: r.sdaType, label: '-', status: r.status, idx: i, empty: true });
+        }
+    }
+
+    // Monolithic nodes
+    var monoInLabel = '';
+    var monoOutLabel = '';
+    if (hasMonoIn) {
+        monoInLabel = (inbound && inbound.classes.length > 0) ? inbound.classes[0].shortName : src;
+        leftNodes = []; // clear individual nodes
+    }
+    if (hasMonoOut) {
+        monoOutLabel = (outbound && outbound.classes.length > 0) ? outbound.classes[0].shortName : tgt;
+        rightNodes = [];
+    }
+
+    // Calculate dimensions
+    var nCenter = centerNodes.length;
+    var contentH = nCenter * (nodeH + nodeGap) + pad * 2;
+    if (contentH < 240) contentH = 240;
+
+    // Build HTML
+    var html = '<div class="tf-sankey" id="tf-sankey" style="height:' + contentH + 'px;">';
+    html += '<svg class="tf-links" id="tf-svg"></svg>';
+
+    // Left column
+    html += '<div class="tf-col tf-col-left">';
+    if (hasMonoIn) {
+        html += '<div class="tf-node tf-node-src tf-node-mono" data-sda="*" data-col="left" style="height:' +
+            (contentH - pad * 2 - nodeGap) + 'px;">' +
+            escapeHtml(monoInLabel) +
+            '<span style="font-size:10px;color:var(--muted);font-style:italic;">all types</span></div>';
+    } else {
+        for (var i = 0; i < leftNodes.length; i++) {
+            var n = leftNodes[i];
+            var opacity = n.empty ? ' style="opacity:0.3;"' : '';
+            html += '<div class="tf-node tf-node-src" data-sda="' + escapeAttr(n.sdaType) +
+                '" data-col="left"' + opacity + '>' + escapeHtml(n.label) + '</div>';
+        }
+    }
+    html += '</div>';
+
+    // Center column (SDA3)
+    html += '<div class="tf-col tf-col-center">';
+    for (var i = 0; i < centerNodes.length; i++) {
+        var n = centerNodes[i];
+        html += '<div class="tf-node tf-node-sda" data-sda="' + escapeAttr(n.sdaType) +
+            '" data-col="center" data-idx="' + n.idx + '">' + escapeHtml(n.label) + '</div>';
+    }
+    html += '</div>';
+
+    // Right column
+    html += '<div class="tf-col tf-col-right">';
+    if (hasMonoOut) {
+        html += '<div class="tf-node tf-node-tgt tf-node-mono" data-sda="*" data-col="right" style="height:' +
+            (contentH - pad * 2 - nodeGap) + 'px;">' +
+            escapeHtml(monoOutLabel) +
+            '<span style="font-size:10px;color:var(--muted);font-style:italic;">all types</span></div>';
+    } else {
+        for (var i = 0; i < rightNodes.length; i++) {
+            var n = rightNodes[i];
+            var opacity = n.empty ? ' style="opacity:0.3;"' : '';
+            html += '<div class="tf-node tf-node-tgt" data-sda="' + escapeAttr(n.sdaType) +
+                '" data-col="right"' + opacity + '>' + escapeHtml(n.label) + '</div>';
+        }
+    }
+    html += '</div>';
+
+    html += '</div>';
+    container.innerHTML = html;
+
+    // Draw links and wire handlers after DOM paint
+    requestAnimationFrame(function() {
+        tfDrawSankeyLinks(hasMonoIn, hasMonoOut, bandW);
+        tfWireSankeyHandlers(container);
+    });
+}
+
+function tfDrawSankeyLinks(hasMonoIn, hasMonoOut, bandW) {
+    var sankey = $('tf-sankey');
+    var svg = $('tf-svg');
+    if (!sankey || !svg) return;
+
+    var sRect = sankey.getBoundingClientRect();
+    var centerNodes = sankey.querySelectorAll('.tf-col-center .tf-node');
+    var leftNodes = sankey.querySelectorAll('.tf-col-left .tf-node');
+    var rightNodes = sankey.querySelectorAll('.tf-col-right .tf-node');
+
+    // Build lookup maps by sda type
+    var leftMap = {};
+    leftNodes.forEach(function(el) { leftMap[el.dataset.sda] = el; });
+    var rightMap = {};
+    rightNodes.forEach(function(el) { rightMap[el.dataset.sda] = el; });
+
+    var paths = '';
+    var nCenter = centerNodes.length;
+
+    centerNodes.forEach(function(cEl, idx) {
+        var cR = cEl.getBoundingClientRect();
+        var cy = cR.top + cR.height / 2 - sRect.top;
+        var cLeft = cR.left - sRect.left;
+        var cRight = cR.right - sRect.left;
+        var row = _tfCurrentTrace[idx];
+        var status = row ? row.status : 'complete';
+        var cls = (status === 'complete') ? 'complete' : 'partial';
+
+        // Left → Center link
+        var lEl = hasMonoIn ? leftMap['*'] : leftMap[cEl.dataset.sda];
+        if (lEl) {
+            var lR = lEl.getBoundingClientRect();
+            var lx = lR.right - sRect.left;
+            var ly;
+            if (hasMonoIn) {
+                // Distribute vertically across the mono node
+                var monoTop = lR.top - sRect.top;
+                var monoH = lR.height;
+                ly = monoTop + (monoH * (idx + 0.5) / nCenter);
+            } else {
+                ly = lR.top + lR.height / 2 - sRect.top;
+            }
+            var mx = (lx + cLeft) / 2;
+            paths += '<path class="tf-link ' + cls + '" data-sda="' + escapeAttr(cEl.dataset.sda) + '" d="' +
+                'M' + lx + ',' + (ly - bandW) +
+                ' C' + mx + ',' + (ly - bandW) + ' ' + mx + ',' + (cy - bandW) + ' ' + cLeft + ',' + (cy - bandW) +
+                ' L' + cLeft + ',' + (cy + bandW) +
+                ' C' + mx + ',' + (cy + bandW) + ' ' + mx + ',' + (ly + bandW) + ' ' + lx + ',' + (ly + bandW) +
+                ' Z"/>';
+        }
+
+        // Center → Right link
+        var rEl = hasMonoOut ? rightMap['*'] : rightMap[cEl.dataset.sda];
+        if (rEl) {
+            var rR = rEl.getBoundingClientRect();
+            var rx = rR.left - sRect.left;
+            var ry;
+            if (hasMonoOut) {
+                var monoTop = rR.top - sRect.top;
+                var monoH = rR.height;
+                ry = monoTop + (monoH * (idx + 0.5) / nCenter);
+            } else {
+                ry = rR.top + rR.height / 2 - sRect.top;
+            }
+            var mx = (cRight + rx) / 2;
+            paths += '<path class="tf-link ' + cls + '" data-sda="' + escapeAttr(cEl.dataset.sda) + '" d="' +
+                'M' + cRight + ',' + (cy - bandW) +
+                ' C' + mx + ',' + (cy - bandW) + ' ' + mx + ',' + (ry - bandW) + ' ' + rx + ',' + (ry - bandW) +
+                ' L' + rx + ',' + (ry + bandW) +
+                ' C' + mx + ',' + (ry + bandW) + ' ' + mx + ',' + (cy + bandW) + ' ' + cRight + ',' + (cy + bandW) +
+                ' Z"/>';
+        }
+    });
+
+    svg.innerHTML = paths;
+}
+
+function tfWireSankeyHandlers(container) {
+    // Hover: highlight connected nodes and links
+    container.querySelectorAll('.tf-node').forEach(function(el) {
+        el.addEventListener('mouseenter', function() {
+            var sda = el.dataset.sda;
+            if (sda === '*') return; // monolithic nodes don't highlight individually
+            tfHighlightSda(container, sda);
         });
-    }
-
-    // Wire browse-pipeline links
-    result.querySelectorAll('[data-pipeline]').forEach(function(btn) {
-        btn.addEventListener('click', function() { tfSelectPipeline(btn.dataset.pipeline); });
+        el.addEventListener('mouseleave', function() {
+            tfClearHighlight(container);
+        });
     });
 
-    // Wire trace row click → expand field-level detail
-    result.querySelectorAll('.tf-trace-row').forEach(function(tr) {
-        tr.addEventListener('click', function() { tfToggleFieldRow(parseInt(tr.dataset.idx)); });
+    // Click on center (SDA3) node → show field detail
+    container.querySelectorAll('.tf-col-center .tf-node').forEach(function(el) {
+        el.addEventListener('click', function(e) {
+            e.stopPropagation();
+            var idx = parseInt(el.dataset.idx);
+            var row = _tfCurrentTrace[idx];
+            if (!row) return;
+            tfShowDetail(row);
+        });
     });
 }
 
-// DTL field-mapping cache: className → response JSON
-var _tfFieldCache = {};
-var _tfTraceRows = [];
-var _tfTraceSrc = '';
-var _tfTraceTgt = '';
-var _tfTraceShowSda = true;
-
-// Fetch DTL field mappings for a class (cached)
-async function tfFetchFields(className) {
-    if (_tfFieldCache[className]) return _tfFieldCache[className];
-    try {
-        var data = await get('/transforms/dtl-fields?class=' + encodeURIComponent(className));
-        _tfFieldCache[className] = data;
-        return data;
-    } catch (e) {
-        return { ok: false, error: e.message, mappings: [] };
-    }
+function tfHighlightSda(container, sdaType) {
+    // Dim everything, then highlight matched nodes + links
+    container.querySelectorAll('.tf-node').forEach(function(el) {
+        if (el.dataset.sda === sdaType || el.dataset.sda === '*') {
+            el.classList.add('highlight');
+            el.classList.remove('dim');
+        } else {
+            el.classList.add('dim');
+            el.classList.remove('highlight');
+        }
+    });
+    container.querySelectorAll('.tf-link').forEach(function(el) {
+        if (el.dataset.sda === sdaType) {
+            el.classList.add('highlight');
+            el.classList.remove('dim');
+        } else {
+            el.classList.add('dim');
+            el.classList.remove('highlight');
+        }
+    });
 }
 
-// Toggle expand/collapse of a trace row's field-level detail
-async function tfToggleFieldRow(idx) {
-    var fieldRow = $('tf-fields-' + idx);
-    if (!fieldRow) return;
+function tfClearHighlight(container) {
+    container.querySelectorAll('.tf-node, .tf-link').forEach(function(el) {
+        el.classList.remove('highlight', 'dim');
+    });
+}
 
-    // Collapse if already expanded
-    if (fieldRow.style.display !== 'none') {
-        fieldRow.style.display = 'none';
+// ── Field detail panel ───────────────────────────────────────────
+
+async function tfShowDetail(row) {
+    var detail = $('tf-detail');
+    if (!detail) return;
+
+    var srcSel = $('tf-sel-src');
+    var tgtSel = $('tf-sel-tgt');
+    var src = srcSel ? srcSel.value : '';
+    var tgt = tgtSel ? tgtSel.value : '';
+
+    // Toggle off if clicking same node
+    if (_tfActiveNode === row.sdaType) {
+        _tfActiveNode = null;
+        detail.hidden = true;
+        document.querySelectorAll('.tf-node-sda.active').forEach(function(el) { el.classList.remove('active'); });
         return;
     }
 
-    var r = _tfTraceRows[idx];
-    if (!r) return;
-    var cell = fieldRow.querySelector('.tf-field-cell');
-    if (!cell) return;
+    _tfActiveNode = row.sdaType;
 
-    cell.innerHTML = '<div style="padding:8px;color:var(--muted);">Loading field mappings...</div>';
-    fieldRow.style.display = '';
+    // Mark active node
+    document.querySelectorAll('.tf-node-sda').forEach(function(el) {
+        el.classList.toggle('active', el.dataset.sda === row.sdaType);
+    });
 
-    // Fetch DTL fields for inbound and outbound classes (non-monolithic only)
+    detail.hidden = false;
+    detail.innerHTML = '<div class="tf-detail-title">Field mappings: <span>' + escapeHtml(row.sdaType) + '</span></div>' +
+        '<div id="tf-field-area" style="color:var(--muted);font-size:12px;">Loading DTL field data...</div>';
+    detail.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+    // Fetch DTL fields for both sides
     var inData = null;
     var outData = null;
-
-    if (r.inClasses.length > 0 && !r.inMonolithic) {
-        inData = await tfFetchFields(r.inClasses[0].name);
+    if (row.inClasses.length > 0 && !row.inMonolithic) {
+        inData = await tfFetchFields(row.inClasses[0].name);
     }
-    if (r.outClasses.length > 0 && !r.outMonolithic) {
-        outData = await tfFetchFields(r.outClasses[0].name);
+    if (row.outClasses.length > 0 && !row.outMonolithic) {
+        outData = await tfFetchFields(row.outClasses[0].name);
     }
 
-    // Extract correlated field pairs from each DTL
     var inFields = inData && inData.ok ? tfExtractFieldPairs(inData) : null;
     var outFields = outData && outData.ok ? tfExtractFieldPairs(outData) : null;
 
-    // Build the joined end-to-end field trace
-    cell.innerHTML = tfRenderFieldTrace(r, inData, outData, inFields, outFields);
+    var area = $('tf-field-area');
+    if (!area) return;
+
+    if (!inFields && !outFields) {
+        var msg = 'Field-level mappings are only available for DTL-based transforms. ';
+        if (row.inMonolithic) msg += escapeHtml(src) + ' uses a programmatic/XSLT transform. ';
+        if (row.outMonolithic) msg += escapeHtml(tgt) + ' uses a programmatic/XSLT transform. ';
+        area.innerHTML = '<div style="color:var(--muted);font-size:12px;padding:8px 0;">' + msg + '</div>';
+        return;
+    }
+
+    // Render visual field mapper
+    tfRenderFieldMapper(area, inFields, outFields, src, tgt, inData, outData, row);
 }
 
-// Extract meaningful source→target field pairs from raw DTL mappings.
-// Uses a lookback heuristic: for each target.X write, scans prior
-// assigns for source.Y references to find the input field.
-function tfExtractFieldPairs(dtlData) {
-    var mappings = dtlData.mappings || [];
-    var pairs = [];
-    var srcPattern = /source\.([A-Za-z0-9_.()\[\]]+)/g;
+function tfRenderFieldMapper(container, inFields, outFields, src, tgt, inData, outData, row) {
+    // Determine which sides are available
+    var leftLabel = src + ' Field';
+    var rightLabel = tgt + ' Field';
+    var leftFields = [];
+    var rightFields = [];
+    var connections = [];
 
-    // Collect all assigns
-    var assigns = mappings.filter(function(m) { return m.type === 'assign'; });
-
-    for (var i = 0; i < assigns.length; i++) {
-        var m = assigns[i];
-        var tgt = m.target || '';
-
-        // Only care about final writes to target.X
-        if (tgt.indexOf('target.') !== 0) continue;
-        var targetField = tgt.substring(7);
-
-        // Skip bookkeeping (index, status, DTL temp vars)
-        if (targetField === '' || targetField === 'extension') continue;
-
-        // Look for source.X in this assign and up to 6 preceding assigns
-        var sourceRefs = [];
-        for (var j = Math.max(0, i - 6); j <= i; j++) {
-            var src = assigns[j].source || '';
-            var match;
-            srcPattern.lastIndex = 0;
-            while ((match = srcPattern.exec(src)) !== null) {
-                sourceRefs.push(match[1]);
-            }
-        }
-
-        // Deduplicate and join
-        var seen = {};
-        var uniqueSrcs = [];
-        for (var k = 0; k < sourceRefs.length; k++) {
-            if (!seen[sourceRefs[k]]) {
-                seen[sourceRefs[k]] = true;
-                uniqueSrcs.push(sourceRefs[k]);
-            }
-        }
-
-        pairs.push({
-            sourceField: uniqueSrcs.length > 0 ? uniqueSrcs.join(', ') : '(computed)',
-            targetField: targetField
-        });
-    }
-
-    // Also add subtransforms as delegated blocks
-    mappings.filter(function(m) { return m.type === 'subtransform'; }).forEach(function(m) {
-        pairs.push({
-            sourceField: m.sourceField || m.sourceObj || '',
-            targetField: m.targetField || m.targetObj || '',
-            isSubtransform: true,
-            className: m.class || ''
-        });
-    });
-
-    return pairs;
-}
-
-// Render the field-level trace for one SDA type row.
-// Joins inbound and outbound DTL field pairs on SDA field name
-// to show the end-to-end path: sourceField → SDA field → targetField
-function tfRenderFieldTrace(row, inData, outData, inFields, outFields) {
-    var html = '<div class="tf-field-detail">';
-
-    // Header with class names
-    html += '<div class="tf-field-header">';
-    html += '<span class="badge user">Field-Level Mappings</span> ';
-    html += '<span style="color:var(--muted);font-size:11px;">SDA type: ' + escapeHtml(row.sdaType) + '</span>';
-    if (inData && inData.ok) {
-        html += ' | <span style="color:var(--muted);font-size:11px;">In: ' + escapeHtml(inData.sourceClass) + ' &#x2192; ' + escapeHtml(inData.targetClass) + '</span>';
-    }
-    if (outData && outData.ok) {
-        html += ' | <span style="color:var(--muted);font-size:11px;">Out: ' + escapeHtml(outData.sourceClass) + ' &#x2192; ' + escapeHtml(outData.targetClass) + '</span>';
-    }
-    html += '</div>';
-
-    // If we have both sides, show joined trace
     if (inFields && outFields) {
-        html += tfRenderJoinedFields(inFields, outFields);
-    } else if (inFields && !outFields) {
-        // Only inbound available
-        if (outData && !outData.ok) {
-            html += '<div class="tf-field-note">' + escapeHtml(_tfTraceTgt) + ' side: ' + escapeHtml(outData.error || 'not a DTL class') + '</div>';
-        } else if (row.outMonolithic) {
-            html += '<div class="tf-field-note">' + escapeHtml(_tfTraceTgt) + ' side: monolithic transform (handles all types in one class)</div>';
+        // Build joined view: source fields → SDA fields → target fields
+        // inFields: sourceField = source-format field, targetField = SDA field
+        // outFields: sourceField = SDA field, targetField = target-format field
+
+        // Build SDA → outbound lookup
+        var sdaToOut = {};
+        for (var i = 0; i < outFields.length; i++) {
+            if (outFields[i].isSubtransform) continue;
+            var sKey = outFields[i].sourceField.split(',')[0].trim().split('.')[0];
+            if (!sdaToOut[sKey]) sdaToOut[sKey] = [];
+            sdaToOut[sKey].push(outFields[i].targetField);
         }
-        html += tfRenderSingleSide(inFields, _tfTraceSrc + ' Field', 'SDA3 Field');
-    } else if (!inFields && outFields) {
-        // Only outbound available
-        if (inData && !inData.ok) {
-            html += '<div class="tf-field-note">' + escapeHtml(_tfTraceSrc) + ' side: ' + escapeHtml(inData.error || 'not a DTL class') + '</div>';
-        } else if (row.inMonolithic) {
-            html += '<div class="tf-field-note">' + escapeHtml(_tfTraceSrc) + ' side: monolithic transform (handles all types in one class)</div>';
+
+        // Walk inbound, join on SDA
+        var usedSda = {};
+        for (var i = 0; i < inFields.length; i++) {
+            if (inFields[i].isSubtransform) continue;
+            var sdaField = inFields[i].targetField;
+            var sdaKey = sdaField.split('.')[0].split('(')[0];
+            if (usedSda[sdaKey]) continue;
+            usedSda[sdaKey] = true;
+
+            var srcF = inFields[i].sourceField;
+            var outs = sdaToOut[sdaKey] || [];
+            var lIdx = leftFields.length;
+            leftFields.push({ label: srcF || '(computed)', sda: sdaField });
+
+            if (outs.length > 0) {
+                for (var j = 0; j < outs.length; j++) {
+                    var rIdx = rightFields.length;
+                    rightFields.push({ label: outs[j], sda: sdaField });
+                    connections.push({ left: lIdx, right: rIdx });
+                }
+            }
         }
-        html += tfRenderSingleSide(outFields, 'SDA3 Field', _tfTraceTgt + ' Field');
-    } else {
-        // Neither side has DTL data
-        html += '<div class="tf-field-note">Field-level mappings not available. ';
-        if (row.inMonolithic) html += escapeHtml(_tfTraceSrc) + ' side is programmatic. ';
-        if (row.outMonolithic) html += escapeHtml(_tfTraceTgt) + ' side is programmatic. ';
-        html += 'DTL field extraction only works for DTL-based transforms.</div>';
+
+        // Outbound-only fields
+        for (var i = 0; i < outFields.length; i++) {
+            if (outFields[i].isSubtransform) continue;
+            var sKey = outFields[i].sourceField.split(',')[0].trim().split('.')[0];
+            if (!usedSda[sKey]) {
+                usedSda[sKey] = true;
+                var rIdx = rightFields.length;
+                rightFields.push({ label: outFields[i].targetField, sda: outFields[i].sourceField });
+            }
+        }
+    } else if (inFields) {
+        // Only inbound
+        leftLabel = src + ' Field';
+        rightLabel = 'SDA3 Field';
+        for (var i = 0; i < inFields.length; i++) {
+            if (inFields[i].isSubtransform) continue;
+            var lIdx = leftFields.length;
+            leftFields.push({ label: inFields[i].sourceField || '(computed)' });
+            var rIdx = rightFields.length;
+            rightFields.push({ label: inFields[i].targetField });
+            connections.push({ left: lIdx, right: rIdx });
+        }
+    } else if (outFields) {
+        // Only outbound
+        leftLabel = 'SDA3 Field';
+        rightLabel = tgt + ' Field';
+        for (var i = 0; i < outFields.length; i++) {
+            if (outFields[i].isSubtransform) continue;
+            var lIdx = leftFields.length;
+            leftFields.push({ label: outFields[i].sourceField });
+            var rIdx = rightFields.length;
+            rightFields.push({ label: outFields[i].targetField });
+            connections.push({ left: lIdx, right: rIdx });
+        }
     }
+
+    if (leftFields.length === 0 && rightFields.length === 0) {
+        container.innerHTML = '<div style="color:var(--muted);font-size:12px;padding:8px 0;">No field mappings could be extracted from these DTLs.</div>';
+        return;
+    }
+
+    // Class info
+    var info = '';
+    if (inData && inData.ok) info += '<span style="font-size:10px;color:var(--muted);">In: ' + escapeHtml(inData.className.split('.').slice(-2).join('.')) + '</span> ';
+    if (outData && outData.ok) info += '<span style="font-size:10px;color:var(--muted);">Out: ' + escapeHtml(outData.className.split('.').slice(-2).join('.')) + '</span>';
+    if (row.inMonolithic) info += '<span style="font-size:10px;color:var(--warn);">' + escapeHtml(src) + ': monolithic (all types)</span> ';
+    if (row.outMonolithic) info += '<span style="font-size:10px;color:var(--warn);">' + escapeHtml(tgt) + ': monolithic (all types)</span>';
+
+    // Render the mapper
+    var itemH = 20;
+    var itemGap = 3;
+    var svgW = 120;
+    var maxItems = Math.max(leftFields.length, rightFields.length, 1);
+    var mapH = maxItems * (itemH + itemGap) + 8;
+
+    var html = info ? '<div style="margin-bottom:8px;">' + info + '</div>' : '';
+    html += '<div class="tf-field-map" style="height:' + mapH + 'px;">';
+
+    // Left column
+    html += '<div class="tf-field-col" id="tf-fl">';
+    html += '<div style="font-size:10px;font-weight:600;text-transform:uppercase;color:var(--muted);letter-spacing:0.04em;margin-bottom:4px;">' + escapeHtml(leftLabel) + '</div>';
+    for (var i = 0; i < leftFields.length; i++) {
+        var matched = connections.some(function(c) { return c.left === i; });
+        html += '<div class="tf-field-item ' + (matched ? 'matched' : 'unmatched') + '" data-side="left" data-idx="' + i + '" title="' + escapeAttr(leftFields[i].label) + '">' +
+            escapeHtml(leftFields[i].label) + '</div>';
+    }
+    html += '</div>';
+
+    // SVG links column
+    html += '<svg class="tf-field-links" id="tf-fsvg" width="' + svgW + '" style="min-width:' + svgW + 'px;"></svg>';
+
+    // Right column
+    html += '<div class="tf-field-col" id="tf-fr">';
+    html += '<div style="font-size:10px;font-weight:600;text-transform:uppercase;color:var(--muted);letter-spacing:0.04em;margin-bottom:4px;">' + escapeHtml(rightLabel) + '</div>';
+    for (var i = 0; i < rightFields.length; i++) {
+        var matched = connections.some(function(c) { return c.right === i; });
+        html += '<div class="tf-field-item ' + (matched ? 'matched' : 'unmatched') + '" data-side="right" data-idx="' + i + '" title="' + escapeAttr(rightFields[i].label) + '">' +
+            escapeHtml(rightFields[i].label) + '</div>';
+    }
+    html += '</div>';
 
     html += '</div>';
-    return html;
+    container.innerHTML = html;
+
+    // Draw connecting lines after paint
+    requestAnimationFrame(function() {
+        tfDrawFieldLinks(connections);
+    });
 }
 
-// Render a joined field trace: source format → SDA3 → target format
-function tfRenderJoinedFields(inFields, outFields) {
-    // inFields: sourceField = source-format field, targetField = SDA field
-    // outFields: sourceField = SDA field, targetField = target-format field
-    // JOIN on SDA field name
+function tfDrawFieldLinks(connections) {
+    var svg = $('tf-fsvg');
+    var leftCol = $('tf-fl');
+    var rightCol = $('tf-fr');
+    if (!svg || !leftCol || !rightCol) return;
 
-    // Build SDA→outbound map (SDA field → target-format fields)
-    var sdaToOut = {};
-    for (var i = 0; i < outFields.length; i++) {
-        var of = outFields[i];
-        if (of.isSubtransform) continue;
-        var sdaKey = of.sourceField.split(',')[0].trim().split('.')[0];
-        if (!sdaToOut[sdaKey]) sdaToOut[sdaKey] = [];
-        sdaToOut[sdaKey].push(of);
+    var svgRect = svg.getBoundingClientRect();
+    var paths = '';
+
+    for (var i = 0; i < connections.length; i++) {
+        var c = connections[i];
+        var lItem = leftCol.querySelectorAll('.tf-field-item')[c.left];
+        var rItem = rightCol.querySelectorAll('.tf-field-item')[c.right];
+        if (!lItem || !rItem) continue;
+
+        var lR = lItem.getBoundingClientRect();
+        var rR = rItem.getBoundingClientRect();
+        var y1 = lR.top + lR.height / 2 - svgRect.top;
+        var y2 = rR.top + rR.height / 2 - svgRect.top;
+        var w = svgRect.width;
+        var mx = w / 2;
+
+        paths += '<path class="tf-field-link" d="M0,' + y1 + ' C' + mx + ',' + y1 + ' ' + mx + ',' + y2 + ' ' + w + ',' + y2 + '"/>';
     }
 
-    // Build trace rows by walking inbound fields
-    var traceRows = [];
-    var usedSda = {};
-
-    for (var i = 0; i < inFields.length; i++) {
-        var inf = inFields[i];
-        if (inf.isSubtransform) continue;
-        var sdaField = inf.targetField;
-        var sdaKey = sdaField.split('.')[0].split('(')[0];
-        usedSda[sdaKey] = true;
-
-        var outs = sdaToOut[sdaKey] || [];
-        if (outs.length > 0) {
-            for (var j = 0; j < outs.length; j++) {
-                traceRows.push({
-                    srcField: inf.sourceField,
-                    sdaField: sdaField,
-                    tgtField: outs[j].targetField
-                });
-            }
-        } else {
-            traceRows.push({
-                srcField: inf.sourceField,
-                sdaField: sdaField,
-                tgtField: '-'
-            });
-        }
-    }
-
-    // Add outbound-only fields (SDA fields not matched by inbound)
-    for (var i = 0; i < outFields.length; i++) {
-        var of = outFields[i];
-        if (of.isSubtransform) continue;
-        var sdaKey = of.sourceField.split(',')[0].trim().split('.')[0];
-        if (!usedSda[sdaKey]) {
-            usedSda[sdaKey] = true;
-            traceRows.push({
-                srcField: '-',
-                sdaField: of.sourceField,
-                tgtField: of.targetField
-            });
-        }
-    }
-
-    if (traceRows.length === 0) {
-        return '<div class="tf-field-note">No field-level mappings could be extracted from these DTLs.</div>';
-    }
-
-    var html = '<table class="tf-field-table"><thead><tr>' +
-        '<th>' + escapeHtml(_tfTraceSrc) + ' Field</th>' +
-        '<th>SDA3 Field</th>' +
-        '<th>' + escapeHtml(_tfTraceTgt) + ' Field</th>' +
-        '</tr></thead><tbody>';
-
-    for (var i = 0; i < traceRows.length; i++) {
-        var tr = traceRows[i];
-        html += '<tr>';
-        html += '<td><code>' + escapeHtml(tr.srcField) + '</code></td>';
-        html += '<td class="tf-trace-sda"><code>' + escapeHtml(tr.sdaField) + '</code></td>';
-        html += '<td><code>' + escapeHtml(tr.tgtField) + '</code></td>';
-        html += '</tr>';
-    }
-
-    html += '</tbody></table>';
-    return html;
+    svg.innerHTML = paths;
 }
 
-// Render a single-side field table (when only one leg is a DTL)
-function tfRenderSingleSide(fields, srcLabel, tgtLabel) {
-    var rows = fields.filter(function(f) { return !f.isSubtransform; });
-    if (rows.length === 0) return '<div class="tf-field-note">No field mappings extracted.</div>';
+// ── Trace computation (unchanged) ────────────────────────────────
 
-    var html = '<table class="tf-field-table"><thead><tr>' +
-        '<th>' + escapeHtml(srcLabel) + '</th>' +
-        '<th>' + escapeHtml(tgtLabel) + '</th>' +
-        '</tr></thead><tbody>';
-
-    for (var i = 0; i < rows.length; i++) {
-        html += '<tr>';
-        html += '<td><code>' + escapeHtml(rows[i].sourceField) + '</code></td>';
-        html += '<td><code>' + escapeHtml(rows[i].targetField) + '</code></td>';
-        html += '</tr>';
-    }
-
-    html += '</tbody></table>';
-
-    // Show subtransforms separately
-    var subs = fields.filter(function(f) { return f.isSubtransform; });
-    if (subs.length > 0) {
-        html += '<div style="margin-top:6px;font-size:11px;color:var(--muted);">Delegates to sub-transforms: ';
-        html += subs.map(function(s) { return escapeHtml(s.className.split('.').pop()); }).join(', ');
-        html += '</div>';
-    }
-
-    return html;
-}
-
-// Compute the end-to-end trace by joining inbound and outbound
-// pipelines on the SDA3 type. Each inbound class produces a
-// targetType (SDA type) and each outbound class consumes a
-// sourceType (SDA type). Monolithic pipelines (HL7, CDA, X12) have
-// no per-type classes — a single class handles all types.
 function tfComputeTrace(inbound, outbound) {
     var inMap = {};
     var outMap = {};
     var inIsTyped = false;
     var outIsTyped = false;
 
-    // Inbound: targetType = SDA type the class produces
     if (inbound) {
         var classes = inbound.classes || [];
         for (var i = 0; i < classes.length; i++) {
@@ -1444,7 +1460,6 @@ function tfComputeTrace(inbound, outbound) {
         }
     }
 
-    // Outbound: sourceType = SDA type the class consumes
     if (outbound) {
         var classes = outbound.classes || [];
         for (var j = 0; j < classes.length; j++) {
@@ -1465,11 +1480,9 @@ function tfComputeTrace(inbound, outbound) {
         }
     }
 
-    // Join on SDA type
     var rows = [];
 
     if (inIsTyped && outIsTyped) {
-        // Both typed — full outer join on SDA type
         var allTypes = {};
         var key;
         for (key in inMap) allTypes[key] = true;
@@ -1490,7 +1503,6 @@ function tfComputeTrace(inbound, outbound) {
             });
         }
     } else if (inIsTyped && !outIsTyped) {
-        // Inbound typed, outbound monolithic
         var outMono = outMap['*'] || [];
         var sorted = Object.keys(inMap).sort();
         for (var t = 0; t < sorted.length; t++) {
@@ -1506,7 +1518,6 @@ function tfComputeTrace(inbound, outbound) {
             });
         }
     } else if (!inIsTyped && outIsTyped) {
-        // Inbound monolithic, outbound typed
         var inMono = inMap['*'] || [];
         var sorted = Object.keys(outMap).sort();
         for (var t = 0; t < sorted.length; t++) {
@@ -1522,7 +1533,6 @@ function tfComputeTrace(inbound, outbound) {
             });
         }
     } else {
-        // Both monolithic
         var inMono = inMap['*'] || [];
         var outMono = outMap['*'] || [];
         rows.push({
@@ -1540,147 +1550,67 @@ function tfComputeTrace(inbound, outbound) {
     return rows;
 }
 
-// Render the trace as a scrollable table. With SDA3 shown the
-// columns are: # | Inbound Transform | SDA3 Type | Outbound Transform | Status.
-// Without SDA3 the columns collapse to: # | Source Type | Target Type | Transform Chain | Status.
-function tfRenderTraceTable(rows, showSda, src, tgt, inbound, outbound) {
-    var complete = rows.filter(function(r) { return r.status === 'complete'; }).length;
-    var inOnly = rows.filter(function(r) { return r.status === 'inbound-only'; }).length;
-    var outOnly = rows.filter(function(r) { return r.status === 'outbound-only'; }).length;
-    var total = rows.length;
+// ── DTL field utilities (unchanged) ──────────────────────────────
 
-    // Summary bar
-    var html = '<div class="tf-trace-summary">' +
-        '<span class="badge user">' + total + ' data types</span> ' +
-        '<span class="badge">' + complete + ' complete paths</span>';
-    if (inOnly > 0) html += ' <span class="badge" style="background:rgba(245,158,11,0.12);color:var(--warn);">' + inOnly + ' inbound only</span>';
-    if (outOnly > 0) html += ' <span class="badge" style="background:rgba(245,158,11,0.12);color:var(--warn);">' + outOnly + ' outbound only</span>';
-    html += '</div>';
-
-    // Path indicator
-    html += '<div class="tf-trace-path-bar">';
-    html += '<span class="tf-trace-path-node">' + escapeHtml(src) + '</span>';
-    if (inbound) {
-        html += '<span class="tf-trace-path-arrow">' + inbound.count + ' ' + escapeHtml(inbound.kind) + '</span>';
-    } else {
-        html += '<span class="tf-trace-path-arrow tf-trace-path-missing">no pipeline</span>';
+async function tfFetchFields(className) {
+    if (_tfFieldCache[className]) return _tfFieldCache[className];
+    try {
+        var data = await get('/transforms/dtl-fields?class=' + encodeURIComponent(className));
+        _tfFieldCache[className] = data;
+        return data;
+    } catch (e) {
+        return { ok: false, error: e.message, mappings: [] };
     }
-    html += '<span class="tf-trace-path-node tf-trace-path-hub">SDA3</span>';
-    if (outbound) {
-        html += '<span class="tf-trace-path-arrow">' + outbound.count + ' ' + escapeHtml(outbound.kind) + '</span>';
-    } else {
-        html += '<span class="tf-trace-path-arrow tf-trace-path-missing">no pipeline</span>';
-    }
-    html += '<span class="tf-trace-path-node">' + escapeHtml(tgt) + '</span>';
-    html += '</div>';
-
-    // Filter + browse links
-    html += '<div style="display:flex;align-items:center;gap:12px;margin:8px 0;">';
-    html += '<input id="tf-trace-filter" type="text" placeholder="Filter by SDA type, class name, or resource..." style="max-width:360px;flex:1;">';
-    if (inbound) {
-        html += '<button class="link-btn" data-pipeline="' + inbound.id + '">' +
-            'Browse ' + escapeHtml(src) + ' to SDA3</button>';
-    }
-    if (outbound) {
-        html += '<button class="link-btn" data-pipeline="' + outbound.id + '">' +
-            'Browse SDA3 to ' + escapeHtml(tgt) + '</button>';
-    }
-    html += '</div>';
-
-    // Table header
-    var hdr = '<th style="width:36px;">#</th>';
-    if (showSda) {
-        hdr += '<th>' + escapeHtml(src) + ' &#x2192; SDA3</th>';
-        hdr += '<th style="width:160px;">SDA3 Type</th>';
-        hdr += '<th>SDA3 &#x2192; ' + escapeHtml(tgt) + '</th>';
-    } else {
-        hdr += '<th>' + escapeHtml(src) + ' Type</th>';
-        hdr += '<th>' + escapeHtml(tgt) + ' Type</th>';
-        hdr += '<th>Transform Chain</th>';
-    }
-    hdr += '<th style="width:90px;">Status</th>';
-
-    // Store trace rows globally so click handlers can reference them
-    _tfTraceRows = rows;
-    _tfTraceSrc = src;
-    _tfTraceTgt = tgt;
-    _tfTraceShowSda = showSda;
-
-    // Table rows — each row is clickable to expand field-level detail
-    var colCount = showSda ? 5 : 5;
-    var tbody = '';
-    for (var i = 0; i < rows.length; i++) {
-        var r = rows[i];
-        var inNames = r.inClasses.map(function(c) { return c.shortName; }).join(', ');
-        var outNames = r.outClasses.map(function(c) { return c.shortName; }).join(', ');
-        var inFull = r.inClasses.map(function(c) { return c.name; }).join('\n');
-        var outFull = r.outClasses.map(function(c) { return c.name; }).join('\n');
-
-        // Status badge
-        var statusHtml;
-        if (r.status === 'complete') {
-            statusHtml = '<span class="tf-trace-st tf-st-ok">complete</span>';
-        } else if (r.status === 'inbound-only') {
-            statusHtml = '<span class="tf-trace-st tf-st-warn">inbound only</span>';
-        } else if (r.status === 'outbound-only') {
-            statusHtml = '<span class="tf-trace-st tf-st-warn">outbound only</span>';
-        } else {
-            statusHtml = '<span class="tf-trace-st tf-st-warn">partial</span>';
-        }
-
-        // Display class names; mark monolithic ones
-        var inDisplay = inNames || '<span class="tf-trace-none">-</span>';
-        var outDisplay = outNames || '<span class="tf-trace-none">-</span>';
-        if (r.inMonolithic && inNames) inDisplay += ' <span class="tf-trace-mono">(all types)</span>';
-        if (r.outMonolithic && outNames) outDisplay += ' <span class="tf-trace-mono">(all types)</span>';
-
-        var searchText = (r.sdaType + ' ' + inNames + ' ' + outNames + ' ' +
-            (r.sourceType || '') + ' ' + (r.targetType || '')).toLowerCase();
-
-        tbody += '<tr class="tf-trace-row" data-idx="' + i + '" data-search="' + escapeAttr(searchText) + '">';
-        tbody += '<td style="color:var(--muted);text-align:center;">' + (i + 1) + '</td>';
-
-        if (showSda) {
-            tbody += '<td title="' + escapeAttr(inFull) + '"><code>' + inDisplay + '</code></td>';
-            tbody += '<td class="tf-trace-sda">' + escapeHtml(r.sdaType) + '</td>';
-            tbody += '<td title="' + escapeAttr(outFull) + '"><code>' + outDisplay + '</code></td>';
-        } else {
-            tbody += '<td>' + escapeHtml(r.sourceType || r.sdaType) + '</td>';
-            tbody += '<td>' + escapeHtml(r.targetType || r.sdaType) + '</td>';
-            tbody += '<td title="' + escapeAttr(inFull + ' → ' + outFull) + '">' +
-                '<code>' + inDisplay + '</code>' +
-                ' <span style="color:var(--muted);font-size:11px;">&#x2192;</span> ' +
-                '<code>' + outDisplay + '</code></td>';
-        }
-        tbody += '<td>' + statusHtml + '</td>';
-        tbody += '</tr>';
-        // Expansion row (hidden until clicked)
-        tbody += '<tr class="tf-field-row" id="tf-fields-' + i + '" style="display:none;">' +
-            '<td colspan="' + colCount + '" class="tf-field-cell"></td></tr>';
-    }
-
-    if (rows.length === 0) {
-        tbody = '<tr><td colspan="' + colCount + '" style="text-align:center;color:var(--muted);padding:16px;">No transformation path found.</td></tr>';
-    }
-
-    html += '<div style="max-height:600px; overflow:auto; border:1px solid var(--border); border-radius:4px;">' +
-        '<table class="tf-table"><thead><tr>' + hdr + '</tr></thead>' +
-        '<tbody id="tf-trace-tbody">' + tbody + '</tbody></table>' +
-        '</div>';
-    html += '<div style="color:var(--muted);font-size:11px;margin-top:6px;">Click any row to expand field-level mappings from the DTL definitions.</div>';
-
-    return html;
 }
 
-// Filter the trace table rows by free-text search
-function tfFilterTrace(query) {
-    var tbody = $('tf-trace-tbody');
-    if (!tbody) return;
-    var trs = tbody.querySelectorAll('tr');
-    trs.forEach(function(tr) {
-        var text = tr.dataset.search || tr.textContent.toLowerCase();
-        tr.style.display = (!query || text.indexOf(query) !== -1) ? '' : 'none';
+function tfExtractFieldPairs(dtlData) {
+    var mappings = dtlData.mappings || [];
+    var pairs = [];
+    var srcPattern = /source\.([A-Za-z0-9_.()\[\]]+)/g;
+    var assigns = mappings.filter(function(m) { return m.type === 'assign'; });
+
+    for (var i = 0; i < assigns.length; i++) {
+        var m = assigns[i];
+        var tgt = m.target || '';
+        if (tgt.indexOf('target.') !== 0) continue;
+        var targetField = tgt.substring(7);
+        if (targetField === '' || targetField === 'extension') continue;
+
+        var sourceRefs = [];
+        for (var j = Math.max(0, i - 6); j <= i; j++) {
+            var src = assigns[j].source || '';
+            var match;
+            srcPattern.lastIndex = 0;
+            while ((match = srcPattern.exec(src)) !== null) {
+                sourceRefs.push(match[1]);
+            }
+        }
+
+        var seen = {};
+        var uniqueSrcs = [];
+        for (var k = 0; k < sourceRefs.length; k++) {
+            if (!seen[sourceRefs[k]]) {
+                seen[sourceRefs[k]] = true;
+                uniqueSrcs.push(sourceRefs[k]);
+            }
+        }
+
+        pairs.push({
+            sourceField: uniqueSrcs.length > 0 ? uniqueSrcs.join(', ') : '(computed)',
+            targetField: targetField
+        });
+    }
+
+    mappings.filter(function(m) { return m.type === 'subtransform'; }).forEach(function(m) {
+        pairs.push({
+            sourceField: m.sourceField || m.sourceObj || '',
+            targetField: m.targetField || m.targetObj || '',
+            isSubtransform: true,
+            className: m.class || ''
+        });
     });
+
+    return pairs;
 }
 
 // Phase 7 audit trail. One scrollable table of recent audit rows

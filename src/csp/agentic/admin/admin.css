@@ -556,209 +556,509 @@ button[disabled] { opacity: 0.5; cursor: not-allowed; }
 code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .empty-state { color: var(--muted); padding: 40px 20px; text-align: center; font-size: 13px; }
 
-/* ─── Transforms tab ─── hub-and-spoke diagram, pipeline detail table,
- * cross-format path mapper. Full-width layout (no detail pane). */
 
-.tf-hub { padding: 0 16px; }
+/* ─── Transforms tab — Sankey mapping visualization ─── */
 
-.tf-diagram {
-    display: grid;
-    grid-template-columns: 1fr auto 1fr;
-    gap: 20px;
-    align-items: start;
-    padding: 16px 0;
-}
-.tf-column { display: flex; flex-direction: column; gap: 6px; }
-.tf-col-label {
-    font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em;
-    color: var(--muted); font-weight: 600; margin-bottom: 8px; text-align: center;
-}
-.tf-col-hub {
-    display: flex; flex-direction: column; align-items: center;
-    gap: 6px; padding-top: 28px;
-}
-.tf-hub-box {
-    width: 90px; height: 90px; border-radius: 50%;
-    background: rgba(59, 130, 246, 0.10); border: 2px solid var(--primary);
-    display: flex; align-items: center; justify-content: center;
-    font-weight: 700; font-size: 16px; color: var(--primary);
-}
-.tf-hub-sub {
-    font-size: 11px; color: var(--muted);
-    text-transform: uppercase; letter-spacing: 0.04em;
+/* ── Container ──────────────────────────────────────── */
+
+.tf-view {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
 }
 
-/* Pipeline arrow cards — one per direction. Clicking selects for
- * detail browsing. Inbound arrows flow right-to-left (format → SDA3);
- * outbound flow left-to-right (SDA3 → format). */
-.tf-arrow {
-    display: flex; align-items: center; gap: 8px;
-    padding: 8px 12px;
-    border: 1px solid var(--border); border-radius: 4px;
-    cursor: pointer; transition: border-color 0.15s, background 0.15s;
-}
-.tf-arrow:hover { border-color: var(--primary); background: rgba(59, 130, 246, 0.05); }
-.tf-arrow.selected {
-    border-color: var(--primary); background: rgba(59, 130, 246, 0.10);
-    box-shadow: inset 3px 0 0 0 var(--primary);
-}
-.tf-format {
-    font-weight: 600; font-size: 13px; white-space: nowrap; min-width: 76px;
-}
-.tf-inbound .tf-format { text-align: right; }
-.tf-line {
-    flex: 1; display: flex; align-items: center; gap: 6px;
-}
-.tf-inbound .tf-line { justify-content: flex-end; }
-.tf-outbound .tf-line { justify-content: flex-start; }
-.tf-count { font-weight: 700; font-size: 14px; color: var(--primary); }
-.tf-kind {
-    font-size: 10px; color: var(--muted);
-    text-transform: uppercase; letter-spacing: 0.04em;
-}
-.tf-arrow-glyph {
-    flex: 0 0 auto; color: var(--muted); font-size: 12px;
+/* ── Controls bar ─────────────────────────────────────
+   Flexbox row: [Data From select] [arrow] [Data To select]
+   ──────────────────────────────────────────────────── */
+
+.tf-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  background: var(--panel-2);
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
 }
 
-/* Pipeline detail panel — shown below the diagram when a pipeline
- * is selected. Contains a filter input + scrollable class table. */
-#tf-detail {
-    margin: 0 16px 16px 16px; padding: 16px;
-    border: 1px solid var(--border); border-radius: 6px;
-    background: var(--panel);
+.tf-ctrl-select {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
-.tf-detail-head { margin-bottom: 12px; }
-.tf-detail-head .row1 { font-weight: 600; font-size: 15px; }
 
-.tf-table {
-    width: 100%; border-collapse: collapse; font-size: 12px;
+.tf-ctrl-select label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
 }
-.tf-table th {
-    text-align: left; padding: 8px 10px;
-    color: var(--muted); font-weight: 600;
-    text-transform: uppercase; letter-spacing: 0.04em; font-size: 11px;
-    border-bottom: 1px solid var(--border); background: var(--panel-2);
-    position: sticky; top: 0; z-index: 1;
+
+.tf-ctrl-select select {
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 5px 28px 5px 8px;
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%238b95a6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  min-width: 160px;
+  transition: border-color 0.15s ease;
 }
-.tf-table td {
-    padding: 6px 10px; border-bottom: 1px solid var(--border);
-    vertical-align: top; line-height: 1.4;
+
+.tf-ctrl-select select:hover {
+  border-color: var(--primary);
 }
+
+.tf-ctrl-select select:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
+
+.tf-ctrl-arrow {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding-top: 16px; /* align to select baseline */
+  color: var(--primary);
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.tf-ctrl-arrow-line {
+  width: 48px;
+  height: 1px;
+  background: linear-gradient(90deg, var(--border), var(--primary), var(--border));
+}
+
+.tf-ctrl-arrow-label {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--primary);
+  white-space: nowrap;
+}
+
+/* ── Stats bar ────────────────────────────────────────
+   Row of count badges under the controls bar.
+   ──────────────────────────────────────────────────── */
+
+.tf-stats {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+
+.tf-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--muted);
+  padding: 3px 8px;
+  border-radius: 3px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+}
+
+.tf-stat-value {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.tf-stat-sep {
+  color: var(--border);
+  font-size: 14px;
+  font-weight: 300;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+}
+
+/* ── Sankey canvas ────────────────────────────────────
+   Scrollable host for the drawing area.
+   ──────────────────────────────────────────────────── */
+
+.tf-canvas {
+  max-height: 560px;
+  overflow-y: auto;
+  overflow-x: auto;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  /* Custom scrollbar — subtle and consistent with the dark theme */
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+.tf-canvas::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.tf-canvas::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.tf-canvas::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+
+/* ── Inner drawing area ───────────────────────────────
+   Nodes are absolutely positioned children; SVG is
+   a sibling overlay that fills the same bounds.
+   Min dimensions are overridden by JS at render time.
+   ──────────────────────────────────────────────────── */
+
+.tf-sankey {
+  position: relative;
+  min-width: 720px;
+  min-height: 240px;
+  /* actual width/height set by JS */
+}
+
+/* ── Columns ──────────────────────────────────────────
+   Each column is a vertical flex stack of nodes.
+   JS sets the `top` of each node; the column itself
+   is pinned horizontally.
+   ──────────────────────────────────────────────────── */
+
+.tf-col {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 16px 0;
+  width: 200px;
+}
+
+.tf-col-left {
+  left: 16px;
+}
+
+.tf-col-center {
+  left: 50%;
+  transform: translateX(-50%);
+  width: 190px;
+}
+
+.tf-col-right {
+  right: 16px;
+}
+
+/* ── Nodes ────────────────────────────────────────────
+   Each node is a compact pill representing a format
+   or transformation class.
+   ──────────────────────────────────────────────────── */
+
+.tf-node {
+  height: 24px;
+  border-radius: 4px;
+  padding: 0 10px;
+  display: flex;
+  align-items: center;
+  font-size: 11px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  border: 1px solid transparent;
+  user-select: none;
+  transition:
+    opacity 0.18s ease,
+    background-color 0.18s ease,
+    border-color 0.18s ease;
+  flex-shrink: 0;
+}
+
+/* Source format: blue-tinted */
+.tf-node-src {
+  background: rgba(59, 130, 246, 0.08);
+  border-color: rgba(59, 130, 246, 0.25);
+  color: var(--text);
+}
+
+/* SDA3 hub: stronger blue — the central interchange node */
+.tf-node-sda {
+  background: rgba(59, 130, 246, 0.18);
+  border-color: rgba(59, 130, 246, 0.5);
+  color: #93c5fd;
+  font-weight: 600;
+}
+
+/* Target format: green/teal tinted */
+.tf-node-tgt {
+  background: rgba(34, 197, 94, 0.08);
+  border-color: rgba(34, 197, 94, 0.25);
+  color: var(--text);
+}
+
+/* Hover: brighten whichever variant is present */
+.tf-node:hover {
+  border-color: var(--primary);
+}
+
+.tf-node-tgt:hover {
+  border-color: var(--success);
+}
+
+/* Selected / active node */
+.tf-node.active {
+  box-shadow: 0 0 0 1px var(--primary);
+}
+
+.tf-node-src.active {
+  background: rgba(59, 130, 246, 0.22);
+  border-color: var(--primary);
+}
+
+.tf-node-sda.active {
+  background: rgba(59, 130, 246, 0.30);
+  border-color: #60a5fa;
+}
+
+.tf-node-tgt.active {
+  background: rgba(34, 197, 94, 0.20);
+  border-color: var(--success);
+  box-shadow: 0 0 0 1px var(--success);
+}
+
+/* Dimmed during a neighbour highlight pass */
+.tf-node.dim {
+  opacity: 0.25;
+}
+
+/* Explicitly lit during hover propagation */
+.tf-node.highlight {
+  opacity: 1;
+  border-color: var(--primary);
+}
+
+.tf-node-tgt.highlight {
+  border-color: var(--success);
+}
+
+/* Monolithic "all types" indicator node — taller, softer styling */
+.tf-node-mono {
+  height: auto;
+  min-height: 48px;
+  padding: 8px 10px;
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 11px;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: unset;
+  border-style: dashed;
+  opacity: 0.75;
+}
+
+.tf-node-mono:hover {
+  opacity: 1;
+}
+
+/* ── SVG link overlay ────────────────────────────────
+   Positioned to fill the entire .tf-sankey area.
+   pointer-events: none so hover on nodes still works.
+   ──────────────────────────────────────────────────── */
+
+.tf-links {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: visible;
+}
+
+/* Base link: filled band, no stroke */
+.tf-link {
+  fill: rgba(59, 130, 246, 0.18);
+  stroke: none;
+  transition: opacity 0.18s ease, fill 0.18s ease;
+}
+
+/* Complete mapping: both source and target have transforms */
+.tf-link.complete {
+  fill: rgba(59, 130, 246, 0.30);
+}
+
+/* Partial mapping: only one side has transforms */
+.tf-link.partial {
+  fill: rgba(245, 158, 11, 0.28);
+}
+
+/* Highlighted link during hover/active */
+.tf-link.highlight {
+  opacity: 0.85;
+}
+
+/* Dimmed link — nearly invisible */
+.tf-link.dim {
+  opacity: 0.03;
+}
+
+/* ── Detail panel ─────────────────────────────────────
+   Field-level mapping area below the Sankey canvas.
+   Hidden by default; JS removes [hidden] when a node
+   is selected.
+   ──────────────────────────────────────────────────── */
+
+.tf-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border-top: 1px solid var(--border);
+  background: var(--panel);
+}
+
+.tf-detail[hidden] {
+  display: none;
+}
+
+.tf-detail-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 0;
+}
+
+.tf-detail-title span {
+  color: var(--text);
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
+}
+
+/* ── Field-level mapper ───────────────────────────────
+   Three-column layout: source fields / connector SVG /
+   target fields. The SVG middle column is sized by JS.
+   ──────────────────────────────────────────────────── */
+
+.tf-field-map {
+  display: flex;
+  align-items: flex-start;
+  gap: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+.tf-field-map::-webkit-scrollbar {
+  height: 4px;
+}
+
+.tf-field-map::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 2px;
+}
+
+.tf-field-col {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 160px;
+  flex-shrink: 0;
+}
+
+.tf-field-col:first-child {
+  padding-right: 8px;
+}
+
+.tf-field-col:last-child {
+  padding-left: 8px;
+}
+
+/* Individual field node */
+.tf-field-item {
+  height: 20px;
+  padding: 0 8px;
+  display: flex;
+  align-items: center;
+  border-radius: 3px;
+  font-size: 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border: 1px solid transparent;
+  cursor: default;
+  transition: background-color 0.12s ease, border-color 0.12s ease;
+}
+
+/* Field has at least one mapping counterpart */
+.tf-field-item.matched {
+  background: rgba(59, 130, 246, 0.08);
+  border-color: rgba(59, 130, 246, 0.2);
+  color: var(--text);
+}
+
+.tf-field-item.matched:hover {
+  background: rgba(59, 130, 246, 0.16);
+  border-color: rgba(59, 130, 246, 0.45);
+}
+
+/* Field has no mapping counterpart */
+.tf-field-item.unmatched {
+  background: transparent;
+  border-color: var(--border);
+  color: var(--muted);
+  opacity: 0.5;
+}
+
+/* SVG layer for field-level connection lines */
+.tf-field-links {
+  flex-shrink: 0;
+  align-self: stretch;
+  pointer-events: none;
+  /* width is set by JS to match the gap between columns */
+}
+
+.tf-field-link {
+  fill: none;
+  stroke: rgba(59, 130, 246, 0.35);
+  stroke-width: 1;
+  transition: stroke-opacity 0.15s ease;
+}
+
+.tf-field-link.highlight {
+  stroke: rgba(59, 130, 246, 0.75);
+  stroke-width: 1.5;
+}
+
+.tf-field-link.dim {
+  stroke-opacity: 0.08;
+}
+
+/* ── Table fallback ───────────────────────────────────
+   Preserved for views that cannot render the Sankey
+   (very narrow viewport, accessibility mode, etc.).
+   ──────────────────────────────────────────────────── */
+
+.tf-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.tf-table th { text-align: left; padding: 8px 10px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; font-size: 11px; border-bottom: 1px solid var(--border); background: var(--panel-2); position: sticky; top: 0; z-index: 1; }
+.tf-table td { padding: 6px 10px; border-bottom: 1px solid var(--border); vertical-align: top; line-height: 1.4; }
 .tf-table tbody tr:hover td { background: var(--panel-2); }
-.tf-table .tf-sub td { color: var(--muted); }
-.tf-table .tf-desc {
-    max-width: 420px; overflow: hidden;
-    text-overflow: ellipsis; white-space: nowrap;
-}
-.tf-table code {
-    font-size: 11px; background: transparent; color: var(--text);
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-}
-
-/* Cross-format path mapper — pick source and target formats,
- * see the two-leg path through SDA3 with toggle. */
-.tf-cf-path {
-    display: flex; align-items: center; gap: 0;
-    padding: 16px; background: var(--code);
-    border: 1px solid var(--border); border-radius: 4px;
-    flex-wrap: wrap;
-}
-.tf-cf-node {
-    padding: 10px 18px;
-    border: 2px solid var(--border); border-radius: 6px;
-    font-weight: 600; font-size: 14px; white-space: nowrap;
-    background: var(--panel);
-}
-.tf-cf-node.tf-cf-hub {
-    border-color: var(--primary);
-    background: rgba(59, 130, 246, 0.08); color: var(--primary);
-}
-.tf-cf-step {
-    display: flex; flex-direction: column; align-items: center;
-    gap: 2px; padding: 0 12px;
-}
-.tf-cf-step .tf-cf-line {
-    width: 36px; height: 2px; background: var(--border); position: relative;
-}
-.tf-cf-step .tf-cf-line::after {
-    content: ''; position: absolute; right: -2px; top: -4px;
-    border: 5px solid transparent; border-left-color: var(--border);
-}
-.tf-cf-step .badge { font-size: 10px; white-space: nowrap; }
-.tf-cf-links { margin-top: 10px; display: flex; flex-direction: column; gap: 4px; }
-
-/* Trace table — end-to-end transformation path through SDA3 */
-.tf-trace-summary { margin-bottom: 6px; }
-.tf-trace-path-bar {
-    display: flex; align-items: center; gap: 0;
-    padding: 10px 14px; margin-bottom: 4px;
-    background: var(--code); border: 1px solid var(--border); border-radius: 4px;
-}
-.tf-trace-path-node {
-    padding: 6px 14px; border: 2px solid var(--border); border-radius: 5px;
-    font-weight: 600; font-size: 13px; white-space: nowrap; background: var(--panel);
-}
-.tf-trace-path-hub {
-    border-color: var(--primary); background: rgba(59,130,246,0.08); color: var(--primary);
-}
-.tf-trace-path-arrow {
-    padding: 0 12px; font-size: 11px; color: var(--muted); white-space: nowrap;
-    position: relative;
-}
-.tf-trace-path-arrow::before {
-    content: ''; display: block; width: 100%; height: 2px;
-    background: var(--border); position: absolute; top: 50%; left: 0;
-    transform: translateY(-50%); z-index: 0;
-}
-.tf-trace-path-arrow::after {
-    content: '\25B6'; position: absolute; right: 2px; top: 50%;
-    transform: translateY(-50%); font-size: 8px; color: var(--border); z-index: 1;
-}
-.tf-trace-path-missing { color: var(--danger); }
-.tf-trace-sda { font-weight: 600; color: var(--primary); }
-.tf-trace-st {
-    display: inline-block; padding: 2px 8px; border-radius: 3px;
-    font-size: 10px; font-weight: 600;
-    text-transform: uppercase; letter-spacing: 0.04em;
-}
-.tf-st-ok { background: rgba(34,197,94,0.12); color: var(--success); }
-.tf-st-warn { background: rgba(245,158,11,0.12); color: var(--warn); }
-.tf-trace-mono {
-    font-size: 10px; color: var(--muted); font-style: italic; font-family: inherit;
-}
-.tf-trace-none { color: var(--muted); }
-
-/* Clickable trace rows */
-.tf-trace-row { cursor: pointer; }
-.tf-trace-row:hover td { background: var(--panel-2) !important; }
-
-/* Field-level expansion inside trace table */
-.tf-field-cell { padding: 0 !important; border-bottom: 2px solid var(--primary) !important; }
-.tf-field-detail {
-    padding: 12px 16px; background: var(--code);
-    border-top: 1px solid var(--border);
-}
-.tf-field-header { margin-bottom: 8px; }
-.tf-field-note {
-    color: var(--muted); font-size: 12px; font-style: italic;
-    padding: 6px 0;
-}
-.tf-field-table {
-    width: 100%; border-collapse: collapse; font-size: 11px;
-    margin-top: 6px;
-}
-.tf-field-table th {
-    text-align: left; padding: 5px 8px;
-    color: var(--muted); font-weight: 600;
-    text-transform: uppercase; letter-spacing: 0.04em; font-size: 10px;
-    border-bottom: 1px solid var(--border); background: var(--panel);
-}
-.tf-field-table td {
-    padding: 3px 8px; border-bottom: 1px solid rgba(42,49,60,0.5);
-    vertical-align: top; line-height: 1.4;
-}
-.tf-field-table tbody tr:hover td { background: rgba(59,130,246,0.04); }
-.tf-field-table code {
-    font-size: 11px; background: transparent; color: var(--text);
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-}
+.tf-table code { font-size: 11px; background: transparent; color: var(--text); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
