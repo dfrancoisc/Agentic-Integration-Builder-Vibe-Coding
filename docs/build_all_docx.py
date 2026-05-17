@@ -139,11 +139,12 @@ def build_doc1():
     # Table of contents placeholder
     doc.add_heading("Table of Contents", level=1)
     doc.add_paragraph("1. Introduction")
-    doc.add_paragraph("2. Developer Experience")
-    doc.add_paragraph("3. Builder Experience - Admin UI")
-    doc.add_paragraph("4. Builder Experience - Chatbot")
-    doc.add_paragraph("5. End-to-End Scenario")
-    doc.add_paragraph("6. Non-Functional Requirements")
+    doc.add_paragraph("2. Core Use Cases")
+    doc.add_paragraph("3. Developer Experience")
+    doc.add_paragraph("4. Builder Experience - Admin UI")
+    doc.add_paragraph("5. Builder Experience - Chatbot")
+    doc.add_paragraph("6. End-to-End Scenario")
+    doc.add_paragraph("7. Non-Functional Requirements")
     doc.add_page_break()
 
     # 1. Introduction
@@ -169,15 +170,203 @@ def build_doc1():
              "Restricted to /api/agentic/ endpoints, no direct SQL or class compilation"],
         ])
 
-    # 2. Developer Experience
+    # 2. Core Use Cases
     doc.add_page_break()
-    doc.add_heading("2. Developer Experience", level=1)
+    doc.add_heading("2. Core Use Cases", level=1)
+    doc.add_paragraph(
+        "The Agentic Health Interoperability Copilot addresses three primary use cases that cover "
+        "the full lifecycle of healthcare integration work inside IRIS for Health. Each use case "
+        "represents a category of tasks that integration engineers perform daily and that the agent "
+        "can accelerate through natural-language conversation.")
+    add_figure(doc, img("15_chatbot.png"),
+        "Chat interface showing starter prompts organized by use case category: Build, Transform, Operate, and Review")
+
+    # UC-1: Build Productions
+    doc.add_heading("2.1 Use Case 1: Build Productions", level=2)
+    doc.add_paragraph(
+        "The most common task for an integration engineer is building new Productions -- the "
+        "runtime message-processing pipelines in IRIS for Health. A Production consists of Business "
+        "Services (inbound), Business Processes (routing/orchestration), and Business Operations "
+        "(outbound), wired together with settings, routing rules, and message transformations.")
+    doc.add_paragraph(
+        "The agent assists the Builder through the entire production lifecycle:")
+    doc.add_paragraph(
+        "Discovery: The Builder describes their integration goal in plain English (e.g., 'build a "
+        "production that receives ADT messages over MLLP, transforms them to FHIR R4, and sends "
+        "them to a REST endpoint'). The agent searches the Ens.* vector catalog to find the right "
+        "Business Host classes (EnsLib.HL7.Service.TCPService, EnsLib.FHIR.Operation.REST, etc.).",
+        style="List Bullet")
+    doc.add_paragraph(
+        "Proposal: The agent presents a production layout -- which hosts to add, what settings to "
+        "configure, which adapters to use -- and asks the Builder to approve before making changes.",
+        style="List Bullet")
+    doc.add_paragraph(
+        "Build: Upon approval, the agent creates the production class, adds each Business Host "
+        "with appropriate settings, creates routing rules, and compiles everything. Each mutating "
+        "step goes through the confirmation gate.",
+        style="List Bullet")
+    doc.add_paragraph(
+        "Validation: The agent runs PostBuildValidation to check for configuration errors, sends "
+        "a test HL7 message through the pipeline, and verifies that messages flow end-to-end "
+        "without errors.",
+        style="List Bullet")
+    doc.add_paragraph("")
+    doc.add_paragraph("Tools involved:", style="List Bullet")
+    doc.add_paragraph("search_ens -- find the right Business Host classes from the vector catalog", style="List Bullet 2")
+    doc.add_paragraph("describe_class -- inspect class details, parameters, and settings", style="List Bullet 2")
+    doc.add_paragraph("create_production -- create the production class definition", style="List Bullet 2")
+    doc.add_paragraph("add_business_host -- add Business Services, Processes, and Operations", style="List Bullet 2")
+    doc.add_paragraph("update_business_host_settings -- configure adapter settings, file paths, connection parameters", style="List Bullet 2")
+    doc.add_paragraph("create_routing_rule -- create routing rules with conditions and actions", style="List Bullet 2")
+    doc.add_paragraph("start_production / stop_production -- lifecycle management", style="List Bullet 2")
+    doc.add_paragraph("PostBuildValidation -- automated post-build health check", style="List Bullet 2")
+    doc.add_paragraph("BuildAndSendHL7TestMessage -- generate and send test messages through the pipeline", style="List Bullet 2")
+    doc.add_paragraph("")
+    doc.add_paragraph("Example prompts:")
+    doc.add_paragraph(
+        '"Build a complete production that receives HL7 v2.5 ADT^A01 admission messages over an '
+        'inbound folder, transforms each ADT into an ORU^R01 observation report, routes the '
+        'transformed messages to an outbound folder, and sends failures to a dead-letter folder."',
+        style="List Bullet")
+    doc.add_paragraph(
+        '"I need a production that receives X12 270 eligibility inquiries over SFTP, calls our '
+        'internal eligibility REST API, constructs the X12 271 response, and writes it back to '
+        'the payer\'s SFTP outbound folder."',
+        style="List Bullet")
+
+    # UC-2: Review and Improve Productions
+    doc.add_heading("2.2 Use Case 2: Review and Improve Existing Productions", level=2)
+    doc.add_paragraph(
+        "Integration engineers inherit productions built by others, or maintain productions that "
+        "were built months or years ago. They need to understand what a production does, identify "
+        "problems, and find opportunities to modernize it using newer IRIS features and best practices.")
+    doc.add_paragraph(
+        "The agent helps the Builder review and optimize existing integrations:")
+    doc.add_paragraph(
+        "Error Triage: The agent queries the Event Log and Message Header tables to find recent "
+        "errors, groups them by Business Host, identifies the most frequent error messages, and "
+        "recommends remediation steps. It can spot suspended or errored messages that need manual "
+        "intervention.",
+        style="List Bullet")
+    doc.add_paragraph(
+        "Production Health Assessment: The agent inspects the production configuration, checks "
+        "queue depths, reviews throughput statistics, and identifies bottlenecks. It can recommend "
+        "settings changes (pool size, throttle, retry intervals) based on what it observes.",
+        style="List Bullet")
+    doc.add_paragraph(
+        "DTL Review: The agent reviews Data Transformation Language (DTL) definitions and identifies "
+        "hardcoded values that should be lookup tables, missing null checks on source fields, "
+        "incorrect handling of repeating fields, and segments being dropped. It suggests refactored "
+        "versions with explanations.",
+        style="List Bullet")
+    doc.add_paragraph(
+        "Modernization Advice: The agent knows about newer IRIS features (via Skills) and can "
+        "recommend upgrades -- for example, replacing a custom BPL with a built-in DTL, using "
+        "record maps instead of custom parsers, or adopting the HL7-to-SDA-to-FHIR pipeline "
+        "instead of point-to-point transformations.",
+        style="List Bullet")
+    doc.add_paragraph("")
+    doc.add_paragraph("Tools involved:", style="List Bullet")
+    doc.add_paragraph("get_production -- inspect the full production configuration and all hosts", style="List Bullet 2")
+    doc.add_paragraph("query_event_log -- search the Event Log for errors, warnings, and trace messages", style="List Bullet 2")
+    doc.add_paragraph("top_errors -- group errors by frequency and identify systemic issues", style="List Bullet 2")
+    doc.add_paragraph("query_message_status -- find messages in Error or Suspended state", style="List Bullet 2")
+    doc.add_paragraph("message_summary -- throughput statistics across all hosts", style="List Bullet 2")
+    doc.add_paragraph("queue_status -- check for queue buildup indicating backpressure", style="List Bullet 2")
+    doc.add_paragraph("describe_class -- look up what a Business Host class does and its available settings", style="List Bullet 2")
+    doc.add_paragraph("list_dtls / get_dtl -- review existing transformation logic", style="List Bullet 2")
+    doc.add_paragraph("Skills: Productions, DTL, BPL, Adapters, ESBPattern -- domain knowledge for recommendations", style="List Bullet 2")
+    doc.add_paragraph("")
+    doc.add_paragraph("Example prompts:")
+    doc.add_paragraph(
+        '"Review the last 2 hours of errors across all productions. Group them by Business Host, '
+        'show the top 5 most frequent error messages with counts, identify messages stuck in '
+        'Suspended or Error state, and recommend remediation steps."',
+        style="List Bullet")
+    doc.add_paragraph(
+        '"Review our current ADT_A08_to_SDA3 DTL for: hardcoded values that should be lookup '
+        'tables, missing null checks on source fields, incorrect handling of repeating PID-3 '
+        'identifiers, and segments we are dropping that we should not."',
+        style="List Bullet")
+
+    # UC-3: Create/Provide Insights on Transformations
+    doc.add_heading("2.3 Use Case 3: Create and Optimize Transformations", level=2)
+    doc.add_paragraph(
+        "Data Transformations are the heart of healthcare interoperability. Integration engineers "
+        "spend most of their time writing, debugging, and optimizing DTL (Data Transformation "
+        "Language) and BPL (Business Process Language) definitions that convert messages between "
+        "formats -- HL7 v2 to SDA3, SDA3 to FHIR R4, CDA to SDA3, and more.")
+    doc.add_paragraph(
+        "The agent assists the Builder with transformation work at every stage:")
+    doc.add_paragraph(
+        "Pipeline Discovery: The agent traces the full transformation pipeline for any format "
+        "pair (e.g., HL7 v2 to FHIR R4) showing which IRIS classes handle each step, what "
+        "intermediate formats are used, and where the data flows. The Data Atlas (Transforms tab) "
+        "provides this information visually at the field level.",
+        style="List Bullet")
+    doc.add_paragraph(
+        "DTL Creation: The agent creates new DTL definitions by first searching the HS.* catalog "
+        "for existing transformations that handle the same or similar format pair, then scaffolding "
+        "a new DTL with the correct source/target classes and document types. It can populate field "
+        "mappings based on the Data Atlas mappings.",
+        style="List Bullet")
+    doc.add_paragraph(
+        "Schema Introspection: The agent can introspect HL7 v2 message schemas (segments, fields, "
+        "components) and FHIR R4 resource structures so the Builder understands what data is "
+        "available at each point in the pipeline. It knows about composite types (XAD for addresses, "
+        "XPN for names, CX for identifiers) and can show sub-field level detail.",
+        style="List Bullet")
+    doc.add_paragraph(
+        "Dry-Run Testing: The agent can execute a DTL against a sample message (DryRunDTL) to "
+        "verify the transformation produces the expected output without deploying to a production. "
+        "It can compare before/after messages field by field.",
+        style="List Bullet")
+    doc.add_paragraph(
+        "Cross-Format Mapping Insights: Through the Data Atlas, the agent (and the Builder via "
+        "the admin UI) can see exactly which HL7 fields map through SDA3 to FHIR, which fields "
+        "are inbound-only (arrive but don't continue), and which are outbound-only (produced in "
+        "the target but not sourced from the input). This enables gap analysis before writing "
+        "any code.",
+        style="List Bullet")
+    doc.add_paragraph("")
+    doc.add_paragraph("Tools involved:", style="List Bullet")
+    doc.add_paragraph("list_dtls -- discover existing transformations in the namespace", style="List Bullet 2")
+    doc.add_paragraph("create_dtl -- scaffold a new DTL with source/target classes", style="List Bullet 2")
+    doc.add_paragraph("update_dtl / compile_dtl -- modify and compile transformation logic", style="List Bullet 2")
+    doc.add_paragraph("dry_run_dtl -- test a transformation against sample data", style="List Bullet 2")
+    doc.add_paragraph("list_sda_fhir_dtls -- find built-in SDA3-to-FHIR transformations", style="List Bullet 2")
+    doc.add_paragraph("describe_transformation_pipeline -- trace the full format conversion path", style="List Bullet 2")
+    doc.add_paragraph("get_hl7_schema_map / get_hl7_segment_fields -- introspect HL7 v2 message structures", style="List Bullet 2")
+    doc.add_paragraph("search_hs -- semantic search for transformation classes in the HS.* catalog", style="List Bullet 2")
+    doc.add_paragraph("compare_messages -- field-level diff between two messages", style="List Bullet 2")
+    doc.add_paragraph("Skills: DTL, HL7v2, FHIRR4, SDA, CDA, X12 -- deep domain knowledge for each format", style="List Bullet 2")
+    doc.add_paragraph("")
+    doc.add_paragraph("Example prompts:")
+    doc.add_paragraph(
+        '"Create an interface that accepts any HL7 v2 message (ADT, ORU, ORM, MDM, SIU) on a '
+        'single inbound MLLP service, transforms it to the appropriate FHIR R4 resources using '
+        'the built-in HL7-to-SDA-to-FHIR pipeline, and POSTs the resulting Bundle to our FHIR '
+        'Server."',
+        style="List Bullet")
+    doc.add_paragraph(
+        '"Build a production that ingests C-CDA documents via a REST endpoint, validates them '
+        'against the C-CDA R2.1 schema, transforms them to FHIR R4 Composition + DocumentReference '
+        '+ Patient/Encounter/Condition resources using SDA3 as the intermediate model, and persists '
+        'the Bundle to our FHIR repository."',
+        style="List Bullet")
+
+    add_figure(doc, img("13_transforms_hl7_fhir.png"),
+        "Data Atlas: the Transforms tab showing field-level HL7 v2 to FHIR R4 mappings through SDA3, with coverage filters and IRIS class names -- a key reference tool for Use Cases 2 and 3")
+
+    # 3. Developer Experience
+    doc.add_page_break()
+    doc.add_heading("3. Developer Experience", level=1)
     doc.add_paragraph(
         "Developers work exclusively through VS Code with the InterSystems ObjectScript extension. "
         "They write classes (Agent, MCP, ToolSet, Tool, Skill), compile them, and deploy via IPM. "
         "The admin UI is not their primary interface -- their deliverable is code that the Builder configures.")
 
-    doc.add_heading("2.1 Security Requirements", level=2)
+    doc.add_heading("3.1 Security Requirements", level=2)
     add_table(doc,
         ["Requirement", "Implementation"],
         [
@@ -189,7 +378,7 @@ def build_doc1():
             ["IPM packaging", "zpm load on a clean instance produces a working system. Shipped classes survive upgrades; user customizations survive in override tables"],
         ])
 
-    doc.add_heading("2.2 User Stories", level=2)
+    doc.add_heading("3.2 User Stories", level=2)
 
     stories_dev = [
         ("US-D01: Create a New Tool",
@@ -247,7 +436,7 @@ def build_doc1():
 
     # 3. Builder Experience -- Admin UI
     doc.add_page_break()
-    doc.add_heading("3. Builder Experience - Admin UI", level=1)
+    doc.add_heading("4. Builder Experience - Admin UI", level=1)
     doc.add_paragraph(
         "Builders work through the IRIS Management Portal. They configure agents, manage LLM connections, "
         "review transformation mappings, tune skills, and operate the chatbot. No code editing required.")
@@ -255,7 +444,7 @@ def build_doc1():
         "The admin UI is a vanilla JavaScript SPA served at /agentic/admin/. It communicates with "
         "/api/agentic/ REST endpoints using JWT or Basic authentication.")
 
-    doc.add_heading("3.1 Security Requirements", level=2)
+    doc.add_heading("4.1 Security Requirements", level=2)
     add_table(doc,
         ["Requirement", "Implementation"],
         [
@@ -267,7 +456,7 @@ def build_doc1():
         ])
 
     # US-B01 Connections
-    doc.add_heading("3.2 US-B01: Configure an LLM Connection", level=2)
+    doc.add_heading("4.2 US-B01: Configure an LLM Connection", level=2)
     doc.add_paragraph(
         "As a Builder, I want to create an LLM connection (provider, model, region, API key) and "
         "test it, so that the agent can communicate with the LLM provider.")
@@ -279,7 +468,7 @@ def build_doc1():
         "Connection detail editor showing provider, model, region, API key (masked), and Test Connection button with green TESTED OK status")
 
     # US-B02 Agent
-    doc.add_heading("3.3 US-B02: Configure the Agent", level=2)
+    doc.add_heading("4.3 US-B02: Configure the Agent", level=2)
     doc.add_paragraph(
         "As a Builder, I want to customize the agent's system prompt, temperature, max iterations, "
         "bound MCPs, and skills, so that the agent behaves according to our integration requirements.")
@@ -287,7 +476,7 @@ def build_doc1():
         "Agent editor showing the HealthInterop agent configuration: class name, temperature slider, max iterations, tool binding mode, system prompt with persona and formatting rules")
 
     # US-B03 MCPs
-    doc.add_heading("3.4 US-B03: Configure MCP Servers", level=2)
+    doc.add_heading("4.4 US-B03: Configure MCP Servers", level=2)
     doc.add_paragraph(
         "As a Builder, I want to enable/disable MCP servers and customize their descriptions, "
         "so that I can control which capability domains the agent has access to.")
@@ -295,7 +484,7 @@ def build_doc1():
         "MCPs tab showing the four MCP servers: catalog, production, testing, and transform, each with their class name, description, and toolset count")
 
     # US-B04 ToolSets & Tools
-    doc.add_heading("3.5 US-B04: Configure ToolSets and Tools", level=2)
+    doc.add_heading("4.5 US-B04: Configure ToolSets and Tools", level=2)
     doc.add_paragraph(
         "As a Builder, I want to view and customize ToolSets and their individual tools, "
         "so that I can tune tool descriptions, toggle tools on/off, and dry-run tools.")
@@ -308,7 +497,7 @@ def build_doc1():
         "Tool detail editor for DescribeClass showing the contract-style description, method signature, JSON input schema, implementation kind, timeout, and confirmation requirement")
 
     # US-B05 Skills
-    doc.add_heading("3.6 US-B05: Configure Skills", level=2)
+    doc.add_heading("4.6 US-B05: Configure Skills", level=2)
     doc.add_paragraph(
         "As a Builder, I want to view and edit the INSTRUCTIONS content for each skill, "
         "so that I can refine the agent's domain knowledge without Developer involvement.")
@@ -318,7 +507,7 @@ def build_doc1():
         "Skill editor for Adapters showing the class name, description field, bound ToolSets, and expandable class source viewer")
 
     # US-B06 Transforms (Data Atlas)
-    doc.add_heading("3.7 US-B06: Review Transformation Mappings (Data Atlas)", level=2)
+    doc.add_heading("4.7 US-B06: Review Transformation Mappings (Data Atlas)", level=2)
     doc.add_paragraph(
         "As a Builder, I want to explore field-level mappings between HL7 v2, SDA3, and FHIR R4 "
         "formats, so that I can understand how data flows through the transformation pipeline and "
@@ -334,7 +523,7 @@ def build_doc1():
         "Data Atlas: HL7 v2 to FHIR R4 via SDA3.Address, showing sub-field level mappings (PID.11.3 City, PID.11.6 Country), coverage filter chips (End-to-end, Inbound only, Outbound only), and IRIS class names inline (HS.Gateway.HL7.HL7ToSDA3, HS.FHIR.DTL.SDA3.vR4.Address.Address)")
 
     # US-B07 Catalogs
-    doc.add_heading("3.8 US-B07: Browse Vector Catalogs", level=2)
+    doc.add_heading("4.8 US-B07: Browse Vector Catalogs", level=2)
     doc.add_paragraph(
         "As a Builder, I want to search the Ens.* and HS.* vector catalogs to find Business Hosts, "
         "adapters, and transformation classes.")
@@ -342,7 +531,7 @@ def build_doc1():
         "Catalogs tab showing search_ens (164 rows indexed) and search_hs (58 rows indexed) catalogs with kind breakdowns, rebuild buttons, test search panel, and browse panel")
 
     # US-B08 Audit
-    doc.add_heading("3.9 US-B08: View Audit Log", level=2)
+    doc.add_heading("4.9 US-B08: View Audit Log", level=2)
     doc.add_paragraph(
         "As a Builder, I want to view the audit trail of all API requests, so that I can track "
         "who did what, when, and how long it took.")
@@ -351,9 +540,9 @@ def build_doc1():
 
     # 4. Builder Experience -- Chatbot
     doc.add_page_break()
-    doc.add_heading("4. Builder Experience - Chatbot", level=1)
+    doc.add_heading("5. Builder Experience - Chatbot", level=1)
 
-    doc.add_heading("4.1 US-B09: Chat with the Agent", level=2)
+    doc.add_heading("5.1 US-B09: Chat with the Agent", level=2)
     doc.add_paragraph(
         "As a Builder, I want to type a natural-language request (e.g., 'build me a production that "
         "ingests ADT messages and routes them to two downstream systems'), so that the agent searches "
@@ -370,7 +559,7 @@ def build_doc1():
 
     # 5. End-to-End Scenario
     doc.add_page_break()
-    doc.add_heading("5. End-to-End Scenario", level=1)
+    doc.add_heading("6. End-to-End Scenario", level=1)
     doc.add_paragraph("This scenario demonstrates the full system working end-to-end:")
     steps = [
         "Developer writes a new Tool class that creates HL7 routing rules, compiles it, and deploys via zpm load",
@@ -389,7 +578,7 @@ def build_doc1():
         doc.add_paragraph(f"{i}. {step}")
 
     # 6. Non-Functional Requirements
-    doc.add_heading("6. Non-Functional Requirements", level=1)
+    doc.add_heading("7. Non-Functional Requirements", level=1)
     add_table(doc,
         ["Requirement", "Target"],
         [

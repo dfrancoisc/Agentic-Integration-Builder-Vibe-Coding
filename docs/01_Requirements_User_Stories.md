@@ -20,7 +20,69 @@ This document defines the end-to-end requirements and user stories for the Agent
 
 ---
 
-## 2. Developer Experience
+## 2. Core Use Cases
+
+The Agentic Health Interoperability Copilot addresses three primary use cases that cover the full lifecycle of healthcare integration work inside IRIS for Health. Each use case represents a category of tasks that integration engineers perform daily and that the agent can accelerate through natural-language conversation.
+
+### 2.1 Use Case 1: Build Productions
+
+The most common task for an integration engineer is building new Productions -- the runtime message-processing pipelines in IRIS for Health. A Production consists of Business Services (inbound), Business Processes (routing/orchestration), and Business Operations (outbound), wired together with settings, routing rules, and message transformations.
+
+The agent assists the Builder through the entire production lifecycle:
+
+- **Discovery**: The Builder describes their integration goal in plain English (e.g., "build a production that receives ADT messages over MLLP, transforms them to FHIR R4, and sends them to a REST endpoint"). The agent searches the Ens.* vector catalog to find the right Business Host classes (EnsLib.HL7.Service.TCPService, EnsLib.FHIR.Operation.REST, etc.).
+- **Proposal**: The agent presents a production layout -- which hosts to add, what settings to configure, which adapters to use -- and asks the Builder to approve before making changes.
+- **Build**: Upon approval, the agent creates the production class, adds each Business Host with appropriate settings, creates routing rules, and compiles everything. Each mutating step goes through the confirmation gate.
+- **Validation**: The agent runs PostBuildValidation to check for configuration errors, sends a test HL7 message through the pipeline, and verifies that messages flow end-to-end without errors.
+
+**Tools involved**: search_ens, describe_class, create_production, add_business_host, update_business_host_settings, create_routing_rule, start_production, stop_production, PostBuildValidation, BuildAndSendHL7TestMessage
+
+**Example prompts**:
+- "Build a complete production that receives HL7 v2.5 ADT^A01 admission messages over an inbound folder, transforms each ADT into an ORU^R01 observation report, routes the transformed messages to an outbound folder, and sends failures to a dead-letter folder."
+- "I need a production that receives X12 270 eligibility inquiries over SFTP, calls our internal eligibility REST API, constructs the X12 271 response, and writes it back to the payer's SFTP outbound folder."
+
+### 2.2 Use Case 2: Review and Improve Existing Productions
+
+Integration engineers inherit productions built by others, or maintain productions that were built months or years ago. They need to understand what a production does, identify problems, and find opportunities to modernize it using newer IRIS features and best practices.
+
+The agent helps the Builder review and optimize existing integrations:
+
+- **Error Triage**: The agent queries the Event Log and Message Header tables to find recent errors, groups them by Business Host, identifies the most frequent error messages, and recommends remediation steps. It can spot suspended or errored messages that need manual intervention.
+- **Production Health Assessment**: The agent inspects the production configuration, checks queue depths, reviews throughput statistics, and identifies bottlenecks. It can recommend settings changes (pool size, throttle, retry intervals) based on what it observes.
+- **DTL Review**: The agent reviews Data Transformation Language (DTL) definitions and identifies hardcoded values that should be lookup tables, missing null checks on source fields, incorrect handling of repeating fields, and segments being dropped. It suggests refactored versions with explanations.
+- **Modernization Advice**: The agent knows about newer IRIS features (via Skills) and can recommend upgrades -- for example, replacing a custom BPL with a built-in DTL, using record maps instead of custom parsers, or adopting the HL7-to-SDA-to-FHIR pipeline instead of point-to-point transformations.
+
+**Tools involved**: get_production, query_event_log, top_errors, query_message_status, message_summary, queue_status, describe_class, list_dtls, get_dtl
+
+**Skills involved**: Productions, DTL, BPL, Adapters, ESBPattern
+
+**Example prompts**:
+- "Review the last 2 hours of errors across all productions. Group them by Business Host, show the top 5 most frequent error messages with counts, identify messages stuck in Suspended or Error state, and recommend remediation steps."
+- "Review our current ADT_A08_to_SDA3 DTL for: hardcoded values that should be lookup tables, missing null checks on source fields, incorrect handling of repeating PID-3 identifiers, and segments we are dropping that we should not."
+
+### 2.3 Use Case 3: Create and Optimize Transformations
+
+Data Transformations are the heart of healthcare interoperability. Integration engineers spend most of their time writing, debugging, and optimizing DTL (Data Transformation Language) and BPL (Business Process Language) definitions that convert messages between formats -- HL7 v2 to SDA3, SDA3 to FHIR R4, CDA to SDA3, and more.
+
+The agent assists the Builder with transformation work at every stage:
+
+- **Pipeline Discovery**: The agent traces the full transformation pipeline for any format pair (e.g., HL7 v2 to FHIR R4) showing which IRIS classes handle each step, what intermediate formats are used, and where the data flows. The Data Atlas (Transforms tab) provides this information visually at the field level.
+- **DTL Creation**: The agent creates new DTL definitions by first searching the HS.* catalog for existing transformations that handle the same or similar format pair, then scaffolding a new DTL with the correct source/target classes and document types. It can populate field mappings based on the Data Atlas mappings.
+- **Schema Introspection**: The agent can introspect HL7 v2 message schemas (segments, fields, components) and FHIR R4 resource structures so the Builder understands what data is available at each point in the pipeline. It knows about composite types (XAD for addresses, XPN for names, CX for identifiers) and can show sub-field level detail.
+- **Dry-Run Testing**: The agent can execute a DTL against a sample message (DryRunDTL) to verify the transformation produces the expected output without deploying to a production. It can compare before/after messages field by field.
+- **Cross-Format Mapping Insights**: Through the Data Atlas, the agent (and the Builder via the admin UI) can see exactly which HL7 fields map through SDA3 to FHIR, which fields are inbound-only (arrive but don't continue), and which are outbound-only (produced in the target but not sourced from the input). This enables gap analysis before writing any code.
+
+**Tools involved**: list_dtls, create_dtl, update_dtl, compile_dtl, dry_run_dtl, list_sda_fhir_dtls, describe_transformation_pipeline, get_hl7_schema_map, get_hl7_segment_fields, search_hs, compare_messages
+
+**Skills involved**: DTL, HL7v2, FHIRR4, SDA, CDA, X12
+
+**Example prompts**:
+- "Create an interface that accepts any HL7 v2 message (ADT, ORU, ORM, MDM, SIU) on a single inbound MLLP service, transforms it to the appropriate FHIR R4 resources using the built-in HL7-to-SDA-to-FHIR pipeline, and POSTs the resulting Bundle to our FHIR Server."
+- "Build a production that ingests C-CDA documents via a REST endpoint, validates them against the C-CDA R2.1 schema, transforms them to FHIR R4 Composition + DocumentReference + Patient/Encounter/Condition resources using SDA3 as the intermediate model, and persists the Bundle to our FHIR repository."
+
+---
+
+## 3. Developer Experience
 
 ### 2.1 Overview
 
@@ -124,15 +186,15 @@ Developers work exclusively through VS Code with the InterSystems ObjectScript e
 
 ---
 
-## 3. Builder Experience
+## 4. Builder Experience
 
-### 3.1 Overview
+### 4.1 Overview
 
 Builders work through the IRIS Management Portal. They configure agents, manage LLM connections, review transformation mappings, tune skills, and operate the chatbot. No code editing required.
 
 The admin UI is a vanilla JavaScript SPA served at `/agentic/admin/`. It communicates with `/api/agentic/` REST endpoints using JWT or Basic authentication.
 
-### 3.2 Security Requirements
+### 4.2 Security Requirements
 
 | Requirement | Implementation |
 |---|---|
@@ -142,7 +204,7 @@ The admin UI is a vanilla JavaScript SPA served at `/agentic/admin/`. It communi
 | Secret handling | API keys entered in masked input, stored in IRIS Secured Wallet. Never displayed back, never logged |
 | Session isolation | `UseSession=0` on all REST classes. No CSRF cookies. Bearer token per request |
 
-### 3.3 User Stories -- Admin UI
+### 4.3 User Stories -- Admin UI
 
 #### US-B01: Configure an LLM Connection
 
@@ -264,7 +326,7 @@ Screenshot reference: Catalogs tab showing catalog status and search
 
 Screenshot reference: Audit tab showing request log
 
-### 3.4 User Stories -- Chatbot
+### 4.4 User Stories -- Chatbot
 
 #### US-B09: Chat with the Agent
 
@@ -295,7 +357,7 @@ Screenshot reference: Chat interface showing streaming response with tool-call c
 
 ---
 
-## 4. End-to-End Scenario
+## 5. End-to-End Scenario
 
 This scenario demonstrates the full system working end-to-end:
 
@@ -313,7 +375,7 @@ This scenario demonstrates the full system working end-to-end:
 
 ---
 
-## 5. Non-Functional Requirements
+## 6. Non-Functional Requirements
 
 | Requirement | Target |
 |---|---|
