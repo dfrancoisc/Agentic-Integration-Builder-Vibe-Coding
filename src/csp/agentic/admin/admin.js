@@ -891,6 +891,10 @@ function renderTransformsTab() {
                 '<label>Data To</label>' +
                 '<select id="tf-sel-tgt">' + opts + '</select>' +
             '</div>' +
+            '<div class="tf-ctrl-actions">' +
+                '<button class="btn btn-sm" id="tf-rebuild-btn" title="Rebuild the pre-computed field mapping table from current IRIS classes">Rebuild Mappings</button>' +
+                '<span class="tf-rebuild-status" id="tf-rebuild-status"></span>' +
+            '</div>' +
         '</div>' +
         '<div class="tf-body" id="tf-body">' +
             '<div class="tf-empty-prompt">Select a source and target format above to explore field-level transformation mappings.</div>' +
@@ -902,6 +906,14 @@ function renderTransformsTab() {
     var tgtSel = $('tf-sel-tgt');
     if (srcSel) srcSel.addEventListener('change', tfUpdateView);
     if (tgtSel) tgtSel.addEventListener('change', tfUpdateView);
+
+    // Wire rebuild button
+    var rebuildBtn = $('tf-rebuild-btn');
+    if (rebuildBtn) {
+        rebuildBtn.addEventListener('click', tfDoRebuild);
+    }
+    // Load field-trace status
+    tfLoadRebuildStatus();
 }
 
 function tfUpdateView() {
@@ -1038,6 +1050,20 @@ function tfSelectType(idx, src, tgt) {
 }
 
 async function tfLoadFieldTrace(row, src, tgt) {
+    var area = $('tf-field-area');
+    if (!area) return;
+
+    // ── Try pre-computed table first (instant, no parsing) ──
+    var tableRows = await tfQueryTable(src, tgt, row.sdaType);
+    if (tableRows && tableRows.length > 0) {
+        if (_tfActiveNode !== row.sdaType) return;
+        var model = tfTableToModel(tableRows);
+        var tableInfo = { fromTable: true, source: src, target: tgt, sdaType: row.sdaType, count: tableRows.length };
+        tfRenderThreeColumns(area, model, src, tgt, tableInfo, tableInfo, row);
+        return;
+    }
+
+    // ── Fallback: live parsing (slower but works without rebuild) ──
     var inData = null;
     var outData = null;
     var fetches = [];
@@ -1072,17 +1098,31 @@ async function tfLoadFieldTrace(row, src, tgt) {
         outMappings = outData.hl7 ? outData.mappings : tfExtractCleanMappings(outData);
     }
 
-    var area = $('tf-field-area');
-    if (!area) return;
-
     if (!inMappings && !outMappings) {
-        var msg = 'No field-level mappings available for this data type.';
+        var msg = 'No field-level mappings available for this data type. Click "Rebuild Mappings" to populate the mapping table.';
         area.innerHTML = '<div class="tf-field-loading">' + msg + '</div>';
         return;
     }
 
     var model = tfBuildFieldModel(inMappings, outMappings);
     tfRenderThreeColumns(area, model, src, tgt, inData, outData, row);
+}
+
+// Convert table rows (from persistent FieldMapping) into the same model
+// format that tfBuildFieldModel returns for the three-column renderer.
+function tfTableToModel(tableRows) {
+    var rows = [];
+    for (var i = 0; i < tableRows.length; i++) {
+        var r = tableRows[i];
+        rows.push({
+            sdaKey: r.sdaNormalized || r.sdaField,
+            sdaField: r.sdaField || r.sdaNormalized,
+            srcField: r.sourceField || null,
+            tgtField: r.targetField || null,
+            status: r.status || 'complete'
+        });
+    }
+    return rows;
 }
 
 // ── Field detail panel — three-column field-level trace ──────────
@@ -1218,29 +1258,34 @@ function tfRenderThreeColumns(container, model, src, tgt, inData, outData, row) 
         return;
     }
 
-    // Class info line — HL7 data has segment/sourceClass, DTL has className
+    // Class info line — table data, HL7, or DTL
     var info = '';
-    if (inData && inData.ok) {
-        if (inData.hl7) {
-            info += '<span class="tf-dtl-ref tf-dtl-in">' + escapeHtml(src) + ': ' +
-                escapeHtml(inData.segment) + ' (programmatic)</span>';
-        } else if (inData.className) {
-            info += '<span class="tf-dtl-ref tf-dtl-in">' + escapeHtml(src) + ': ' +
-                escapeHtml(inData.className.split('.').slice(-2).join('.')) + '</span>';
+    if (inData && inData.fromTable) {
+        // Data loaded from pre-computed table
+        info += '<span class="tf-dtl-ref tf-dtl-table">Pre-computed mapping table (' + inData.count + ' fields)</span>';
+    } else {
+        if (inData && inData.ok) {
+            if (inData.hl7) {
+                info += '<span class="tf-dtl-ref tf-dtl-in">' + escapeHtml(src) + ': ' +
+                    escapeHtml(inData.segment) + ' (programmatic)</span>';
+            } else if (inData.className) {
+                info += '<span class="tf-dtl-ref tf-dtl-in">' + escapeHtml(src) + ': ' +
+                    escapeHtml(inData.className.split('.').slice(-2).join('.')) + '</span>';
+            }
+        } else if (row.inMonolithic) {
+            info += '<span class="tf-dtl-ref tf-dtl-mono">' + escapeHtml(src) + ': programmatic (all types)</span>';
         }
-    } else if (row.inMonolithic) {
-        info += '<span class="tf-dtl-ref tf-dtl-mono">' + escapeHtml(src) + ': programmatic (all types)</span>';
-    }
-    if (outData && outData.ok) {
-        if (outData.hl7) {
-            info += '<span class="tf-dtl-ref tf-dtl-out">' + escapeHtml(tgt) + ': ' +
-                escapeHtml(outData.segment) + ' (programmatic)</span>';
-        } else if (outData.className) {
-            info += '<span class="tf-dtl-ref tf-dtl-out">' + escapeHtml(tgt) + ': ' +
-                escapeHtml(outData.className.split('.').slice(-2).join('.')) + '</span>';
+        if (outData && outData.ok) {
+            if (outData.hl7) {
+                info += '<span class="tf-dtl-ref tf-dtl-out">' + escapeHtml(tgt) + ': ' +
+                    escapeHtml(outData.segment) + ' (programmatic)</span>';
+            } else if (outData.className) {
+                info += '<span class="tf-dtl-ref tf-dtl-out">' + escapeHtml(tgt) + ': ' +
+                    escapeHtml(outData.className.split('.').slice(-2).join('.')) + '</span>';
+            }
+        } else if (row.outMonolithic) {
+            info += '<span class="tf-dtl-ref tf-dtl-mono">' + escapeHtml(tgt) + ': programmatic (all types)</span>';
         }
-    } else if (row.outMonolithic) {
-        info += '<span class="tf-dtl-ref tf-dtl-mono">' + escapeHtml(tgt) + ': programmatic (all types)</span>';
     }
 
     var counts = { complete: 0, inOnly: 0, outOnly: 0 };
@@ -1411,6 +1456,88 @@ function tf3cClearHighlight() {
     wrap.querySelectorAll('.tf-3c-link').forEach(function(el) {
         el.classList.remove('tf-3c-link-hl', 'tf-3c-link-dim');
     });
+}
+
+// ── Field trace table (pre-computed) ────────────────────────────
+// Query the persistent FieldMapping table. Falls back to live DTL/HL7
+// parsing if the table is empty for the given format pair.
+
+let _tfTableAvailable = null; // null=unknown, true/false after status check
+
+async function tfLoadRebuildStatus() {
+    var el = $('tf-rebuild-status');
+    try {
+        var data = await get('/transforms/field-trace/status');
+        if (data && data.ok) {
+            _tfTableAvailable = data.totalRows > 0;
+            if (el) {
+                if (data.totalRows > 0) {
+                    var ts = data.lastRebuiltAt ? data.lastRebuiltAt.substring(0, 16).replace('T', ' ') : '';
+                    el.textContent = data.totalRows + ' rows' + (ts ? ' (rebuilt ' + ts + ')' : '');
+                    el.className = 'tf-rebuild-status tf-rebuild-ok';
+                } else {
+                    el.textContent = 'No data — click Rebuild';
+                    el.className = 'tf-rebuild-status tf-rebuild-empty';
+                }
+            }
+        }
+    } catch (e) {
+        _tfTableAvailable = false;
+        if (el) {
+            el.textContent = 'Status unavailable';
+            el.className = 'tf-rebuild-status tf-rebuild-empty';
+        }
+    }
+}
+
+async function tfDoRebuild() {
+    var btn = $('tf-rebuild-btn');
+    var el = $('tf-rebuild-status');
+    if (btn) { btn.disabled = true; btn.textContent = 'Rebuilding...'; }
+    if (el) { el.textContent = 'Processing...'; el.className = 'tf-rebuild-status'; }
+    try {
+        var data = await post('/transforms/field-trace/rebuild', {});
+        if (data && data.ok) {
+            _tfTableAvailable = true;
+            if (el) {
+                el.textContent = data.totalRows + ' rows in ' + data.elapsedSeconds + 's';
+                el.className = 'tf-rebuild-status tf-rebuild-ok';
+            }
+            // Refresh current view if a type is selected
+            if (_tfActiveNode) {
+                var srcSel = $('tf-sel-src');
+                var tgtSel = $('tf-sel-tgt');
+                if (srcSel && tgtSel && srcSel.value && tgtSel.value) {
+                    var trace = _tfCurrentTrace;
+                    var row = trace.find(function(r) { return r.sdaType === _tfActiveNode; });
+                    if (row) tfLoadFieldTrace(row, srcSel.value, tgtSel.value);
+                }
+            }
+        } else {
+            if (el) { el.textContent = 'Error: ' + (data.error || 'unknown'); el.className = 'tf-rebuild-status tf-rebuild-empty'; }
+        }
+    } catch (e) {
+        if (el) { el.textContent = 'Failed: ' + e.message; el.className = 'tf-rebuild-status tf-rebuild-empty'; }
+    }
+    if (btn) { btn.disabled = false; btn.textContent = 'Rebuild Mappings'; }
+}
+
+// Query table for a specific SDA type — returns model-ready array or null.
+// When _tfTableAvailable is null (status unknown), try the query anyway
+// since the status fetch may not have completed yet.
+async function tfQueryTable(src, tgt, sdaType) {
+    if (_tfTableAvailable === false) return null;
+    try {
+        var url = '/transforms/field-trace?source=' + encodeURIComponent(src) +
+            '&target=' + encodeURIComponent(tgt) +
+            '&sdaType=' + encodeURIComponent(sdaType);
+        var data = await get(url);
+        if (data && data.ok && data.count > 0) {
+            _tfTableAvailable = true;
+            return data.mappings;
+        }
+    } catch (e) { /* fall through to live parsing */ }
+    return null;
 }
 
 // ── Trace computation (unchanged) ────────────────────────────────

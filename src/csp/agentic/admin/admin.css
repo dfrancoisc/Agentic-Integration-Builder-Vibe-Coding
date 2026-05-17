@@ -650,6 +650,47 @@ code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
   white-space: nowrap;
 }
 
+.tf-ctrl-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+}
+.tf-ctrl-actions .btn-sm {
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.tf-ctrl-actions .btn-sm:hover {
+  background: var(--primary);
+  border-color: var(--primary);
+}
+.tf-ctrl-actions .btn-sm:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+.tf-rebuild-status {
+  font-size: 11px;
+  color: var(--muted);
+}
+.tf-rebuild-status.tf-rebuild-ok {
+  color: var(--success);
+}
+.tf-rebuild-status.tf-rebuild-empty {
+  color: var(--warn);
+}
+
+.tf-dtl-ref.tf-dtl-table {
+  background: rgba(34, 197, 94, 0.1);
+  border-color: rgba(34, 197, 94, 0.3);
+  color: var(--success);
+}
+
 /* ── Split body: sidebar + main ──────────────────────
    The primary layout after format selection.
    ──────────────────────────────────────────────────── */

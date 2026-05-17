@@ -104,6 +104,9 @@ XData UrlMap [ XMLNamespace = "http://www.intersystems.com/urlmap" ]
     <Route Url="/transforms/inventory"          Method="GET"    Call="TransformInventory" />
     <Route Url="/transforms/dtl-fields"         Method="GET"    Call="DTLFields" />
     <Route Url="/transforms/hl7-fields"         Method="GET"    Call="HL7Fields" />
+    <Route Url="/transforms/field-trace/rebuild" Method="POST"  Call="FieldTraceRebuild" />
+    <Route Url="/transforms/field-trace/status"  Method="GET"   Call="FieldTraceStatus" />
+    <Route Url="/transforms/field-trace"         Method="GET"   Call="FieldTraceQuery" />
 
     <!-- Cleanup: stop stuck productions and delete test artifacts. -->
     <Route Url="/cleanup/productions"           Method="POST"   Call="CleanupProductions" />
@@ -574,6 +577,21 @@ ClassMethod DTLFields() As %Status
 ClassMethod HL7Fields() As %Status
 {
     Quit ##class(AgenticInterop.Editor.TransformService).HL7Fields(%response)
+}
+
+ClassMethod FieldTraceRebuild() As %Status
+{
+    Quit ##class(AgenticInterop.Editor.TransformService).RebuildFieldMappings(%response)
+}
+
+ClassMethod FieldTraceStatus() As %Status
+{
+    Quit ##class(AgenticInterop.Editor.TransformService).FieldTraceStatus(%response)
+}
+
+ClassMethod FieldTraceQuery() As %Status
+{
+    Quit ##class(AgenticInterop.Editor.TransformService).QueryFieldTrace(%response)
 }
 
 ClassMethod CleanupProductions() As %Status

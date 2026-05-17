@@ -355,8 +355,9 @@ ClassMethod HL7SegForSDA(pType As %String) As %String [ Private ]
 ///   #; PID-7 : DateTimeofBirth
 ///   do ..write(cr_"<BirthTime>"_value_"</BirthTime>")
 ///
-/// For each field comment, we find the FIRST XML opening tag in the
-/// subsequent write() calls. That tag name is the SDA3 property.
+/// For each field comment, we extract ALL XML opening tags in the
+/// subsequent write() calls (until the next field comment). This
+/// captures sub-properties (City, State, Zip under PID-11) for joins.
 ClassMethod ParseHL7Seg(pSeg As %String, pArr As %DynamicArray) [ Private ]
 {
     Set methodId = "HS.Gateway.HL7.HL7ToSDA3||" _ pSeg
@@ -372,7 +373,7 @@ ClassMethod ParseHL7Seg(pSeg As %String, pArr As %DynamicArray) [ Private ]
     Set lineCount = $L(code, $C(10))
     Set curField = ""
     Set curDesc = ""
-    Set foundSda = 0
+    Kill seen
 
     For i = 1:1:lineCount {
         Set line = $P(code, $C(10), i)
@@ -395,7 +396,6 @@ ClassMethod ParseHL7Seg(pSeg As %String, pArr As %DynamicArray) [ Private ]
                         If desc '= "" && (desc '[ "see ") && (desc '[ "done in") {
                             Set curField = pos
                             Set curDesc = desc
-                            Set foundSda = 0
                         }
                     }
                 }
@@ -403,33 +403,38 @@ ClassMethod ParseHL7Seg(pSeg As %String, pArr As %DynamicArray) [ Private ]
         }
 
         ; ── Look for XML write in current field section ──
-        If curField '= "" && 'foundSda && (trim [ "write(") {
+        ; Extract ALL leaf XML elements (not just first) so sub-properties
+        ; like City, State, Street under PID-11 are all captured for joins.
+        If curField '= "" && (trim [ "write(") {
             ; Find pattern: "<TagName>" in the write call
             Set searchStr = """<"
             Set wPos = $F(trim, searchStr)
             While wPos > 0 {
                 ; wPos points after "<", extract tag name up to ">"
                 Set closeGt = $F(trim, ">", wPos)
-                If closeGt > 0 {
-                    Set tagName = $E(trim, wPos, closeGt - 2)
-                    ; Must start with uppercase A-Z (not closing tag "/")
-                    Set ch = $A(tagName)
-                    If (ch >= 65) && (ch <= 90) {
-                        ; Skip common structural sub-elements that are not
-                        ; meaningful SDA property names for joining
-                        Set skip = 0
-                        If tagName = "Code" Set skip = 1
-                        If tagName = "Description" Set skip = 1
-                        If tagName = "SDACodingStandard" Set skip = 1
-                        If tagName = "Text" Set skip = 1
-                        If tagName = "Type" Set skip = 1
-                        If tagName = "SourceFormat" Set skip = 1
-                        If 'skip {
+                If closeGt = 0 Quit
+                Set tagName = $E(trim, wPos, closeGt - 2)
+                ; Must start with uppercase A-Z (not closing tag "/")
+                Set ch = $A(tagName)
+                If (ch >= 65) && (ch <= 90) {
+                    ; Skip common structural sub-elements that are not
+                    ; meaningful SDA property names for joining
+                    Set skip = 0
+                    If tagName = "Code" Set skip = 1
+                    If tagName = "Description" Set skip = 1
+                    If tagName = "SDACodingStandard" Set skip = 1
+                    If tagName = "Text" Set skip = 1
+                    If tagName = "Type" Set skip = 1
+                    If tagName = "SourceFormat" Set skip = 1
+                    If 'skip {
+                        ; Deduplicate: don't push same field+tag twice
+                        Set dupKey = curField _ "|" _ tagName
+                        If '$data(seen(dupKey)) {
+                            Set seen(dupKey) = 1
                             Set m = {}
                             Set m.sourceField = curField _ " " _ curDesc
                             Set m.targetField = tagName
                             Do pArr.%Push(m)
-                            Set foundSda = 1
                         }
                     }
                 }
@@ -438,6 +443,394 @@ ClassMethod ParseHL7Seg(pSeg As %String, pArr As %DynamicArray) [ Private ]
             }
         }
     }
+}
+
+/// Rebuild the entire FieldMapping table. Parses HL7 programmatic code
+/// and FHIR R4 DTL classes, joins them on normalized SDA key, and
+/// persists rows for instant UI retrieval.
+///
+///   POST /api/agentic/transforms/field-trace/rebuild
+ClassMethod RebuildFieldMappings(pResponse As %CSP.Response) As %Status
+{
+    Set util = "AgenticInterop.Editor.Util"
+    Set out = {}
+    Set out.ok = 1
+    Set startTime = $zhorolog
+
+    ; Purge existing rows
+    Set sc = ##class(AgenticInterop.Data.FieldMapping).PurgeAll()
+    If $system.Status.IsError(sc) {
+        Set out.ok = 0
+        Set out.error = $system.Status.GetOneErrorText(sc)
+        Quit $classmethod(util, "WriteJSON", pResponse, out)
+    }
+
+    Set totalRows = 0
+
+    ; ── HL7 v2 → SDA3 → FHIR R4 pipeline ──
+    ; Get the list of SDA types we can map from HL7
+    Set hl7SdaTypes = $LB("Patient","Encounter","Allergy","Diagnosis","SupportContact","HealthFund","Procedure","Guarantor","Problem","Document","Observation","Vaccination","Appointment","Address","PatientNumber","Name","ContactInfo","Medication","LabOrder","RadOrder")
+
+    For ti = 1:1:$LL(hl7SdaTypes) {
+        Set sdaType = $LI(hl7SdaTypes, ti)
+
+        ; --- Inbound: HL7 → SDA3 ---
+        Set inArr = []
+        Set segment = ..HL7SegForSDA(sdaType)
+        If segment '= "" {
+            For si = 1:1:$L(segment, ",") {
+                Set seg = $ZSTRIP($P(segment, ",", si), "<>W")
+                If seg '= "" { Do ..ParseHL7Seg(seg, inArr) }
+            }
+        }
+
+        ; Build inbound lookup: normalized SDA key → row data
+        Kill inBySda
+        Set iter = inArr.%GetIterator()
+        While iter.%GetNext(.idx, .m) {
+            Set sdaRaw = m.%Get("targetField")
+            Set normKey = $ZCVT(sdaRaw, "L")
+            If '$data(inBySda(normKey)) {
+                Set inBySda(normKey) = $LB(m.%Get("sourceField"), sdaRaw, segment)
+            }
+        }
+
+        ; --- Outbound: SDA3 → FHIR R4 ---
+        ; Find the DTL class for this SDA type
+        Set outDtlClass = ""
+        Set dtlPattern = "HS.FHIR.DTL.SDA3.vR4." _ sdaType _ ".%"
+        Set sql = "SELECT Name FROM %Dictionary.ClassDefinition WHERE Name LIKE ? AND Name NOT LIKE '%SubTransform%' AND Name NOT LIKE '%TransformUtil%' ORDER BY Name"
+        Set rs = ##class(%SQL.Statement).%ExecDirect(, sql, dtlPattern)
+        If rs.%Next() {
+            Set outDtlClass = rs.%Get("Name")
+        }
+
+        ; Parse DTL fields — backward-walk algorithm
+        ; SDA3→FHIR DTLs use intermediate vars (value, tmp) between
+        ; source.X reads and target.Y writes. For each target.* assign,
+        ; walk backwards up to 8 assigns to find the nearest source.X ref.
+        Kill outBySda
+        If outDtlClass '= "" {
+            Set xdataId = outDtlClass _ "||DTL"
+            Set xdata = ##class(%Dictionary.XDataDefinition).%OpenId(xdataId)
+            If $IsObject(xdata) {
+                Set stream = xdata.Data
+                Do stream.Rewind()
+                Set sc2 = ##class(%XML.TextReader).ParseStream(stream, .reader)
+                If $system.Status.IsOK(sc2) {
+                    ; First pass: collect all assigns in order
+                    Kill dtlAssigns Set dtlIdx = 0
+                    While reader.Read() {
+                        If reader.NodeType '= "element" Continue
+                        If reader.LocalName = "assign" {
+                            Set srcVal = "", tgtVal = ""
+                            For ai = 1:1:reader.AttributeCount {
+                                Do reader.MoveToAttributeIndex(ai)
+                                If reader.LocalName = "value" Set srcVal = reader.Value
+                                If reader.LocalName = "property" Set tgtVal = reader.Value
+                            }
+                            Do reader.MoveToElement()
+                            Set dtlIdx = dtlIdx + 1
+                            Set dtlAssigns(dtlIdx, "src") = srcVal
+                            Set dtlAssigns(dtlIdx, "tgt") = tgtVal
+                        }
+                    }
+                    ; Second pass: for each target.* assign, walk back for source.*
+                    For i = 1:1:dtlIdx {
+                        Set tgtVal = dtlAssigns(i, "tgt")
+                        If $E(tgtVal, 1, 7) '= "target." Continue
+                        Set tgtField = $E(tgtVal, 8, *)
+                        If tgtField = "" Continue
+                        ; Skip extension/meta/index/coding internals
+                        If tgtField [ "extension" Continue
+                        If tgtField [ "meta." Continue
+                        If tgtField = "index" Continue
+                        If tgtField [ ".system" Continue
+                        If tgtField [ ".coding." Continue
+                        ; Walk backwards to find nearest source.X reference
+                        Set sdaRef = ""
+                        Set startJ = i
+                        If startJ > 8 Set startJ = i - 8
+                        Else  Set startJ = 1
+                        For j = i:-1:startJ {
+                            Set jSrc = dtlAssigns(j, "src")
+                            ; Look for source.PropertyName in the expression
+                            Set srcPos = $F(jSrc, "source.")
+                            If srcPos > 0 {
+                                ; Extract property name (letters + digits only)
+                                Set propEnd = srcPos
+                                For {
+                                    Set ch = $A(jSrc, propEnd)
+                                    If ch = -1 Quit
+                                    If (ch >= 65) && (ch <= 90) { Set propEnd = propEnd + 1 Continue }
+                                    If (ch >= 97) && (ch <= 122) { Set propEnd = propEnd + 1 Continue }
+                                    If (ch >= 48) && (ch <= 57) { Set propEnd = propEnd + 1 Continue }
+                                    Quit
+                                }
+                                Set sdaRef = $E(jSrc, srcPos, propEnd - 1)
+                                If sdaRef '= "" Quit
+                            }
+                        }
+                        If sdaRef = "" Continue
+                        ; Normalize the SDA property name
+                        Set normKey = $ZCVT(sdaRef, "L")
+                        If '$data(outBySda(normKey)) {
+                            Set outBySda(normKey) = $LB(sdaRef, tgtField, outDtlClass)
+                        }
+                    }
+                }
+            }
+        }
+
+        ; --- Join on normalized SDA key and persist ---
+        ; Collect all normalized keys from both sides
+        Kill allKeys
+        Set k = "" For { Set k = $ORDER(inBySda(k)) Quit:k=""  Set allKeys(k) = "" }
+        Set k = "" For { Set k = $ORDER(outBySda(k)) Quit:k=""  Set allKeys(k) = "" }
+
+        Set k = "" For {
+            Set k = $ORDER(allKeys(k))
+            Quit:k=""
+
+            Set hasIn = $data(inBySda(k))
+            Set hasOut = $data(outBySda(k))
+            Set status = $select(hasIn&&hasOut:"complete", hasIn:"in-only", 1:"out-only")
+
+            Set obj = ##class(AgenticInterop.Data.FieldMapping).%New()
+            Set obj.SourceFormat = "HL7 v2"
+            Set obj.TargetFormat = "FHIR R4"
+            Set obj.SdaType = sdaType
+            Set obj.SdaNormalized = k
+            Set obj.Status = status
+
+            If hasIn {
+                Set obj.SourceField = $LI(inBySda(k), 1)
+                Set obj.SdaField = $LI(inBySda(k), 2)
+                Set obj.SourceSegment = $LI(inBySda(k), 3)
+                Set obj.SourceClass = "HS.Gateway.HL7.HL7ToSDA3"
+            }
+            If hasOut {
+                If 'hasIn { Set obj.SdaField = $LI(outBySda(k), 1) }
+                Set obj.TargetField = $LI(outBySda(k), 2)
+                Set obj.TargetClass = $LI(outBySda(k), 3)
+            }
+
+            Set sc = obj.%Save()
+            If $system.Status.IsOK(sc) { Set totalRows = totalRows + 1 }
+        }
+    }
+
+    ; ── FHIR R4 → SDA3 → HL7 v2 (reverse direction) ──
+    ; Parse FHIR-to-SDA DTLs as inbound, HL7 as outbound
+    For ti = 1:1:$LL(hl7SdaTypes) {
+        Set sdaType = $LI(hl7SdaTypes, ti)
+
+        ; Inbound: FHIR R4 → SDA3
+        ; Pattern: HS.FHIR.DTL.vR4.SDA3.<FhirResource>.<SdaType>
+        Set inDtlClass = ""
+        Set dtlPattern = "HS.FHIR.DTL.vR4.SDA3.%." _ sdaType
+        Set sql = "SELECT Name FROM %Dictionary.ClassDefinition WHERE Name LIKE ? AND Name NOT LIKE '%SubTransform%' AND Name NOT LIKE '%TransformUtil%' ORDER BY Name"
+        Set rs = ##class(%SQL.Statement).%ExecDirect(, sql, dtlPattern)
+        If rs.%Next() {
+            Set inDtlClass = rs.%Get("Name")
+        }
+
+        Kill fhirBySda
+        If inDtlClass '= "" {
+            Set xdataId = inDtlClass _ "||DTL"
+            Set xdata = ##class(%Dictionary.XDataDefinition).%OpenId(xdataId)
+            If $IsObject(xdata) {
+                Set stream = xdata.Data
+                Do stream.Rewind()
+                Set sc2 = ##class(%XML.TextReader).ParseStream(stream, .reader)
+                If $system.Status.IsOK(sc2) {
+                    ; Collect all assigns
+                    Kill dtlAssigns Set dtlIdx = 0
+                    While reader.Read() {
+                        If reader.NodeType '= "element" Continue
+                        If reader.LocalName = "assign" {
+                            Set srcVal = "", tgtVal = ""
+                            For ai = 1:1:reader.AttributeCount {
+                                Do reader.MoveToAttributeIndex(ai)
+                                If reader.LocalName = "value" Set srcVal = reader.Value
+                                If reader.LocalName = "property" Set tgtVal = reader.Value
+                            }
+                            Do reader.MoveToElement()
+                            Set dtlIdx = dtlIdx + 1
+                            Set dtlAssigns(dtlIdx, "src") = srcVal
+                            Set dtlAssigns(dtlIdx, "tgt") = tgtVal
+                        }
+                    }
+                    ; For FHIR→SDA3: target.* is SDA side; walk back for source.*
+                    For i = 1:1:dtlIdx {
+                        Set tgtVal = dtlAssigns(i, "tgt")
+                        If $E(tgtVal, 1, 7) '= "target." Continue
+                        Set tgtField = $E(tgtVal, 8, *)
+                        If tgtField = "" Continue
+                        ; Walk backwards to find nearest source.X reference
+                        Set srcRef = ""
+                        Set startJ = i
+                        If startJ > 8 Set startJ = i - 8
+                        Else  Set startJ = 1
+                        For j = i:-1:startJ {
+                            Set jSrc = dtlAssigns(j, "src")
+                            Set srcPos = $F(jSrc, "source.")
+                            If srcPos > 0 {
+                                Set propEnd = srcPos
+                                For {
+                                    Set ch = $A(jSrc, propEnd)
+                                    If ch = -1 Quit
+                                    If (ch >= 65) && (ch <= 90) { Set propEnd = propEnd + 1 Continue }
+                                    If (ch >= 97) && (ch <= 122) { Set propEnd = propEnd + 1 Continue }
+                                    If (ch >= 48) && (ch <= 57) { Set propEnd = propEnd + 1 Continue }
+                                    Quit
+                                }
+                                Set srcRef = $E(jSrc, srcPos, propEnd - 1)
+                                If srcRef '= "" Quit
+                            }
+                        }
+                        If srcRef = "" Continue
+                        ; Normalize on SDA target (the target.* field IS the SDA property)
+                        Set normKey = $P($P(tgtField, ".", 1), "(", 1)
+                        Set normKey = $ZCVT(normKey, "L")
+                        If '$data(fhirBySda(normKey)) {
+                            Set fhirBySda(normKey) = $LB(srcRef, tgtField, inDtlClass)
+                        }
+                    }
+                }
+            }
+        }
+
+        ; Outbound: SDA3 → HL7 (reuse ParseHL7Seg but as outbound)
+        ; For this direction, HL7 fields ARE the target
+        Set outArr = []
+        Set segment = ..HL7SegForSDA(sdaType)
+        If segment '= "" {
+            For si = 1:1:$L(segment, ",") {
+                Set seg = $ZSTRIP($P(segment, ",", si), "<>W")
+                If seg '= "" { Do ..ParseHL7Seg(seg, outArr) }
+            }
+        }
+        Kill hl7BySda
+        Set iter = outArr.%GetIterator()
+        While iter.%GetNext(.idx, .m) {
+            Set sdaRaw = m.%Get("targetField")
+            Set normKey = $ZCVT(sdaRaw, "L")
+            If '$data(hl7BySda(normKey)) {
+                Set hl7BySda(normKey) = $LB(sdaRaw, m.%Get("sourceField"), segment)
+            }
+        }
+
+        ; Join
+        Kill allKeys
+        Set k = "" For { Set k = $ORDER(fhirBySda(k)) Quit:k=""  Set allKeys(k) = "" }
+        Set k = "" For { Set k = $ORDER(hl7BySda(k)) Quit:k=""  Set allKeys(k) = "" }
+
+        Set k = "" For {
+            Set k = $ORDER(allKeys(k))
+            Quit:k=""
+
+            Set hasIn = $data(fhirBySda(k))
+            Set hasOut = $data(hl7BySda(k))
+            Set status = $select(hasIn&&hasOut:"complete", hasIn:"in-only", 1:"out-only")
+
+            Set obj = ##class(AgenticInterop.Data.FieldMapping).%New()
+            Set obj.SourceFormat = "FHIR R4"
+            Set obj.TargetFormat = "HL7 v2"
+            Set obj.SdaType = sdaType
+            Set obj.SdaNormalized = k
+            Set obj.Status = status
+
+            If hasIn {
+                Set obj.SourceField = $LI(fhirBySda(k), 1)
+                Set obj.SdaField = $LI(fhirBySda(k), 2)
+                Set obj.SourceClass = $LI(fhirBySda(k), 3)
+            }
+            If hasOut {
+                If 'hasIn { Set obj.SdaField = $LI(hl7BySda(k), 1) }
+                Set obj.TargetField = $LI(hl7BySda(k), 2)
+                Set obj.TargetClass = "HS.Gateway.HL7.HL7ToSDA3"
+                Set obj.SourceSegment = $LI(hl7BySda(k), 3)
+            }
+
+            Set sc = obj.%Save()
+            If $system.Status.IsOK(sc) { Set totalRows = totalRows + 1 }
+        }
+    }
+
+    Set elapsed = $fnumber(($zhorolog - startTime), "", 2)
+    Set out.totalRows = totalRows
+    Set out.elapsedSeconds = +elapsed
+    Set out.sdaTypes = $LL(hl7SdaTypes)
+    Quit $classmethod(util, "WriteJSON", pResponse, out)
+}
+
+/// Query pre-built field trace from the persistent table.
+///
+///   GET /api/agentic/transforms/field-trace?source=HL7+v2&target=FHIR+R4&sdaType=Patient
+ClassMethod QueryFieldTrace(pResponse As %CSP.Response) As %Status
+{
+    Set util = "AgenticInterop.Editor.Util"
+    Set srcFmt = $get(%request.Data("source",1))
+    Set tgtFmt = $get(%request.Data("target",1))
+    Set sdaType = $get(%request.Data("sdaType",1))
+
+    Set out = {}
+    Set out.ok = 1
+    Set out.sourceFormat = srcFmt
+    Set out.targetFormat = tgtFmt
+    Set out.sdaType = sdaType
+
+    If srcFmt = "" || (tgtFmt = "") {
+        Set out.ok = 0
+        Set out.error = "Required parameters: source, target"
+        Quit $classmethod(util, "WriteJSON", pResponse, out)
+    }
+
+    Set out.mappings = ##class(AgenticInterop.Data.FieldMapping).Query(srcFmt, tgtFmt, sdaType)
+    Set out.count = out.mappings.%Size()
+
+    ; Also return available SDA types for this pair
+    If sdaType = "" {
+        Set out.sdaTypes = ##class(AgenticInterop.Data.FieldMapping).ListSdaTypes(srcFmt, tgtFmt)
+    }
+
+    Quit $classmethod(util, "WriteJSON", pResponse, out)
+}
+
+/// Return metadata about the field mapping table: row count, last
+/// rebuild time, available format pairs.
+///
+///   GET /api/agentic/transforms/field-trace/status
+ClassMethod FieldTraceStatus(pResponse As %CSP.Response) As %Status
+{
+    Set util = "AgenticInterop.Editor.Util"
+    Set out = {}
+    Set out.ok = 1
+    Set out.totalRows = ##class(AgenticInterop.Data.FieldMapping).CountAll()
+
+    ; Last rebuild time
+    Set sql = "SELECT TOP 1 RebuiltAt FROM AgenticInterop_Data.FieldMapping ORDER BY RebuiltAt DESC"
+    Set rs = ##class(%SQL.Statement).%ExecDirect(, sql)
+    If rs.%Next() {
+        Set out.lastRebuiltAt = rs.%Get("RebuiltAt")
+    } Else {
+        Set out.lastRebuiltAt = ""
+    }
+
+    ; Available format pairs
+    Set pairs = []
+    Set sql = "SELECT DISTINCT SourceFormat, TargetFormat FROM AgenticInterop_Data.FieldMapping ORDER BY SourceFormat, TargetFormat"
+    Set rs = ##class(%SQL.Statement).%ExecDirect(, sql)
+    While rs.%Next() {
+        Set p = {}
+        Set p.source = rs.%Get("SourceFormat")
+        Set p.target = rs.%Get("TargetFormat")
+        Do pairs.%Push(p)
+    }
+    Set out.formatPairs = pairs
+
+    Quit $classmethod(util, "WriteJSON", pResponse, out)
 }
 
 }
