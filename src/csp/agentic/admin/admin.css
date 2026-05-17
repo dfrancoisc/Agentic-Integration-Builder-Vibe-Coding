@@ -1100,14 +1100,11 @@ code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 }
 
 .tf-tbl-cell {
-  padding: 7px 12px;
+  padding: 6px 12px;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 12px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
   max-width: 0;
-  vertical-align: middle;
+  vertical-align: top;
 }
 
 .tf-tbl-src { color: var(--text); }
@@ -1124,40 +1121,20 @@ code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .tf-row-in .tf-tbl-tgt { opacity: 0.25; }
 .tf-row-out .tf-tbl-src { opacity: 0.25; }
 
-/* Clickable rows (have class detail to expand) */
-.tf-tbl-clickable { cursor: pointer; }
-.tf-tbl-clickable:hover { background: rgba(59, 130, 246, 0.07); }
-.tf-row-expanded { background: rgba(59, 130, 246, 0.05); }
-
-/* Detail row — shows source/target class references */
-.tf-detail-row td {
-  padding: 0 12px 8px;
-  border-bottom: 1px solid var(--border);
-  background: rgba(22, 26, 33, 0.5);
+/* Inline class name shown beneath each field value */
+.tf-cell-field {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.tf-detail-inner {
-  display: flex;
-  gap: 24px;
-  flex-wrap: wrap;
-  padding: 6px 0;
-}
-.tf-detail-cls {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.tf-detail-label {
+.tf-cell-class {
   font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
   color: var(--muted);
   white-space: nowrap;
-}
-.tf-detail-val {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 11px;
-  color: var(--primary);
-  word-break: break-all;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 2px;
+  opacity: 0.7;
 }
 
 /* Group separator between status groups */

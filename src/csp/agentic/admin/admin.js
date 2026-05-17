@@ -1456,22 +1456,19 @@ function tfRenderThreeColumns(container, model, src, tgt, inData, outData, row) 
         }
         prevStatus = r.status;
 
-        // Search index: all visible text + the parent SDA type name
+        // Search index: all visible text + the parent SDA type name + classes
         var srcLabel = r.srcField || '';
         var tgtLabel = r.tgtField || '';
-        var searchIdx = (srcLabel + ' ' + r.sdaField + ' ' + tgtLabel + ' ' + sdaContext).toLowerCase();
+        var srcCls = r.srcClass || '';
+        var tgtCls = r.tgtClass || '';
+        var searchIdx = (srcLabel + ' ' + r.sdaField + ' ' + tgtLabel + ' ' + sdaContext + ' ' + srcCls + ' ' + tgtCls).toLowerCase();
 
-        // Has class info?
-        var hasSrc = r.srcClass ? true : false;
-        var hasTgt = r.tgtClass ? true : false;
-        var hasClasses = hasSrc || hasTgt;
-        var rowCursor = hasClasses ? ' tf-tbl-clickable' : '';
-
-        html += '<tr class="tf-tbl-row ' + statusCls + rowCursor + '" data-idx="' + i + '" data-cov="' + r.status + '" data-search="' + escapeAttr(searchIdx) + '"' + (hasClasses ? ' onclick="tfToggleDetail(this)"' : '') + '>';
+        html += '<tr class="tf-tbl-row ' + statusCls + '" data-idx="' + i + '" data-cov="' + r.status + '" data-search="' + escapeAttr(searchIdx) + '">';
 
         if (colSrc) {
             html += '<td class="tf-tbl-cell tf-tbl-src" title="' + escapeAttr(srcLabel) + '">';
-            html += srcLabel ? escapeHtml(srcLabel) : '<span class="tf-tbl-empty">--</span>';
+            html += '<div class="tf-cell-field">' + (srcLabel ? escapeHtml(srcLabel) : '<span class="tf-tbl-empty">--</span>') + '</div>';
+            if (srcCls) html += '<div class="tf-cell-class">' + escapeHtml(srcCls) + '</div>';
             html += '</td>';
         }
 
@@ -1481,32 +1478,12 @@ function tfRenderThreeColumns(container, model, src, tgt, inData, outData, row) 
 
         if (colTgt) {
             html += '<td class="tf-tbl-cell tf-tbl-tgt" title="' + escapeAttr(tgtLabel) + '">';
-            html += tgtLabel ? escapeHtml(tgtLabel) : '<span class="tf-tbl-empty">--</span>';
+            html += '<div class="tf-cell-field">' + (tgtLabel ? escapeHtml(tgtLabel) : '<span class="tf-tbl-empty">--</span>') + '</div>';
+            if (tgtCls) html += '<div class="tf-cell-class">' + escapeHtml(tgtCls) + '</div>';
             html += '</td>';
         }
 
         html += '</tr>';
-
-        // Hidden detail row with class references
-        if (hasClasses) {
-            var numCols = 1 + (colSrc ? 1 : 0) + (colTgt ? 1 : 0);
-            html += '<tr class="tf-detail-row" data-cov="' + r.status + '" style="display:none">';
-            html += '<td colspan="' + numCols + '">';
-            html += '<div class="tf-detail-inner">';
-            if (hasSrc) {
-                html += '<div class="tf-detail-cls">';
-                html += '<span class="tf-detail-label">Inbound class</span>';
-                html += '<span class="tf-detail-val">' + escapeHtml(r.srcClass) + '</span>';
-                html += '</div>';
-            }
-            if (hasTgt) {
-                html += '<div class="tf-detail-cls">';
-                html += '<span class="tf-detail-label">Outbound class</span>';
-                html += '<span class="tf-detail-val">' + escapeHtml(r.tgtClass) + '</span>';
-                html += '</div>';
-            }
-            html += '</div></td></tr>';
-        }
     }
     html += '</tbody></table></div>';
 
@@ -1535,16 +1512,7 @@ function tfApplyCovFilter() {
     document.querySelectorAll('.tf-tbl-row').forEach(function(tr) {
         var covMatch = !!activeStatuses[tr.dataset.cov];
         var textMatch = !q || (tr.dataset.search || '').indexOf(q) !== -1;
-        var show = covMatch && textMatch;
-        tr.style.display = show ? '' : 'none';
-        // Collapse any open detail row if parent is hidden
-        if (!show) {
-            tr.classList.remove('tf-row-expanded');
-            var detail = tr.nextElementSibling;
-            if (detail && detail.classList.contains('tf-detail-row')) {
-                detail.style.display = 'none';
-            }
-        }
+        tr.style.display = (covMatch && textMatch) ? '' : 'none';
     });
     // Group separators follow their group
     document.querySelectorAll('.tf-tbl-group-sep').forEach(function(sep) {
@@ -1552,13 +1520,6 @@ function tfApplyCovFilter() {
     });
 }
 
-// ── Row detail toggle (shows/hides the class reference row) ────
-function tfToggleDetail(tr) {
-    var detail = tr.nextElementSibling;
-    if (!detail || !detail.classList.contains('tf-detail-row')) return;
-    var expanded = tr.classList.toggle('tf-row-expanded');
-    detail.style.display = expanded ? '' : 'none';
-}
 
 // ── Field-level text filter ─────────────────────────────────────
 // Filters table rows based on the text input. Case-insensitive substring
