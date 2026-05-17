@@ -1336,44 +1336,22 @@ function tfBuildFieldModel(inMappings, outMappings) {
 // Five-part flex layout: [src-col] [left-svg] [sda-col] [right-svg] [tgt-col]
 
 function tfRenderThreeColumns(container, model, src, tgt, inData, outData, row) {
-    // Store model for field filter redraw
     _tfCurrentFilterModel = model;
 
     if (model.length === 0) {
-        container.innerHTML = '<div class="tf-field-loading">No field mappings could be extracted from these DTLs.</div>';
+        container.innerHTML = '<div class="tf-field-loading">No field mappings found. Click "Rebuild Mappings" to populate.</div>';
         return;
     }
 
-    // Class info line — table data, HL7, or DTL
-    var info = '';
-    if (inData && inData.fromTable) {
-        // Data loaded from pre-computed table
-        info += '<span class="tf-dtl-ref tf-dtl-table">Pre-computed mapping table (' + inData.count + ' fields)</span>';
-    } else {
-        if (inData && inData.ok) {
-            if (inData.hl7) {
-                info += '<span class="tf-dtl-ref tf-dtl-in">' + escapeHtml(src) + ': ' +
-                    escapeHtml(inData.segment) + ' (programmatic)</span>';
-            } else if (inData.className) {
-                info += '<span class="tf-dtl-ref tf-dtl-in">' + escapeHtml(src) + ': ' +
-                    escapeHtml(inData.className.split('.').slice(-2).join('.')) + '</span>';
-            }
-        } else if (row.inMonolithic) {
-            info += '<span class="tf-dtl-ref tf-dtl-mono">' + escapeHtml(src) + ': programmatic (all types)</span>';
-        }
-        if (outData && outData.ok) {
-            if (outData.hl7) {
-                info += '<span class="tf-dtl-ref tf-dtl-out">' + escapeHtml(tgt) + ': ' +
-                    escapeHtml(outData.segment) + ' (programmatic)</span>';
-            } else if (outData.className) {
-                info += '<span class="tf-dtl-ref tf-dtl-out">' + escapeHtml(tgt) + ': ' +
-                    escapeHtml(outData.className.split('.').slice(-2).join('.')) + '</span>';
-            }
-        } else if (row.outMonolithic) {
-            info += '<span class="tf-dtl-ref tf-dtl-mono">' + escapeHtml(tgt) + ': programmatic (all types)</span>';
-        }
-    }
+    // Determine column layout based on what formats are selected
+    var isTwoCol = (src === 'SDA3' || tgt === 'SDA3');
 
+    // Column headers
+    var colSrc = (src === 'SDA3') ? null : src;
+    var colSda = 'SDA3';
+    var colTgt = (tgt === 'SDA3') ? null : tgt;
+
+    // Count stats
     var counts = { complete: 0, inOnly: 0, outOnly: 0 };
     for (var i = 0; i < model.length; i++) {
         if (model[i].status === 'complete') counts.complete++;
@@ -1381,341 +1359,95 @@ function tfRenderThreeColumns(container, model, src, tgt, inData, outData, row) 
         else counts.outOnly++;
     }
 
-    var svgW = 80;
-    var isTwoCol = (src === 'SDA3' || tgt === 'SDA3');
     var html = '';
-    if (info) html += '<div class="tf-dtl-refs">' + info + '</div>';
 
+    // Info badge
+    if (inData && inData.fromTable) {
+        html += '<div class="tf-dtl-refs"><span class="tf-dtl-ref tf-dtl-table">Pre-computed table (' + inData.count + ' rows)</span></div>';
+    }
+
+    // Stats row
     html += '<div class="tf-field-stats">' +
         '<span class="tf-field-stat">' + model.length + ' fields</span>' +
-        '<span class="tf-field-stat tf-field-stat-ok">' + counts.complete + ' mapped</span>' +
+        '<span class="tf-field-stat tf-field-stat-ok">' + counts.complete + ' end-to-end</span>' +
         (counts.inOnly > 0 ? '<span class="tf-field-stat tf-field-stat-in">' + counts.inOnly + ' source only</span>' : '') +
         (counts.outOnly > 0 ? '<span class="tf-field-stat tf-field-stat-out">' + counts.outOnly + ' target only</span>' : '') +
         '</div>';
 
-    if (isTwoCol) {
-        // Two-column layout: SDA3 on one side, external format on the other
-        html += '<div class="tf-3col tf-2col" id="tf-3col">';
+    // Build table
+    html += '<div class="tf-tbl-wrap" id="tf-tbl-wrap">';
+    html += '<table class="tf-tbl">';
 
-        if (tgt === 'SDA3') {
-            // X → SDA3: left = source fields, right = SDA fields
-            html += '<div class="tf-3col-col tf-3col-src" id="tf-3c-src">';
-            html += '<div class="tf-3col-hdr">' + escapeHtml(src) + '</div>';
-            for (var i = 0; i < model.length; i++) {
-                var r = model[i];
-                var cls = r.srcField ? 'tf-3c-item tf-3c-mapped' : 'tf-3c-item tf-3c-empty';
-                if (r.status === 'complete') cls += ' tf-3c-complete';
-                var label = r.srcField || '—';
-                html += '<div class="' + cls + '" data-idx="' + i + '" title="' + escapeAttr(label) + '">' + escapeHtml(label) + '</div>';
-            }
-            html += '</div>';
+    // Header row
+    html += '<thead><tr>';
+    if (colSrc) html += '<th>' + escapeHtml(colSrc) + '</th>';
+    html += '<th>' + escapeHtml(colSda) + '</th>';
+    if (colTgt) html += '<th>' + escapeHtml(colTgt) + '</th>';
+    html += '<th class="tf-tbl-status-col">Status</th>';
+    html += '</tr></thead>';
 
-            html += '<svg class="tf-3col-svg" id="tf-3c-svg-l" width="' + svgW + '"></svg>';
-
-            html += '<div class="tf-3col-col tf-3col-sda" id="tf-3c-sda">';
-            html += '<div class="tf-3col-hdr">SDA3</div>';
-            for (var i = 0; i < model.length; i++) {
-                var r = model[i];
-                var cls = 'tf-3c-item tf-3c-sda-item';
-                if (r.status === 'complete') cls += ' tf-3c-complete';
-                else cls += ' tf-3c-in-only';
-                html += '<div class="' + cls + '" data-idx="' + i + '" title="' + escapeAttr(r.sdaField) + '">' + escapeHtml(r.sdaField) + '</div>';
-            }
-            html += '</div>';
-        } else {
-            // SDA3 → X: left = SDA fields, right = target fields
-            html += '<div class="tf-3col-col tf-3col-sda" id="tf-3c-sda">';
-            html += '<div class="tf-3col-hdr">SDA3</div>';
-            for (var i = 0; i < model.length; i++) {
-                var r = model[i];
-                var cls = 'tf-3c-item tf-3c-sda-item';
-                if (r.status === 'complete') cls += ' tf-3c-complete';
-                else cls += ' tf-3c-out-only';
-                html += '<div class="' + cls + '" data-idx="' + i + '" title="' + escapeAttr(r.sdaField) + '">' + escapeHtml(r.sdaField) + '</div>';
-            }
-            html += '</div>';
-
-            html += '<svg class="tf-3col-svg" id="tf-3c-svg-r" width="' + svgW + '"></svg>';
-
-            html += '<div class="tf-3col-col tf-3col-tgt" id="tf-3c-tgt">';
-            html += '<div class="tf-3col-hdr">' + escapeHtml(tgt) + '</div>';
-            for (var i = 0; i < model.length; i++) {
-                var r = model[i];
-                var cls = r.tgtField ? 'tf-3c-item tf-3c-mapped' : 'tf-3c-item tf-3c-empty';
-                if (r.status === 'complete') cls += ' tf-3c-complete';
-                var label = r.tgtField || '—';
-                html += '<div class="' + cls + '" data-idx="' + i + '" title="' + escapeAttr(label) + '">' + escapeHtml(label) + '</div>';
-            }
-            html += '</div>';
-        }
-
-        html += '</div>'; // end tf-3col / tf-2col
-        container.innerHTML = html;
-
-        requestAnimationFrame(function() {
-            tfDraw2ColLinks(model, svgW, tgt === 'SDA3' ? 'left' : 'right');
-            tfWire3ColHover();
-        });
-    } else {
-        // Standard three-column layout: external → SDA3 → external
-        html += '<div class="tf-3col" id="tf-3col">';
-
-        // ── Left column: source format fields
-        html += '<div class="tf-3col-col tf-3col-src" id="tf-3c-src">';
-        html += '<div class="tf-3col-hdr">' + escapeHtml(src) + '</div>';
-        for (var i = 0; i < model.length; i++) {
-            var r = model[i];
-            var cls = r.srcField ? 'tf-3c-item tf-3c-mapped' : 'tf-3c-item tf-3c-empty';
-            if (r.status === 'complete') cls += ' tf-3c-complete';
-            var label = r.srcField || '—';
-            html += '<div class="' + cls + '" data-idx="' + i + '" title="' + escapeAttr(label) + '">' + escapeHtml(label) + '</div>';
-        }
-        html += '</div>';
-
-        // ── Left SVG connectors
-        html += '<svg class="tf-3col-svg" id="tf-3c-svg-l" width="' + svgW + '"></svg>';
-
-        // ── Center column: SDA3 fields (the pivot)
-        html += '<div class="tf-3col-col tf-3col-sda" id="tf-3c-sda">';
-        html += '<div class="tf-3col-hdr">SDA3</div>';
-        for (var i = 0; i < model.length; i++) {
-            var r = model[i];
-            var cls = 'tf-3c-item tf-3c-sda-item';
-            if (r.status === 'complete') cls += ' tf-3c-complete';
-            else if (r.status === 'in-only') cls += ' tf-3c-in-only';
-            else cls += ' tf-3c-out-only';
-            html += '<div class="' + cls + '" data-idx="' + i + '" title="' + escapeAttr(r.sdaField) + '">' + escapeHtml(r.sdaField) + '</div>';
-        }
-        html += '</div>';
-
-        // ── Right SVG connectors
-        html += '<svg class="tf-3col-svg" id="tf-3c-svg-r" width="' + svgW + '"></svg>';
-
-        // ── Right column: target format fields
-        html += '<div class="tf-3col-col tf-3col-tgt" id="tf-3c-tgt">';
-        html += '<div class="tf-3col-hdr">' + escapeHtml(tgt) + '</div>';
-        for (var i = 0; i < model.length; i++) {
-            var r = model[i];
-            var cls = r.tgtField ? 'tf-3c-item tf-3c-mapped' : 'tf-3c-item tf-3c-empty';
-            if (r.status === 'complete') cls += ' tf-3c-complete';
-            var label = r.tgtField || '—';
-            html += '<div class="' + cls + '" data-idx="' + i + '" title="' + escapeAttr(label) + '">' + escapeHtml(label) + '</div>';
-        }
-        html += '</div>';
-
-        html += '</div>'; // end tf-3col
-        container.innerHTML = html;
-
-        // Draw SVG connectors and wire hover handlers after DOM paint
-        requestAnimationFrame(function() {
-            tfDraw3ColLinks(model, svgW);
-            tfWire3ColHover();
-        });
-    }
-}
-
-// ── SVG connector drawing for two-column mode ──────────────────
-// side: 'left' means SVG is between src and sda (X→SDA3 direction)
-//       'right' means SVG is between sda and tgt (SDA3→X direction)
-
-function tfDraw2ColLinks(model, svgW, side) {
-    var svg = (side === 'left') ? $('tf-3c-svg-l') : $('tf-3c-svg-r');
-    if (!svg) return;
-
-    var leftCol, rightCol;
-    if (side === 'left') {
-        leftCol = $('tf-3c-src');
-        rightCol = $('tf-3c-sda');
-    } else {
-        leftCol = $('tf-3c-sda');
-        rightCol = $('tf-3c-tgt');
-    }
-    if (!leftCol || !rightCol) return;
-
-    var leftItems = leftCol.querySelectorAll('.tf-3c-item');
-    var rightItems = rightCol.querySelectorAll('.tf-3c-item');
-    var svgRect = svg.getBoundingClientRect();
-    var mx = svgW / 2;
-    var paths = '';
-
+    // Body rows
+    html += '<tbody>';
     for (var i = 0; i < model.length; i++) {
         var r = model[i];
-        var leftEl = leftItems[i];
-        var rightEl = rightItems[i];
-        if (!leftEl || !rightEl) continue;
+        var statusCls = r.status === 'complete' ? 'tf-row-ok' :
+                        r.status === 'in-only' ? 'tf-row-in' : 'tf-row-out';
+        var statusDot = r.status === 'complete' ? 'tf-dot-ok' :
+                        r.status === 'in-only' ? 'tf-dot-in' : 'tf-dot-out';
 
-        // Only draw connector if both sides have content
-        var hasLeft = (side === 'left') ? !!r.srcField : !!r.sdaField;
-        var hasRight = (side === 'left') ? !!r.sdaField : !!r.tgtField;
-        if (!hasLeft || !hasRight) continue;
+        html += '<tr class="tf-tbl-row ' + statusCls + '" data-idx="' + i + '">';
 
-        var lR = leftEl.getBoundingClientRect();
-        var rR = rightEl.getBoundingClientRect();
-        var y1 = lR.top + lR.height / 2 - svgRect.top;
-        var y2 = rR.top + rR.height / 2 - svgRect.top;
-        var cls = r.status === 'complete' ? 'tf-3c-link tf-3c-link-full' : 'tf-3c-link tf-3c-link-partial';
-        paths += '<path class="' + cls + '" data-idx="' + i + '" d="M0,' + y1 +
-            ' C' + mx + ',' + y1 + ' ' + mx + ',' + y2 + ' ' + svgW + ',' + y2 + '"/>';
-    }
-
-    svg.innerHTML = paths;
-}
-
-// ── SVG connector drawing (both sides) ──────────────────────────
-
-function tfDraw3ColLinks(model, svgW) {
-    var srcCol = $('tf-3c-src');
-    var sdaCol = $('tf-3c-sda');
-    var tgtCol = $('tf-3c-tgt');
-    var svgL = $('tf-3c-svg-l');
-    var svgR = $('tf-3c-svg-r');
-    if (!srcCol || !sdaCol || !tgtCol || !svgL || !svgR) return;
-
-    var srcItems = srcCol.querySelectorAll('.tf-3c-item');
-    var sdaItems = sdaCol.querySelectorAll('.tf-3c-item');
-    var tgtItems = tgtCol.querySelectorAll('.tf-3c-item');
-    var svgLRect = svgL.getBoundingClientRect();
-    var svgRRect = svgR.getBoundingClientRect();
-    var mx = svgW / 2;
-
-    var pathsL = '';
-    var pathsR = '';
-
-    for (var i = 0; i < model.length; i++) {
-        var r = model[i];
-        var sdaEl = sdaItems[i];
-        var srcEl = srcItems[i];
-        var tgtEl = tgtItems[i];
-        if (!sdaEl) continue;
-
-        // Left side: source → SDA
-        if (r.srcField && srcEl) {
-            var sR = srcEl.getBoundingClientRect();
-            var dR = sdaEl.getBoundingClientRect();
-            var y1 = sR.top + sR.height / 2 - svgLRect.top;
-            var y2 = dR.top + dR.height / 2 - svgLRect.top;
-            var cls = r.status === 'complete' ? 'tf-3c-link tf-3c-link-full' : 'tf-3c-link tf-3c-link-partial';
-            pathsL += '<path class="' + cls + '" data-idx="' + i + '" d="M0,' + y1 +
-                ' C' + mx + ',' + y1 + ' ' + mx + ',' + y2 + ' ' + svgW + ',' + y2 + '"/>';
+        if (colSrc) {
+            var srcLabel = r.srcField || '';
+            html += '<td class="tf-tbl-cell tf-tbl-src" title="' + escapeAttr(srcLabel) + '">';
+            html += srcLabel ? escapeHtml(srcLabel) : '<span class="tf-tbl-empty">-</span>';
+            html += '</td>';
         }
 
-        // Right side: SDA → target
-        if (r.tgtField && tgtEl) {
-            var dR = sdaEl.getBoundingClientRect();
-            var tR = tgtEl.getBoundingClientRect();
-            var y1 = dR.top + dR.height / 2 - svgRRect.top;
-            var y2 = tR.top + tR.height / 2 - svgRRect.top;
-            var cls = r.status === 'complete' ? 'tf-3c-link tf-3c-link-full' : 'tf-3c-link tf-3c-link-partial';
-            pathsR += '<path class="' + cls + '" data-idx="' + i + '" d="M0,' + y1 +
-                ' C' + mx + ',' + y1 + ' ' + mx + ',' + y2 + ' ' + svgW + ',' + y2 + '"/>';
+        html += '<td class="tf-tbl-cell tf-tbl-sda" title="' + escapeAttr(r.sdaField) + '">';
+        html += escapeHtml(r.sdaField);
+        html += '</td>';
+
+        if (colTgt) {
+            var tgtLabel = r.tgtField || '';
+            html += '<td class="tf-tbl-cell tf-tbl-tgt" title="' + escapeAttr(tgtLabel) + '">';
+            html += tgtLabel ? escapeHtml(tgtLabel) : '<span class="tf-tbl-empty">-</span>';
+            html += '</td>';
         }
+
+        html += '<td class="tf-tbl-cell tf-tbl-status"><span class="tf-dot ' + statusDot + '"></span></td>';
+        html += '</tr>';
     }
+    html += '</tbody></table></div>';
 
-    svgL.innerHTML = pathsL;
-    svgR.innerHTML = pathsR;
-}
-
-// ── Row hover highlighting ──────────────────────────────────────
-// Hover any field item → highlight its row across all three columns + links
-
-function tfWire3ColHover() {
-    var wrap = $('tf-3col');
-    if (!wrap) return;
-
-    wrap.querySelectorAll('.tf-3c-item').forEach(function(el) {
-        el.addEventListener('mouseenter', function() {
-            var idx = el.dataset.idx;
-            tf3cHighlight(idx);
-        });
-        el.addEventListener('mouseleave', function() {
-            tf3cClearHighlight();
-        });
-    });
-}
-
-function tf3cHighlight(idx) {
-    var wrap = $('tf-3col');
-    if (!wrap) return;
-    // Dim all items and links
-    wrap.querySelectorAll('.tf-3c-item').forEach(function(el) {
-        el.classList.toggle('tf-3c-hl', el.dataset.idx === idx);
-        el.classList.toggle('tf-3c-dim', el.dataset.idx !== idx);
-    });
-    wrap.querySelectorAll('.tf-3c-link').forEach(function(el) {
-        el.classList.toggle('tf-3c-link-hl', el.dataset.idx === idx);
-        el.classList.toggle('tf-3c-link-dim', el.dataset.idx !== idx);
-    });
-}
-
-function tf3cClearHighlight() {
-    var wrap = $('tf-3col');
-    if (!wrap) return;
-    wrap.querySelectorAll('.tf-3c-item').forEach(function(el) {
-        el.classList.remove('tf-3c-hl', 'tf-3c-dim');
-    });
-    wrap.querySelectorAll('.tf-3c-link').forEach(function(el) {
-        el.classList.remove('tf-3c-link-hl', 'tf-3c-link-dim');
-    });
+    container.innerHTML = html;
 }
 
 // ── Field-level text filter ─────────────────────────────────────
-// Filters rows across all three columns (source, SDA, target) based
-// on the text input. Matching is case-insensitive substring.
+// Filters table rows based on the text input. Case-insensitive substring
+// search across all visible columns (source, SDA, target).
 
 function tfWireFieldFilter() {
     var filter = $('tf-field-filter');
     if (!filter) return;
     filter.addEventListener('input', function() {
         var q = filter.value.toLowerCase().trim();
-        var wrap = $('tf-3col');
-        if (!wrap) return;
+        var rows = document.querySelectorAll('.tf-tbl-row');
+        if (!rows.length) return;
 
-        // Gather all columns that exist (works for 2-col and 3-col)
-        var allCols = wrap.querySelectorAll('.tf-3col-col');
-        var colItems = [];
-        allCols.forEach(function(col) {
-            colItems.push(col.querySelectorAll('.tf-3c-item'));
-        });
-
-        var svgL = $('tf-3c-svg-l');
-        var svgR = $('tf-3c-svg-r');
-
-        if (!q) {
-            // Show all
-            colItems.forEach(function(items) {
-                items.forEach(function(el) { el.style.display = ''; });
-            });
-            if (svgL) svgL.style.display = '';
-            if (svgR) svgR.style.display = '';
-            return;
-        }
-
-        // Hide SVG connectors when filtering (positions won't match)
-        if (svgL) svgL.style.display = 'none';
-        if (svgR) svgR.style.display = 'none';
-
-        // Determine row count from the first column
-        var rowCount = colItems.length > 0 ? colItems[0].length : 0;
-
-        for (var i = 0; i < rowCount; i++) {
-            // Check if query matches any column in this row
+        rows.forEach(function(tr) {
+            if (!q) { tr.style.display = ''; return; }
+            var cells = tr.querySelectorAll('.tf-tbl-cell');
             var match = false;
-            for (var c = 0; c < colItems.length; c++) {
-                var el = colItems[c][i];
-                if (!el) continue;
-                var text = (el.title || el.textContent).toLowerCase();
-                if (text.indexOf(q) !== -1) { match = true; break; }
-            }
-            // Show/hide all columns for this row
-            for (var c = 0; c < colItems.length; c++) {
-                var el = colItems[c][i];
-                if (el) el.style.display = match ? '' : 'none';
-            }
-        }
+            cells.forEach(function(td) {
+                var text = (td.title || td.textContent).toLowerCase();
+                if (text.indexOf(q) !== -1) match = true;
+            });
+            tr.style.display = match ? '' : 'none';
+        });
     });
 }
 
-// Store the current model for connector redraw after filter clear
 var _tfCurrentFilterModel = null;
 
 // ── Field trace table (pre-computed) ────────────────────────────

@@ -445,6 +445,102 @@ ClassMethod ParseHL7Seg(pSeg As %String, pArr As %DynamicArray) [ Private ]
     }
 }
 
+/// Return the HL7 v2 sub-field position for a known SDA property within
+/// a given segment-field. E.g., ("PID-11", "City") → "PID.11.3 City".
+/// Returns the original sourceField unchanged if no sub-field is known.
+///
+/// This knowledge comes from the HL7 v2 XAD/XPN/CX/XTN composite type
+/// definitions and how HS.Gateway.HL7.HL7ToSDA3 decomposes them.
+ClassMethod EnrichHL7SubField(pSourceField As %String, pSdaProp As %String) As %String [ Private ]
+{
+    ; Build lookup on first call; cache in process-private global
+    If '$data(^||hl7sub) {
+        ; PID-3 PatientIdentifierList (CX)
+        Set ^||hl7sub("PID-3","Number") = "PID.3.1 ID Number"
+        Set ^||hl7sub("PID-3","ISOAssigningAuthority") = "PID.3.4 Assigning Authority"
+        Set ^||hl7sub("PID-3","NumberType") = "PID.3.5 Identifier Type Code"
+
+        ; PID-5 PatientName (XPN)
+        Set ^||hl7sub("PID-5","FamilyName") = "PID.5.1 Family Name"
+        Set ^||hl7sub("PID-5","FamilyNamePrefix") = "PID.5.1.2 Surname Prefix"
+        Set ^||hl7sub("PID-5","GivenName") = "PID.5.2 Given Name"
+        Set ^||hl7sub("PID-5","MiddleName") = "PID.5.3 Second Name"
+        Set ^||hl7sub("PID-5","NameSuffix") = "PID.5.4 Suffix"
+        Set ^||hl7sub("PID-5","NamePrefix") = "PID.5.5 Prefix"
+        Set ^||hl7sub("PID-5","ProfessionalSuffix") = "PID.5.14 Professional Suffix"
+        Set ^||hl7sub("PID-5","FromTime") = "PID.5.12 Effective Date"
+        Set ^||hl7sub("PID-5","ToTime") = "PID.5.13 Expiration Date"
+        Set ^||hl7sub("PID-5","BlankNameReason") = "PID.5.7 Name Type Code"
+
+        ; PID-9 PatientAlias (XPN — same structure as PID-5)
+        Set ^||hl7sub("PID-9","FamilyName") = "PID.9.1 Family Name"
+        Set ^||hl7sub("PID-9","GivenName") = "PID.9.2 Given Name"
+        Set ^||hl7sub("PID-9","MiddleName") = "PID.9.3 Second Name"
+
+        ; PID-11 PatientAddress (XAD)
+        Set ^||hl7sub("PID-11","Street") = "PID.11.1 Street Address"
+        Set ^||hl7sub("PID-11","City") = "PID.11.3 City"
+        Set ^||hl7sub("PID-11","State") = "PID.11.4 State/Province"
+        Set ^||hl7sub("PID-11","Zip") = "PID.11.5 Zip/Postal Code"
+        Set ^||hl7sub("PID-11","Country") = "PID.11.6 Country"
+        Set ^||hl7sub("PID-11","County") = "PID.11.9 County/Parish"
+        Set ^||hl7sub("PID-11","Address") = "PID.11 Address (composite)"
+        Set ^||hl7sub("PID-11","Addresses") = "PID.11 Address (repeating)"
+        Set ^||hl7sub("PID-11","FromTime") = "PID.11.12 Effective Date"
+        Set ^||hl7sub("PID-11","ToTime") = "PID.11.13 Expiration Date"
+
+        ; PID-13/14 Phone (XTN)
+        Set ^||hl7sub("PID-13","HomePhoneNumber") = "PID.13.7 Home Phone"
+        Set ^||hl7sub("PID-13","MobilePhoneNumber") = "PID.13.7 Mobile Phone"
+        Set ^||hl7sub("PID-13","EmailAddress") = "PID.13.4 Email Address"
+        Set ^||hl7sub("PID-14","WorkPhoneNumber") = "PID.14.7 Work Phone"
+        Set ^||hl7sub("PID-14","EmailAddress") = "PID.14.4 Email Address"
+        Set ^||hl7sub("PID-14","ContactInfo") = "PID.14 Contact Info"
+
+        ; NK1 fields (XPN + XAD + XTN)
+        Set ^||hl7sub("NK1-2","FamilyName") = "NK1.2.1 Family Name"
+        Set ^||hl7sub("NK1-2","GivenName") = "NK1.2.2 Given Name"
+        Set ^||hl7sub("NK1-4","Street") = "NK1.4.1 Street Address"
+        Set ^||hl7sub("NK1-4","City") = "NK1.4.3 City"
+        Set ^||hl7sub("NK1-4","State") = "NK1.4.4 State"
+        Set ^||hl7sub("NK1-4","Zip") = "NK1.4.5 Zip"
+        Set ^||hl7sub("NK1-4","Country") = "NK1.4.6 Country"
+
+        ; PV1 fields
+        Set ^||hl7sub("PV1-3","Code") = "PV1.3.1 Point of Care"
+        Set ^||hl7sub("PV1-7","Code") = "PV1.7.1 Attending Doctor ID"
+        Set ^||hl7sub("PV1-8","Code") = "PV1.8.1 Referring Doctor ID"
+        Set ^||hl7sub("PV1-9","Code") = "PV1.9.1 Consulting Doctor ID"
+        Set ^||hl7sub("PV1-17","Code") = "PV1.17.1 Admitting Doctor ID"
+
+        ; GT1 fields (XPN + XAD)
+        Set ^||hl7sub("GT1-3","FamilyName") = "GT1.3.1 Family Name"
+        Set ^||hl7sub("GT1-3","GivenName") = "GT1.3.2 Given Name"
+        Set ^||hl7sub("GT1-5","Street") = "GT1.5.1 Street Address"
+        Set ^||hl7sub("GT1-5","City") = "GT1.5.3 City"
+        Set ^||hl7sub("GT1-5","State") = "GT1.5.4 State"
+        Set ^||hl7sub("GT1-5","Zip") = "GT1.5.5 Zip"
+
+        ; IN1 fields
+        Set ^||hl7sub("IN1-4","FamilyName") = "IN1.4.1 Company Name"
+        Set ^||hl7sub("IN1-5","Street") = "IN1.5.1 Street Address"
+        Set ^||hl7sub("IN1-5","City") = "IN1.5.3 City"
+        Set ^||hl7sub("IN1-5","State") = "IN1.5.4 State"
+        Set ^||hl7sub("IN1-5","Zip") = "IN1.5.5 Zip"
+    }
+
+    ; Extract the segment-field key (e.g., "PID-11" from "PID-11 PatientAddress")
+    Set segField = $P(pSourceField, " ", 1)
+
+    ; Look up
+    If $data(^||hl7sub(segField, pSdaProp)) {
+        Quit $get(^||hl7sub(segField, pSdaProp))
+    }
+
+    ; Fallback: return original
+    Quit pSourceField
+}
+
 /// Rebuild the entire FieldMapping table. Parses HL7 programmatic code
 /// and FHIR R4 DTL classes, joins them on normalized SDA key, and
 /// persists rows for instant UI retrieval.
@@ -604,8 +700,11 @@ ClassMethod RebuildFieldMappings(pResponse As %CSP.Response) As %Status
             Set obj.Status = status
 
             If hasIn {
-                Set obj.SourceField = $LI(inBySda(k), 1)
-                Set obj.SdaField = $LI(inBySda(k), 2)
+                Set rawSrc = $LI(inBySda(k), 1)
+                Set rawSda = $LI(inBySda(k), 2)
+                ; Enrich HL7 source with sub-field position
+                Set obj.SourceField = ..EnrichHL7SubField(rawSrc, rawSda)
+                Set obj.SdaField = rawSda
                 Set obj.SourceSegment = $LI(inBySda(k), 3)
                 Set obj.SourceClass = "HS.Gateway.HL7.HL7ToSDA3"
             }
@@ -747,8 +846,11 @@ ClassMethod RebuildFieldMappings(pResponse As %CSP.Response) As %Status
                 Set obj.SourceClass = $LI(fhirBySda(k), 3)
             }
             If hasOut {
-                If 'hasIn { Set obj.SdaField = $LI(hl7BySda(k), 1) }
-                Set obj.TargetField = $LI(hl7BySda(k), 2)
+                Set rawSdaHL7 = $LI(hl7BySda(k), 1)
+                Set rawHL7Tgt = $LI(hl7BySda(k), 2)
+                If 'hasIn { Set obj.SdaField = rawSdaHL7 }
+                ; Enrich HL7 target with sub-field position
+                Set obj.TargetField = ..EnrichHL7SubField(rawHL7Tgt, rawSdaHL7)
                 Set obj.TargetClass = "HS.Gateway.HL7.HL7ToSDA3"
                 Set obj.SourceSegment = $LI(hl7BySda(k), 3)
             }
