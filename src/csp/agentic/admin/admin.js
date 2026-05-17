@@ -1358,6 +1358,28 @@ function tfRenderThreeColumns(container, model, src, tgt, inData, outData, row) 
     var colSda = 'SDA3';
     var colTgt = (tgt === 'SDA3') ? null : tgt;
 
+    // Build human-readable descriptions for each coverage status.
+    // These explain what the data means in context of the chosen formats.
+    var srcName = src || 'Source';
+    var tgtName = tgt || 'Target';
+    var descOk, descIn, descOut;
+    if (colSrc && colTgt) {
+        // Full chain: e.g. HL7 v2 → SDA3 → FHIR R4
+        descOk  = 'Field traced end-to-end: ' + srcName + ' field maps into SDA3, and SDA3 maps out to ' + tgtName;
+        descIn  = 'Field arrives from ' + srcName + ' into SDA3, but SDA3 does not map it out to ' + tgtName;
+        descOut = 'Field is produced in ' + tgtName + ' from SDA3, but no ' + srcName + ' field feeds into it';
+    } else if (!colSrc) {
+        // SDA3 → X
+        descOk  = 'SDA3 field maps to ' + tgtName;
+        descIn  = 'SDA3 field exists but has no ' + tgtName + ' target';
+        descOut = tgtName + ' field exists but no SDA3 source feeds it';
+    } else {
+        // X → SDA3
+        descOk  = srcName + ' field maps into SDA3';
+        descIn  = srcName + ' field exists but does not arrive in SDA3';
+        descOut = 'SDA3 field exists but no ' + srcName + ' source feeds it';
+    }
+
     // The SDA type name is included in the search index so that
     // filtering "add" while viewing "Address" still shows all rows
     var sdaContext = (row && row.sdaType) ? row.sdaType.toLowerCase() : '';
@@ -1372,13 +1394,34 @@ function tfRenderThreeColumns(container, model, src, tgt, inData, outData, row) 
 
     var html = '';
 
-    // Stats row
-    html += '<div class="tf-field-stats">' +
-        '<span class="tf-field-stat">' + model.length + ' fields</span>' +
-        '<span class="tf-field-stat tf-field-stat-ok">' + counts.complete + ' mapped</span>' +
-        (counts.inOnly > 0 ? '<span class="tf-field-stat tf-field-stat-in">' + counts.inOnly + ' source only</span>' : '') +
-        (counts.outOnly > 0 ? '<span class="tf-field-stat tf-field-stat-out">' + counts.outOnly + ' target only</span>' : '') +
-        '</div>';
+    // Coverage filter bar — clickable chips that toggle row visibility
+    html += '<div class="tf-coverage-bar">';
+    html += '<div class="tf-coverage-label">Show:</div>';
+    html += '<button class="tf-cov-chip tf-cov-active" data-cov="complete" onclick="tfToggleCov(this)" title="' + escapeAttr(descOk) + '">';
+    html += '<span class="tf-cov-dot tf-cov-dot-ok"></span> End-to-end <span class="tf-cov-count">' + counts.complete + '</span></button>';
+    if (counts.inOnly > 0) {
+        html += '<button class="tf-cov-chip tf-cov-active" data-cov="in-only" onclick="tfToggleCov(this)" title="' + escapeAttr(descIn) + '">';
+        html += '<span class="tf-cov-dot tf-cov-dot-in"></span> Inbound only <span class="tf-cov-count">' + counts.inOnly + '</span></button>';
+    }
+    if (counts.outOnly > 0) {
+        html += '<button class="tf-cov-chip tf-cov-active" data-cov="out-only" onclick="tfToggleCov(this)" title="' + escapeAttr(descOut) + '">';
+        html += '<span class="tf-cov-dot tf-cov-dot-out"></span> Outbound only <span class="tf-cov-count">' + counts.outOnly + '</span></button>';
+    }
+    html += '<span class="tf-cov-total">' + model.length + ' fields total</span>';
+    html += '</div>';
+
+    // Data-flow explanation
+    html += '<div class="tf-flow-hint">';
+    if (colSrc && colTgt) {
+        html += 'Data flows: <strong>' + escapeHtml(srcName) + '</strong> (inbound) ';
+        html += '&rarr; <strong>SDA3</strong> (canonical) ';
+        html += '&rarr; <strong>' + escapeHtml(tgtName) + '</strong> (outbound)';
+    } else if (!colSrc) {
+        html += 'Data flows: <strong>SDA3</strong> (canonical) &rarr; <strong>' + escapeHtml(tgtName) + '</strong> (outbound)';
+    } else {
+        html += 'Data flows: <strong>' + escapeHtml(srcName) + '</strong> (inbound) &rarr; <strong>SDA3</strong> (canonical)';
+    }
+    html += '</div>';
 
     // Build table
     html += '<div class="tf-tbl-wrap" id="tf-tbl-wrap">';
@@ -1399,25 +1442,20 @@ function tfRenderThreeColumns(container, model, src, tgt, inData, outData, row) 
         var statusCls = r.status === 'complete' ? 'tf-row-ok' :
                         r.status === 'in-only' ? 'tf-row-in' : 'tf-row-out';
 
-        // Status text label
-        var statusLabel, statusTagCls;
-        if (r.status === 'complete') { statusLabel = 'Mapped'; statusTagCls = 'tf-tag-ok'; }
-        else if (r.status === 'in-only') { statusLabel = 'Source only'; statusTagCls = 'tf-tag-in'; }
-        else { statusLabel = 'Target only'; statusTagCls = 'tf-tag-out'; }
-
         // Group separator between status groups
         if (r.status !== prevStatus && prevStatus !== '') {
             var numCols = 1 + (colSrc ? 1 : 0) + (colTgt ? 1 : 0);
-            html += '<tr class="tf-tbl-group-sep"><td colspan="' + numCols + '"><span class="tf-tag ' + statusTagCls + '">' + statusLabel + '</span></td></tr>';
+            var sepLabel = r.status === 'in-only' ? 'Inbound only' : 'Outbound only';
+            html += '<tr class="tf-tbl-group-sep" data-cov="' + r.status + '"><td colspan="' + numCols + '">' + sepLabel + '</td></tr>';
         }
         prevStatus = r.status;
 
-        // Search index: all visible text + the parent SDA type name + status label
+        // Search index: all visible text + the parent SDA type name
         var srcLabel = r.srcField || '';
         var tgtLabel = r.tgtField || '';
-        var searchIdx = (srcLabel + ' ' + r.sdaField + ' ' + tgtLabel + ' ' + sdaContext + ' ' + statusLabel).toLowerCase();
+        var searchIdx = (srcLabel + ' ' + r.sdaField + ' ' + tgtLabel + ' ' + sdaContext).toLowerCase();
 
-        html += '<tr class="tf-tbl-row ' + statusCls + '" data-idx="' + i + '" data-search="' + escapeAttr(searchIdx) + '">';
+        html += '<tr class="tf-tbl-row ' + statusCls + '" data-idx="' + i + '" data-cov="' + r.status + '" data-search="' + escapeAttr(searchIdx) + '">';
 
         if (colSrc) {
             html += '<td class="tf-tbl-cell tf-tbl-src" title="' + escapeAttr(srcLabel) + '">';
@@ -1442,53 +1480,49 @@ function tfRenderThreeColumns(container, model, src, tgt, inData, outData, row) 
     container.innerHTML = html;
 }
 
+// ── Coverage chip toggle ───────────────────────────────────────
+// Each chip toggles visibility of rows with matching data-cov attribute.
+// Active chips show their rows; inactive chips hide them.
+function tfToggleCov(btn) {
+    btn.classList.toggle('tf-cov-active');
+    tfApplyCovFilter();
+}
+function tfApplyCovFilter() {
+    var chips = document.querySelectorAll('.tf-cov-chip');
+    var activeStatuses = {};
+    chips.forEach(function(c) {
+        if (c.classList.contains('tf-cov-active')) {
+            activeStatuses[c.dataset.cov] = true;
+        }
+    });
+    // Also respect the text filter
+    var filterEl = document.getElementById('tf-field-filter');
+    var q = filterEl ? filterEl.value.toLowerCase().trim() : '';
+
+    document.querySelectorAll('.tf-tbl-row').forEach(function(tr) {
+        var covMatch = !!activeStatuses[tr.dataset.cov];
+        var textMatch = !q || (tr.dataset.search || '').indexOf(q) !== -1;
+        tr.style.display = (covMatch && textMatch) ? '' : 'none';
+    });
+    // Group separators follow their group
+    document.querySelectorAll('.tf-tbl-group-sep').forEach(function(sep) {
+        sep.style.display = activeStatuses[sep.dataset.cov] ? '' : 'none';
+    });
+}
+
 // ── Field-level text filter ─────────────────────────────────────
 // Filters table rows based on the text input. Case-insensitive substring
 // search across all visible columns (source, SDA, target).
 
 // Global filter function — called via oninput="tfDoFieldFilter()" on the
-// input element. Using inline handler avoids addEventListener timing bugs
-// when the DOM is rebuilt.
+// input element. Delegates to tfApplyCovFilter() which handles both text
+// and coverage-chip filtering in one pass.
 function tfDoFieldFilter() {
-    var filter = $('tf-field-filter');
-    if (!filter) return;
-    var q = filter.value.toLowerCase().trim();
-    var rows = document.querySelectorAll('.tf-tbl-row');
-    if (!rows.length) return;
-    var visible = 0;
-    rows.forEach(function(tr) {
-        if (!q) { tr.style.display = ''; visible++; return; }
-        // data-search includes: all cell text + the parent SDA type name
-        // so "add" matches all rows under "Address" even if the enriched
-        // sub-field names (City, State, Zip) don't contain "add"
-        var idx = tr.dataset.search || '';
-        var show = idx.indexOf(q) !== -1;
-        tr.style.display = show ? '' : 'none';
-        if (show) visible++;
-    });
-    // Also hide group separator rows if their following rows are hidden
-    document.querySelectorAll('.tf-tbl-group-sep').forEach(function(sep) {
-        var next = sep.nextElementSibling;
-        if (!next || next.style.display === 'none') { sep.style.display = 'none'; }
-        else { sep.style.display = ''; }
-    });
-    // Show/hide "no results"
-    var wrap = $('tf-tbl-wrap');
-    if (wrap) {
-        var noRes = wrap.querySelector('.tf-no-results');
-        if (visible === 0 && q) {
-            if (!noRes) {
-                noRes = document.createElement('div');
-                noRes.className = 'tf-no-results';
-                noRes.textContent = 'No fields match "' + filter.value.trim() + '"';
-                wrap.appendChild(noRes);
-            } else { noRes.textContent = 'No fields match "' + filter.value.trim() + '"'; }
-        } else if (noRes) { noRes.remove(); }
-    }
+    tfApplyCovFilter();
 }
 
-// Legacy wrapper — still called by old paths, now a no-op since the
-// filter uses an inline oninput handler.
+// Legacy wrapper — still called by old code paths, now a no-op since
+// the filter uses inline oninput and coverage chips use onclick.
 function tfWireFieldFilter() { }
 
 var _tfCurrentFilterModel = null;
