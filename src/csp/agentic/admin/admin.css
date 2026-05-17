@@ -1124,11 +1124,52 @@ code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .tf-row-in .tf-tbl-tgt { opacity: 0.25; }
 .tf-row-out .tf-tbl-src { opacity: 0.25; }
 
+/* Clickable rows (have class detail to expand) */
+.tf-tbl-clickable { cursor: pointer; }
+.tf-tbl-clickable:hover { background: rgba(59, 130, 246, 0.07); }
+.tf-row-expanded { background: rgba(59, 130, 246, 0.05); }
+
+/* Detail row — shows source/target class references */
+.tf-detail-row td {
+  padding: 0 12px 8px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(22, 26, 33, 0.5);
+}
+.tf-detail-inner {
+  display: flex;
+  gap: 24px;
+  flex-wrap: wrap;
+  padding: 6px 0;
+}
+.tf-detail-cls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.tf-detail-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.tf-detail-val {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  color: var(--primary);
+  word-break: break-all;
+}
+
 /* Group separator between status groups */
 .tf-tbl-group-sep td {
   padding: 6px 12px 4px;
   background: rgba(22, 26, 33, 0.8);
   border-bottom: 1px solid var(--border);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 /* No results message inside table wrap */

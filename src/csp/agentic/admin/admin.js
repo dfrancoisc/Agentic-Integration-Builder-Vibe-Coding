@@ -1202,6 +1202,8 @@ function tfTableToModel(tableRows) {
             sdaField: r.sdaField || r.sdaNormalized,
             srcField: r.sourceField || null,
             tgtField: r.targetField || null,
+            srcClass: r.sourceClass || null,
+            tgtClass: r.targetClass || null,
             status: r.status || 'complete'
         });
     }
@@ -1273,7 +1275,7 @@ function tfNormalizeSdaKey(field) {
 // Returns an array of rows, each with: { sdaField, srcField, tgtField, status }
 
 function tfBuildFieldModel(inMappings, outMappings) {
-    // Build lookup: normalized SDA key → { srcField, sdaRaw }
+    // Build lookup: normalized SDA key → { srcField, sdaRaw, className }
     var inBySda = {};
     if (inMappings) {
         for (var i = 0; i < inMappings.length; i++) {
@@ -1281,13 +1283,14 @@ function tfBuildFieldModel(inMappings, outMappings) {
             if (key && !inBySda[key]) {
                 inBySda[key] = {
                     srcField: inMappings[i].sourceField,
-                    sdaRaw: inMappings[i].targetField
+                    sdaRaw: inMappings[i].targetField,
+                    className: inMappings[i].className || null
                 };
             }
         }
     }
 
-    // Build lookup: normalized SDA key → { tgtField, sdaRaw }
+    // Build lookup: normalized SDA key → { tgtField, sdaRaw, className }
     var outBySda = {};
     if (outMappings) {
         for (var i = 0; i < outMappings.length; i++) {
@@ -1295,7 +1298,8 @@ function tfBuildFieldModel(inMappings, outMappings) {
             if (key && !outBySda[key]) {
                 outBySda[key] = {
                     tgtField: outMappings[i].targetField,
-                    sdaRaw: outMappings[i].sourceField
+                    sdaRaw: outMappings[i].sourceField,
+                    className: outMappings[i].className || null
                 };
             }
         }
@@ -1325,6 +1329,8 @@ function tfBuildFieldModel(inMappings, outMappings) {
             sdaField: sdaDisplay,
             srcField: inEntry ? inEntry.srcField : null,
             tgtField: outEntry ? outEntry.tgtField : null,
+            srcClass: inEntry ? inEntry.className : null,
+            tgtClass: outEntry ? outEntry.className : null,
             status: status
         });
     }
@@ -1455,7 +1461,13 @@ function tfRenderThreeColumns(container, model, src, tgt, inData, outData, row) 
         var tgtLabel = r.tgtField || '';
         var searchIdx = (srcLabel + ' ' + r.sdaField + ' ' + tgtLabel + ' ' + sdaContext).toLowerCase();
 
-        html += '<tr class="tf-tbl-row ' + statusCls + '" data-idx="' + i + '" data-cov="' + r.status + '" data-search="' + escapeAttr(searchIdx) + '">';
+        // Has class info?
+        var hasSrc = r.srcClass ? true : false;
+        var hasTgt = r.tgtClass ? true : false;
+        var hasClasses = hasSrc || hasTgt;
+        var rowCursor = hasClasses ? ' tf-tbl-clickable' : '';
+
+        html += '<tr class="tf-tbl-row ' + statusCls + rowCursor + '" data-idx="' + i + '" data-cov="' + r.status + '" data-search="' + escapeAttr(searchIdx) + '"' + (hasClasses ? ' onclick="tfToggleDetail(this)"' : '') + '>';
 
         if (colSrc) {
             html += '<td class="tf-tbl-cell tf-tbl-src" title="' + escapeAttr(srcLabel) + '">';
@@ -1474,6 +1486,27 @@ function tfRenderThreeColumns(container, model, src, tgt, inData, outData, row) 
         }
 
         html += '</tr>';
+
+        // Hidden detail row with class references
+        if (hasClasses) {
+            var numCols = 1 + (colSrc ? 1 : 0) + (colTgt ? 1 : 0);
+            html += '<tr class="tf-detail-row" data-cov="' + r.status + '" style="display:none">';
+            html += '<td colspan="' + numCols + '">';
+            html += '<div class="tf-detail-inner">';
+            if (hasSrc) {
+                html += '<div class="tf-detail-cls">';
+                html += '<span class="tf-detail-label">Inbound class</span>';
+                html += '<span class="tf-detail-val">' + escapeHtml(r.srcClass) + '</span>';
+                html += '</div>';
+            }
+            if (hasTgt) {
+                html += '<div class="tf-detail-cls">';
+                html += '<span class="tf-detail-label">Outbound class</span>';
+                html += '<span class="tf-detail-val">' + escapeHtml(r.tgtClass) + '</span>';
+                html += '</div>';
+            }
+            html += '</div></td></tr>';
+        }
     }
     html += '</tbody></table></div>';
 
@@ -1502,12 +1535,29 @@ function tfApplyCovFilter() {
     document.querySelectorAll('.tf-tbl-row').forEach(function(tr) {
         var covMatch = !!activeStatuses[tr.dataset.cov];
         var textMatch = !q || (tr.dataset.search || '').indexOf(q) !== -1;
-        tr.style.display = (covMatch && textMatch) ? '' : 'none';
+        var show = covMatch && textMatch;
+        tr.style.display = show ? '' : 'none';
+        // Collapse any open detail row if parent is hidden
+        if (!show) {
+            tr.classList.remove('tf-row-expanded');
+            var detail = tr.nextElementSibling;
+            if (detail && detail.classList.contains('tf-detail-row')) {
+                detail.style.display = 'none';
+            }
+        }
     });
     // Group separators follow their group
     document.querySelectorAll('.tf-tbl-group-sep').forEach(function(sep) {
         sep.style.display = activeStatuses[sep.dataset.cov] ? '' : 'none';
     });
+}
+
+// ── Row detail toggle (shows/hides the class reference row) ────
+function tfToggleDetail(tr) {
+    var detail = tr.nextElementSibling;
+    if (!detail || !detail.classList.contains('tf-detail-row')) return;
+    var expanded = tr.classList.toggle('tf-row-expanded');
+    detail.style.display = expanded ? '' : 'none';
 }
 
 // ── Field-level text filter ─────────────────────────────────────
