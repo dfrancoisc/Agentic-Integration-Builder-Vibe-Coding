@@ -1112,7 +1112,7 @@ function tfSelectType(idx, src, tgt) {
     main.innerHTML =
         '<div class="tf-main-hdr">' +
             '<div class="tf-main-title">' + titleStr + '</div>' +
-            '<div class="tf-field-filter-wrap"><input type="text" class="tf-field-filter" id="tf-field-filter" placeholder="Filter fields..." autocomplete="off"></div>' +
+            '<div class="tf-field-filter-wrap"><input type="text" class="tf-field-filter" id="tf-field-filter" placeholder="Filter fields..." autocomplete="off" oninput="tfDoFieldFilter()"></div>' +
         '</div>' +
         '<div id="tf-field-area"><div class="tf-field-loading">Loading field-level mappings...</div></div>';
 
@@ -1343,6 +1343,16 @@ function tfRenderThreeColumns(container, model, src, tgt, inData, outData, row) 
         return;
     }
 
+    // Sort: mapped (complete) first, then source-only, then target-only.
+    // Within each group, keep alphabetical by SDA field.
+    var statusOrder = { 'complete': 0, 'in-only': 1, 'out-only': 2 };
+    model.sort(function(a, b) {
+        var sa = statusOrder[a.status] !== undefined ? statusOrder[a.status] : 1;
+        var sb = statusOrder[b.status] !== undefined ? statusOrder[b.status] : 1;
+        if (sa !== sb) return sa - sb;
+        return (a.sdaField || '').localeCompare(b.sdaField || '');
+    });
+
     // Column headers
     var colSrc = (src === 'SDA3') ? null : src;
     var colSda = 'SDA3';
@@ -1362,13 +1372,6 @@ function tfRenderThreeColumns(container, model, src, tgt, inData, outData, row) 
 
     var html = '';
 
-    // Legend row — explains the status labels
-    html += '<div class="tf-legend">';
-    html += '<span class="tf-legend-item"><span class="tf-tag tf-tag-ok">Mapped</span> Source and target both linked</span>';
-    html += '<span class="tf-legend-item"><span class="tf-tag tf-tag-in">Source only</span> No outbound target</span>';
-    html += '<span class="tf-legend-item"><span class="tf-tag tf-tag-out">Target only</span> No inbound source</span>';
-    html += '</div>';
-
     // Stats row
     html += '<div class="tf-field-stats">' +
         '<span class="tf-field-stat">' + model.length + ' fields</span>' +
@@ -1386,11 +1389,11 @@ function tfRenderThreeColumns(container, model, src, tgt, inData, outData, row) 
     if (colSrc) html += '<th class="tf-th-src">' + escapeHtml(colSrc) + '</th>';
     html += '<th class="tf-th-sda">' + escapeHtml(colSda) + '</th>';
     if (colTgt) html += '<th class="tf-th-tgt">' + escapeHtml(colTgt) + '</th>';
-    html += '<th class="tf-tbl-status-col">Coverage</th>';
     html += '</tr></thead>';
 
     // Body rows
     html += '<tbody>';
+    var prevStatus = '';
     for (var i = 0; i < model.length; i++) {
         var r = model[i];
         var statusCls = r.status === 'complete' ? 'tf-row-ok' :
@@ -1402,7 +1405,14 @@ function tfRenderThreeColumns(container, model, src, tgt, inData, outData, row) 
         else if (r.status === 'in-only') { statusLabel = 'Source only'; statusTagCls = 'tf-tag-in'; }
         else { statusLabel = 'Target only'; statusTagCls = 'tf-tag-out'; }
 
-        // Search index: all visible text + the parent SDA type name
+        // Group separator between status groups
+        if (r.status !== prevStatus && prevStatus !== '') {
+            var numCols = 1 + (colSrc ? 1 : 0) + (colTgt ? 1 : 0);
+            html += '<tr class="tf-tbl-group-sep"><td colspan="' + numCols + '"><span class="tf-tag ' + statusTagCls + '">' + statusLabel + '</span></td></tr>';
+        }
+        prevStatus = r.status;
+
+        // Search index: all visible text + the parent SDA type name + status label
         var srcLabel = r.srcField || '';
         var tgtLabel = r.tgtField || '';
         var searchIdx = (srcLabel + ' ' + r.sdaField + ' ' + tgtLabel + ' ' + sdaContext + ' ' + statusLabel).toLowerCase();
@@ -1425,7 +1435,6 @@ function tfRenderThreeColumns(container, model, src, tgt, inData, outData, row) 
             html += '</td>';
         }
 
-        html += '<td class="tf-tbl-cell tf-tbl-status"><span class="tf-tag ' + statusTagCls + '">' + statusLabel + '</span></td>';
         html += '</tr>';
     }
     html += '</tbody></table></div>';
@@ -1437,39 +1446,50 @@ function tfRenderThreeColumns(container, model, src, tgt, inData, outData, row) 
 // Filters table rows based on the text input. Case-insensitive substring
 // search across all visible columns (source, SDA, target).
 
-function tfWireFieldFilter() {
+// Global filter function — called via oninput="tfDoFieldFilter()" on the
+// input element. Using inline handler avoids addEventListener timing bugs
+// when the DOM is rebuilt.
+function tfDoFieldFilter() {
     var filter = $('tf-field-filter');
     if (!filter) return;
-    filter.addEventListener('input', function() {
-        var q = filter.value.toLowerCase().trim();
-        var rows = document.querySelectorAll('.tf-tbl-row');
-        if (!rows.length) return;
-        var visible = 0;
-        rows.forEach(function(tr) {
-            if (!q) { tr.style.display = ''; visible++; return; }
-            // data-search includes: all cell text + the parent SDA type name
-            // so "add" matches all rows under "Address" even if the enriched
-            // sub-field names (City, State, Zip) don't contain "add"
-            var idx = tr.dataset.search || '';
-            var show = idx.indexOf(q) !== -1;
-            tr.style.display = show ? '' : 'none';
-            if (show) visible++;
-        });
-        // Show/hide "no results" if everything is filtered out
-        var wrap = $('tf-tbl-wrap');
-        if (wrap) {
-            var noRes = wrap.querySelector('.tf-no-results');
-            if (visible === 0 && q) {
-                if (!noRes) {
-                    noRes = document.createElement('div');
-                    noRes.className = 'tf-no-results';
-                    noRes.textContent = 'No fields match "' + filter.value.trim() + '"';
-                    wrap.appendChild(noRes);
-                } else { noRes.textContent = 'No fields match "' + filter.value.trim() + '"'; }
-            } else if (noRes) { noRes.remove(); }
-        }
+    var q = filter.value.toLowerCase().trim();
+    var rows = document.querySelectorAll('.tf-tbl-row');
+    if (!rows.length) return;
+    var visible = 0;
+    rows.forEach(function(tr) {
+        if (!q) { tr.style.display = ''; visible++; return; }
+        // data-search includes: all cell text + the parent SDA type name
+        // so "add" matches all rows under "Address" even if the enriched
+        // sub-field names (City, State, Zip) don't contain "add"
+        var idx = tr.dataset.search || '';
+        var show = idx.indexOf(q) !== -1;
+        tr.style.display = show ? '' : 'none';
+        if (show) visible++;
     });
+    // Also hide group separator rows if their following rows are hidden
+    document.querySelectorAll('.tf-tbl-group-sep').forEach(function(sep) {
+        var next = sep.nextElementSibling;
+        if (!next || next.style.display === 'none') { sep.style.display = 'none'; }
+        else { sep.style.display = ''; }
+    });
+    // Show/hide "no results"
+    var wrap = $('tf-tbl-wrap');
+    if (wrap) {
+        var noRes = wrap.querySelector('.tf-no-results');
+        if (visible === 0 && q) {
+            if (!noRes) {
+                noRes = document.createElement('div');
+                noRes.className = 'tf-no-results';
+                noRes.textContent = 'No fields match "' + filter.value.trim() + '"';
+                wrap.appendChild(noRes);
+            } else { noRes.textContent = 'No fields match "' + filter.value.trim() + '"'; }
+        } else if (noRes) { noRes.remove(); }
+    }
 }
+
+// Legacy wrapper — still called by old paths, now a no-op since the
+// filter uses an inline oninput handler.
+function tfWireFieldFilter() { }
 
 var _tfCurrentFilterModel = null;
 

@@ -955,20 +955,7 @@ code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
    Clean table layout replacing the old SVG three-column view.
    ──────────────────────────────────────────────────── */
 
-/* ── Legend (explains status tags) ──────────────── */
-.tf-legend {
-  display: flex; gap: 20px; align-items: center;
-  padding: 8px 14px; margin-bottom: 8px;
-  background: rgba(30, 35, 44, 0.6);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  font-size: 11px; color: var(--muted);
-}
-.tf-legend-item {
-  display: flex; align-items: center; gap: 6px;
-}
-
-/* ── Status tags (text labels replacing dots) ───── */
+/* ── Status tags (text labels) ──────────────────── */
 .tf-tag {
   display: inline-block;
   padding: 2px 7px;
@@ -994,10 +981,11 @@ code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
   border: 1px solid rgba(251, 191, 36, 0.25);
 }
 
-/* ── Table wrap ────────────────────────────────── */
+/* ── Table wrap — vertical scroll only, NO horizontal scroll ── */
 .tf-tbl-wrap {
   max-height: 560px;
   overflow-y: auto;
+  overflow-x: hidden;
   scrollbar-width: thin;
   scrollbar-color: var(--border) transparent;
   border: 1px solid var(--border);
@@ -1035,12 +1023,6 @@ code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .tf-th-sda { color: var(--primary); }
 .tf-th-tgt { color: #86efac; }
 
-.tf-tbl-status-col {
-  width: 90px;
-  text-align: center !important;
-  color: var(--muted) !important;
-}
-
 .tf-tbl-row {
   transition: background-color 0.12s;
   border-bottom: 1px solid rgba(100, 116, 139, 0.1);
@@ -1052,8 +1034,13 @@ code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
   border-bottom: none;
 }
 
+/* Mapped rows get a subtle green left accent */
+.tf-row-ok {
+  border-left: 3px solid rgba(34, 197, 94, 0.5);
+}
+
 .tf-tbl-cell {
-  padding: 8px 14px;
+  padding: 7px 12px;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 12px;
   white-space: nowrap;
@@ -1073,15 +1060,16 @@ code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
   font-style: italic;
 }
 
-.tf-tbl-status {
-  text-align: center;
-  width: 90px;
-}
-
 /* Row status tinting — dim the empty side */
-.tf-row-ok { }
 .tf-row-in .tf-tbl-tgt { opacity: 0.25; }
 .tf-row-out .tf-tbl-src { opacity: 0.25; }
+
+/* Group separator between status groups */
+.tf-tbl-group-sep td {
+  padding: 6px 12px 4px;
+  background: rgba(22, 26, 33, 0.8);
+  border-bottom: 1px solid var(--border);
+}
 
 /* No results message inside table wrap */
 .tf-no-results {
