@@ -19,7 +19,7 @@ All build phases complete (Phase 0 through Phase 7). The agent operates under th
 | MCP servers | 4 (Production, Transform, Testing, Catalog) |
 | Skills (%AI.Agent.Skill) | 12 |
 | Vector catalogs | 2 (search_ens: 164 classes, search_hs: 58 classes) |
-| Field-level mappings (Data Atlas) | 1,538 |
+| Field-level mappings (Transformation and Mapping Catalog) | 1,538 |
 | Persistent data classes | 5 (Connection, AgentOverride, MCPOverride, ToolSetOverride, AuditLog) |
 | Git commits | 100+ |
 
@@ -39,7 +39,7 @@ Example: "Review the last 2 hours of errors across all productions and recommend
 
 ### 3. Create and Optimize Transformations
 
-The agent traces data flow through the SDA3 pivot (HL7 v2 -> SDA3 -> FHIR R4), introspects HL7 schemas at sub-field level, creates DTL definitions with correct source/target classes, and dry-runs transformations against sample data. The Data Atlas provides field-level gap analysis across 1,538 pre-computed mappings.
+The agent traces data flow through the SDA3 pivot (HL7 v2 -> SDA3 -> FHIR R4), introspects HL7 schemas at sub-field level, creates DTL definitions with correct source/target classes, and dry-runs transformations against sample data. The Transformation and Mapping Catalog provides field-level gap analysis across 1,538 pre-computed mappings.
 
 Example: "Create an interface that transforms any HL7 v2 message to FHIR R4 using the built-in HL7-to-SDA-to-FHIR pipeline."
 
@@ -64,14 +64,14 @@ The admin UI provides configuration pages for all entities. No code edits requir
 | Skills | INSTRUCTIONS editor for each domain skill |
 | Connections | LLM provider configuration with masked secret input, live test button, green/red status |
 | Catalogs | Vector catalog rebuild, source namespace selection, test search, browse entries |
-| Transforms | Field-level mapping explorer (Data Atlas) across HL7 v2, SDA3, FHIR R4, CDA, X12 |
+| Transforms | Field-level mapping explorer (Transformation and Mapping Catalog) across HL7 v2, SDA3, FHIR R4, CDA, X12 |
 | Audit | Searchable log of every API request with method, path, status, duration, user, namespace |
 
-## Data Atlas (Transforms tab)
+## Transformation and Mapping Catalog (Transforms tab)
 
 A visual field-level mapping explorer showing how data flows between external formats through the SDA3 canonical model. SDA3 is the universal pivot in IRIS for Health -- all external formats (HL7 v2, FHIR R4, CDA, X12) map through it.
 
-![Data Atlas](docs/img/13_transforms_hl7_fhir.png)
+![Transformation and Mapping Catalog](docs/img/13_transforms_hl7_fhir.png)
 
 Features:
 - Format pair selection: HL7 v2, FHIR R4, FHIR STU3, CDA, X12, SDA3
@@ -186,7 +186,7 @@ Project documentation with embedded screenshots from the live system:
 | Document | Description |
 |---|---|
 | [01_Requirements_User_Stories.md](docs/01_Requirements_User_Stories.md) | End-to-end requirements, three core use cases, Developer and Builder user stories |
-| [02_Technical_Build_Specification.md](docs/02_Technical_Build_Specification.md) | Technical specification for all 11 components (Chatbot, Agent, Skills, MCPs, Tools, Catalogs, Data Atlas, Connections, Audit, Performance) |
+| [02_Technical_Build_Specification.md](docs/02_Technical_Build_Specification.md) | Technical specification for all 11 components (Chatbot, Agent, Skills, MCPs, Tools, Catalogs, Transformation and Mapping Catalog, Connections, Audit, Performance) |
 | [03_Lessons_Learned.md](docs/03_Lessons_Learned.md) | Framework bugs, Vector Search optimization, token reduction strategies with before/after metrics |
 | [PLAN.md](docs/PLAN.md) | Architecture decisions, restrictions, build phases |
 | [MIGRATION.md](docs/MIGRATION.md) | Class-by-class build map |

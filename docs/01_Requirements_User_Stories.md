@@ -66,11 +66,11 @@ Data Transformations are the heart of healthcare interoperability. Integration e
 
 The agent assists the Builder with transformation work at every stage:
 
-- **Pipeline Discovery**: The agent traces the full transformation pipeline for any format pair (e.g., HL7 v2 to FHIR R4) showing which IRIS classes handle each step, what intermediate formats are used, and where the data flows. The Data Atlas (Transforms tab) provides this information visually at the field level.
-- **DTL Creation**: The agent creates new DTL definitions by first searching the HS.* catalog for existing transformations that handle the same or similar format pair, then scaffolding a new DTL with the correct source/target classes and document types. It can populate field mappings based on the Data Atlas mappings.
+- **Pipeline Discovery**: The agent traces the full transformation pipeline for any format pair (e.g., HL7 v2 to FHIR R4) showing which IRIS classes handle each step, what intermediate formats are used, and where the data flows. The Transformation and Mapping Catalog (Transforms tab) provides this information visually at the field level.
+- **DTL Creation**: The agent creates new DTL definitions by first searching the HS.* catalog for existing transformations that handle the same or similar format pair, then scaffolding a new DTL with the correct source/target classes and document types. It can populate field mappings based on the Transformation and Mapping Catalog mappings.
 - **Schema Introspection**: The agent can introspect HL7 v2 message schemas (segments, fields, components) and FHIR R4 resource structures so the Builder understands what data is available at each point in the pipeline. It knows about composite types (XAD for addresses, XPN for names, CX for identifiers) and can show sub-field level detail.
 - **Dry-Run Testing**: The agent can execute a DTL against a sample message (DryRunDTL) to verify the transformation produces the expected output without deploying to a production. It can compare before/after messages field by field.
-- **Cross-Format Mapping Insights**: Through the Data Atlas, the agent (and the Builder via the admin UI) can see exactly which HL7 fields map through SDA3 to FHIR, which fields are inbound-only (arrive but don't continue), and which are outbound-only (produced in the target but not sourced from the input). This enables gap analysis before writing any code.
+- **Cross-Format Mapping Insights**: Through the Transformation and Mapping Catalog, the agent (and the Builder via the admin UI) can see exactly which HL7 fields map through SDA3 to FHIR, which fields are inbound-only (arrive but don't continue), and which are outbound-only (produced in the target but not sourced from the input). This enables gap analysis before writing any code.
 
 **Tools involved**: list_dtls, create_dtl, update_dtl, compile_dtl, dry_run_dtl, list_sda_fhir_dtls, describe_transformation_pipeline, get_hl7_schema_map, get_hl7_segment_fields, search_hs, compare_messages
 
@@ -279,7 +279,7 @@ Screenshot reference: Tools tab showing the 42 tools across 5 classes
 
 Screenshot reference: Skills tab showing skill list and editor
 
-#### US-B06: Review Transformation Mappings (Data Atlas)
+#### US-B06: Review Transformation Mappings (Transformation and Mapping Catalog)
 
 **As a** Builder,  
 **I want to** explore field-level mappings between HL7 v2, SDA3, and FHIR R4 formats,  
@@ -400,5 +400,5 @@ This scenario demonstrates the full system working end-to-end:
 | Skills | Skill INSTRUCTIONS editor | 12 skills |
 | Connections | LLM provider credentials and health check | N (user-configured) |
 | Catalogs | Vector catalog status, rebuild, search | 2 (Ens.*, HS.*) |
-| Transforms | Field-level mapping explorer (Data Atlas) | 1538 pre-computed rows |
+| Transforms | Field-level mapping explorer (Transformation and Mapping Catalog) | 1538 pre-computed rows |
 | Audit | Request audit trail | All API calls |

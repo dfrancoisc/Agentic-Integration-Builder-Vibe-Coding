@@ -301,14 +301,14 @@ def build_doc1():
     doc.add_paragraph(
         "Pipeline Discovery: The agent traces the full transformation pipeline for any format "
         "pair (e.g., HL7 v2 to FHIR R4) showing which IRIS classes handle each step, what "
-        "intermediate formats are used, and where the data flows. The Data Atlas (Transforms tab) "
+        "intermediate formats are used, and where the data flows. The Transformation and Mapping Catalog (Transforms tab) "
         "provides this information visually at the field level.",
         style="List Bullet")
     doc.add_paragraph(
         "DTL Creation: The agent creates new DTL definitions by first searching the HS.* catalog "
         "for existing transformations that handle the same or similar format pair, then scaffolding "
         "a new DTL with the correct source/target classes and document types. It can populate field "
-        "mappings based on the Data Atlas mappings.",
+        "mappings based on the Transformation and Mapping Catalog mappings.",
         style="List Bullet")
     doc.add_paragraph(
         "Schema Introspection: The agent can introspect HL7 v2 message schemas (segments, fields, "
@@ -322,7 +322,7 @@ def build_doc1():
         "It can compare before/after messages field by field.",
         style="List Bullet")
     doc.add_paragraph(
-        "Cross-Format Mapping Insights: Through the Data Atlas, the agent (and the Builder via "
+        "Cross-Format Mapping Insights: Through the Transformation and Mapping Catalog, the agent (and the Builder via "
         "the admin UI) can see exactly which HL7 fields map through SDA3 to FHIR, which fields "
         "are inbound-only (arrive but don't continue), and which are outbound-only (produced in "
         "the target but not sourced from the input). This enables gap analysis before writing "
@@ -356,7 +356,7 @@ def build_doc1():
         style="List Bullet")
 
     add_figure(doc, img("13_transforms_hl7_fhir.png"),
-        "Data Atlas: the Transforms tab showing field-level HL7 v2 to FHIR R4 mappings through SDA3, with coverage filters and IRIS class names -- a key reference tool for Use Cases 2 and 3")
+        "Transformation and Mapping Catalog: the Transforms tab showing field-level HL7 v2 to FHIR R4 mappings through SDA3, with coverage filters and IRIS class names -- a key reference tool for Use Cases 2 and 3")
 
     # 3. Developer Experience
     doc.add_page_break()
@@ -506,21 +506,21 @@ def build_doc1():
     add_figure(doc, img("08_skill_detail.png"),
         "Skill editor for Adapters showing the class name, description field, bound ToolSets, and expandable class source viewer")
 
-    # US-B06 Transforms (Data Atlas)
-    doc.add_heading("4.7 US-B06: Review Transformation Mappings (Data Atlas)", level=2)
+    # US-B06 Transforms (Transformation and Mapping Catalog)
+    doc.add_heading("4.7 US-B06: Review Transformation Mappings (Transformation and Mapping Catalog)", level=2)
     doc.add_paragraph(
         "As a Builder, I want to explore field-level mappings between HL7 v2, SDA3, and FHIR R4 "
         "formats, so that I can understand how data flows through the transformation pipeline and "
         "identify which IRIS classes handle each mapping.")
     doc.add_paragraph(
-        "The Transforms tab provides a Data Atlas: a visual field-level mapping explorer. The user "
+        "The Transforms tab provides a Transformation and Mapping Catalog: a visual field-level mapping explorer. The user "
         "selects a source format (e.g., HL7 v2) and target format (e.g., FHIR R4), then browses "
         "SDA3 data types in the sidebar. For each type, the three-column table shows:")
     doc.add_paragraph("Source field (e.g., PID.11.3 City) with the IRIS class that performs the inbound mapping", style="List Bullet")
     doc.add_paragraph("SDA3 canonical field (e.g., City)", style="List Bullet")
     doc.add_paragraph("Target field (e.g., city) with the IRIS class that performs the outbound mapping", style="List Bullet")
     add_figure(doc, img("13_transforms_hl7_fhir.png"),
-        "Data Atlas: HL7 v2 to FHIR R4 via SDA3.Address, showing sub-field level mappings (PID.11.3 City, PID.11.6 Country), coverage filter chips (End-to-end, Inbound only, Outbound only), and IRIS class names inline (HS.Gateway.HL7.HL7ToSDA3, HS.FHIR.DTL.SDA3.vR4.Address.Address)")
+        "Transformation and Mapping Catalog: HL7 v2 to FHIR R4 via SDA3.Address, showing sub-field level mappings (PID.11.3 City, PID.11.6 Country), coverage filter chips (End-to-end, Inbound only, Outbound only), and IRIS class names inline (HS.Gateway.HL7.HL7ToSDA3, HS.FHIR.DTL.SDA3.vR4.Address.Address)")
 
     # US-B07 Catalogs
     doc.add_heading("4.8 US-B07: Browse Vector Catalogs", level=2)
@@ -603,7 +603,7 @@ def build_doc1():
             ["Skills", "Skill INSTRUCTIONS editor", "12 skills"],
             ["Connections", "LLM provider credentials and health check", "N (user-configured)"],
             ["Catalogs", "Vector catalog status, rebuild, search", "2 (Ens.*, HS.*)"],
-            ["Transforms", "Field-level mapping explorer (Data Atlas)", "1538 pre-computed rows"],
+            ["Transforms", "Field-level mapping explorer (Transformation and Mapping Catalog)", "1538 pre-computed rows"],
             ["Audit", "Request audit trail", "All API calls"],
         ])
 
@@ -790,16 +790,16 @@ def build_doc2():
     doc.add_paragraph("Query path: %AI.ToolMgr.ExecuteTool(kbName, args) -- the only working path (SQL EMBEDDING() does not work with FastEmbed)", style="List Bullet")
     doc.add_paragraph("Document format: Curated prose descriptions, not raw method signatures", style="List Bullet")
 
-    # 8. Data Atlas
+    # 8. Transformation and Mapping Catalog
     doc.add_page_break()
-    doc.add_heading("8. Data Atlas (Transformation Mappings)", level=1)
+    doc.add_heading("8. Transformation and Mapping Catalog (Transformation Mappings)", level=1)
     doc.add_paragraph(
         "A visual field-level mapping explorer showing how data flows between external formats "
         "(HL7 v2, FHIR R4, CDA, X12) through the SDA3 canonical model.")
     add_figure(doc, img("12_transforms_empty.png"),
         "Transforms tab initial state: format pair selection (Data From / Data To dropdowns) with 1538 pre-computed rows")
     add_figure(doc, img("13_transforms_hl7_fhir.png"),
-        "Data Atlas with HL7 v2 to FHIR R4 selected, showing SDA3.Address mappings at sub-field level with IRIS class names and coverage filters")
+        "Transformation and Mapping Catalog with HL7 v2 to FHIR R4 selected, showing SDA3.Address mappings at sub-field level with IRIS class names and coverage filters")
 
     doc.add_heading("8.1 Data Flow Model", level=2)
     doc.add_paragraph("SDA3 is the universal pivot: all external formats map through it.")
@@ -889,7 +889,7 @@ def build_doc2():
             ["Admin UI", "3 HTML + 2 JS + 2 CSS files", "Built"],
             ["Chat UI", "1 HTML + 1 JS + 1 CSS file", "Built"],
             ["Vector catalogs", "2 classes (Builder, Attach)", "Built"],
-            ["Data Atlas", "2 classes (TransformService, FieldMapping)", "Built"],
+            ["Transformation and Mapping Catalog", "2 classes (TransformService, FieldMapping)", "Built"],
             ["Policies", "2 classes (ConfirmationGate, ToolFilter)", "Built"],
             ["Install hooks", "2 classes (CSPTimeoutPatch, InteropEditorPatch)", "Built"],
             ["IPM package", "module.xml", "Built"],
@@ -1114,12 +1114,12 @@ def build_doc3():
 
     doc.add_heading("6.1 SDA3 as the Universal Pivot", level=2)
     doc.add_paragraph(
-        "The most powerful architectural insight for the Data Atlas was that SDA3 is the universal "
+        "The most powerful architectural insight for the Transformation and Mapping Catalog was that SDA3 is the universal "
         "pivot format in IRIS for Health. Every external format (HL7 v2, FHIR R4, CDA, X12) maps "
         "through SDA3. This means field-level mappings can be pre-computed as a three-column join: "
         "Source -> SDA3 -> Target. Any format pair can be traced by chaining two half-maps through SDA3.")
     add_figure(doc, img("13_transforms_hl7_fhir.png"),
-        "Data Atlas showing the SDA3 pivot pattern: HL7 v2 fields map into SDA3, SDA3 maps out to FHIR R4")
+        "Transformation and Mapping Catalog showing the SDA3 pivot pattern: HL7 v2 fields map into SDA3, SDA3 maps out to FHIR R4")
 
     doc.add_heading("6.2 HL7 v2 Programmatic Mappings Are NOT DTL", level=2)
     doc.add_paragraph(

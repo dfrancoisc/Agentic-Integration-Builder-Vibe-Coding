@@ -261,11 +261,11 @@ Auto-generated accessor methods and structural boilerplate drown out semantic si
 
 ---
 
-## 8. Data Atlas (Transformation Catalog and Mappings)
+## 8. Transformation and Mapping Catalog (Transformation Catalog and Mappings)
 
 ### 8.1 What to build
 
-A visual field-level mapping explorer that shows how data flows between external formats (HL7 v2, FHIR R4, CDA, X12) through the SDA3 canonical model. This is the "Data Atlas" -- a reference tool for integration engineers.
+A visual field-level mapping explorer that shows how data flows between external formats (HL7 v2, FHIR R4, CDA, X12) through the SDA3 canonical model. This is the "Transformation and Mapping Catalog" -- a reference tool for integration engineers.
 
 ### 8.2 Data flow model
 
@@ -276,7 +276,7 @@ HL7 v2 (inbound)  -->  SDA3 (canonical)  -->  FHIR R4 (outbound)
   PID.11.4 State   -->  State              -->  state
 ```
 
-SDA3 is the universal pivot: all external formats map through it. The Data Atlas shows both directions (inbound and outbound) and identifies fields that are:
+SDA3 is the universal pivot: all external formats map through it. The Transformation and Mapping Catalog shows both directions (inbound and outbound) and identifies fields that are:
 - **End-to-end**: traced from source through SDA3 to target
 - **Inbound only**: arrives in SDA3 but has no outbound target
 - **Outbound only**: produced in the target but has no inbound source
@@ -419,7 +419,7 @@ All code uses `$namespace` at request time. No hardcoded namespace references. T
 | Admin UI | 3 HTML + 2 JS + 2 CSS files | Built |
 | Chat UI | 1 HTML + 1 JS + 1 CSS file | Built |
 | Vector catalogs | 2 classes (Builder, Attach) | Built |
-| Data Atlas | 2 classes (TransformService, FieldMapping) | Built |
+| Transformation and Mapping Catalog | 2 classes (TransformService, FieldMapping) | Built |
 | Policies | 2 classes (ConfirmationGate, ToolFilter) | Built |
 | Install hooks | 2 classes (CSPTimeoutPatch, InteropEditorPatch) | Built |
 | IPM package | module.xml | Built |

@@ -252,7 +252,7 @@ def build_exec_deck():
           "Introspect HL7 schemas at sub-field level",
           "Create DTLs with correct source/target classes",
           "Dry-run transformations against sample data",
-          "Field-level gap analysis via the Data Atlas"]),
+          "Field-level gap analysis via the Transformation and Mapping Catalog"]),
     ]):
         x = x0 + i * (card_w + gap)
         add_rect(slide, x, y0, card_w, card_h, RGBColor(0xFF,0xFF,0xFF), radius=True)
@@ -297,7 +297,7 @@ def build_exec_deck():
     add_bullet(tf, "5 ToolSets with 42 Tools covering the full integration lifecycle", size=13, color=DARK_TEXT, bold=True)
     add_bullet(tf, "12 Skills: Productions, DTL, BPL, HL7 v2, FHIR R4, SDA, CDA, X12, Routing Rules, ESB Patterns, Adapters, REST", size=13, color=DARK_TEXT, bold=True)
     add_bullet(tf, "2 Vector Catalogs: Ens.* (164 classes) + HS.* (58 classes)", size=13, color=DARK_TEXT, bold=True)
-    add_bullet(tf, "Data Atlas: 1,538 field-level mappings across HL7/SDA3/FHIR", size=13, color=DARK_TEXT, bold=True)
+    add_bullet(tf, "Transformation and Mapping Catalog: 1,538 field-level mappings across HL7/SDA3/FHIR", size=13, color=DARK_TEXT, bold=True)
     add_bullet(tf, "Admin UI + Chat UI, audit trail, connection manager", size=13, color=DARK_TEXT, bold=True)
 
     # Right: Community / Customer Content
@@ -335,7 +335,7 @@ def build_exec_deck():
              "Chat: natural-language production builder with streaming + tool cards",
              size=11, color=MID_TEXT, align=PP_ALIGN.CENTER)
     add_text(slide, Inches(7.0), Inches(5.5), Inches(5.8), Inches(0.4),
-             "Data Atlas: field-level HL7 v2 -> SDA3 -> FHIR R4 mapping explorer",
+             "Transformation and Mapping Catalog: field-level HL7 v2 -> SDA3 -> FHIR R4 mapping explorer",
              size=11, color=MID_TEXT, align=PP_ALIGN.CENTER)
 
     # Stats bar
@@ -742,7 +742,7 @@ def build_eng_deck():
     add_text(slide, Inches(7.5), Inches(2.75), Inches(2), Inches(0.4),
              "HS.FHIR.DTL.SDA3.\nvR4.Address.Address", size=9, color=MUTED, align=PP_ALIGN.CENTER)
 
-    # Data Atlas screenshot
+    # Transformation and Mapping Catalog screenshot
     add_image_safe(slide, os.path.join(IMG, "13_transforms_hl7_fhir.png"),
                    Inches(0.8), Inches(3.4), width=Inches(11.5))
 
@@ -773,7 +773,7 @@ def build_eng_deck():
             "42 Tools across 5 ToolSets",
             "12 Skills (HL7, FHIR, DTL, ...)",
             "2 Vector Catalogs (222 classes)",
-            "Data Atlas (1,538 field mappings)",
+            "Transformation and Mapping Catalog (1,538 field mappings)",
             "Admin UI + Chat UI",
             "Overlay pattern for customization",
         ]),
@@ -913,7 +913,7 @@ def build_eng_deck():
             "Multi-agent support (Lab, Pharmacy, Claims)",
             "Tool authoring wizard in admin UI",
             "Skill content editor with live preview",
-            "FHIR STU3 and CDA Data Atlas coverage",
+            "FHIR STU3 and CDA Transformation and Mapping Catalog coverage",
             "Open Exchange publication",
         ]),
         ("Later (2027)", PURPLE, [

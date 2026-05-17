@@ -290,7 +290,7 @@ The CSP gateway sets `Expires: +1h` on static files served from `/agentic/*`. Du
 
 ### 6.2 SDA3 as the universal pivot
 
-The most powerful architectural insight for the Data Atlas was that SDA3 is the universal pivot format in IRIS for Health. Every external format (HL7 v2, FHIR R4, CDA, X12) maps through SDA3. This means:
+The most powerful architectural insight for the Transformation and Mapping Catalog was that SDA3 is the universal pivot format in IRIS for Health. Every external format (HL7 v2, FHIR R4, CDA, X12) maps through SDA3. This means:
 - Field-level mappings can be pre-computed as a three-column join: Source -> SDA3 -> Target
 - Any format pair can be traced by chaining two half-maps through SDA3
 - Coverage gaps (fields that arrive but don't continue) become immediately visible
