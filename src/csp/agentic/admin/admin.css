@@ -837,6 +837,11 @@ code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 
 .tf-main-hdr {
   margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
 .tf-main-title {
@@ -900,6 +905,51 @@ code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .tf-field-stat-ok { color: var(--success); }
 .tf-field-stat-in { color: #93c5fd; }
 .tf-field-stat-out { color: #86efac; }
+
+/* ── Field-level filter ──────────────────────────────── */
+
+.tf-field-filter-wrap {
+  margin-top: 8px;
+}
+
+.tf-field-filter {
+  width: 260px;
+  padding: 5px 10px;
+  font-size: 12px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  color: var(--text);
+  outline: none;
+  transition: border-color 0.15s;
+}
+.tf-field-filter:focus {
+  border-color: var(--primary);
+}
+.tf-field-filter::placeholder {
+  color: var(--muted);
+}
+
+/* ── Arrow head (replaces SDA3 label in center) ──────── */
+
+.tf-ctrl-arrow-head {
+  width: 0;
+  height: 0;
+  border-top: 5px solid transparent;
+  border-bottom: 5px solid transparent;
+  border-left: 8px solid var(--primary);
+}
+
+/* ── Two-column layout (SDA3 as endpoint) ────────────── */
+
+.tf-2col {
+  justify-content: flex-start;
+}
+.tf-2col .tf-3col-col {
+  min-width: 200px;
+  flex: 1;
+  max-width: 320px;
+}
 
 /* ── Three-column field mapper ───────────────────────
    Five-part flex: [src] [svgL] [sda] [svgR] [tgt]

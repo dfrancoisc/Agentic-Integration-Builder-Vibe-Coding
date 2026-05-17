@@ -787,12 +787,21 @@ ClassMethod QueryFieldTrace(pResponse As %CSP.Response) As %Status
         Quit $classmethod(util, "WriteJSON", pResponse, out)
     }
 
-    Set out.mappings = ##class(AgenticInterop.Data.FieldMapping).Query(srcFmt, tgtFmt, sdaType)
+    ; Use QueryPartial for SDA3 half-chain queries, otherwise standard Query
+    If (srcFmt = "SDA3") || (tgtFmt = "SDA3") {
+        Set out.mappings = ##class(AgenticInterop.Data.FieldMapping).QueryPartial(srcFmt, tgtFmt, sdaType)
+    } Else {
+        Set out.mappings = ##class(AgenticInterop.Data.FieldMapping).Query(srcFmt, tgtFmt, sdaType)
+    }
     Set out.count = out.mappings.%Size()
 
     ; Also return available SDA types for this pair
     If sdaType = "" {
-        Set out.sdaTypes = ##class(AgenticInterop.Data.FieldMapping).ListSdaTypes(srcFmt, tgtFmt)
+        If (srcFmt = "SDA3") || (tgtFmt = "SDA3") {
+            Set out.sdaTypes = ##class(AgenticInterop.Data.FieldMapping).ListAllSdaTypes()
+        } Else {
+            Set out.sdaTypes = ##class(AgenticInterop.Data.FieldMapping).ListSdaTypes(srcFmt, tgtFmt)
+        }
     }
 
     Quit $classmethod(util, "WriteJSON", pResponse, out)

@@ -107,11 +107,100 @@ ClassMethod Query(pSrcFmt As %String, pTgtFmt As %String, pSdaType As %String = 
 ClassMethod ListSdaTypes(pSrcFmt As %String, pTgtFmt As %String) As %DynamicArray
 {
     Set arr = []
-    Set sql = "SELECT DISTINCT SdaType FROM AgenticInterop_Data.FieldMapping WHERE SourceFormat = ? AND TargetFormat = ? ORDER BY SdaType"
+    Set sql = "SELECT MAX(SdaType) AS SdaType FROM AgenticInterop_Data.FieldMapping WHERE SourceFormat = ? AND TargetFormat = ? GROUP BY %EXACT(SdaType) ORDER BY SdaType"
     Set rs = ##class(%SQL.Statement).%ExecDirect(, sql, pSrcFmt, pTgtFmt)
     While rs.%Next() {
         Do arr.%Push(rs.%Get("SdaType"))
     }
+    Quit arr
+}
+
+/// List all distinct SDA types across all format pairs.
+/// Uses MAX to preserve the original mixed-case form (IRIS DISTINCT
+/// is case-insensitive and returns an arbitrary casing).
+ClassMethod ListAllSdaTypes() As %DynamicArray
+{
+    Set arr = []
+    Set sql = "SELECT MAX(SdaType) AS SdaType FROM AgenticInterop_Data.FieldMapping GROUP BY %EXACT(SdaType) ORDER BY SdaType"
+    Set rs = ##class(%SQL.Statement).%ExecDirect(, sql)
+    While rs.%Next() {
+        Do arr.%Push(rs.%Get("SdaType"))
+    }
+    Quit arr
+}
+
+/// Query partial chain: when one side is SDA3, returns the half-chain
+/// from existing full-chain rows (HL7→FHIR or FHIR→HL7).
+///
+/// If pSrcFmt = "SDA3": return SdaField + TargetField from rows where
+///   SourceFormat matches any stored pair whose TargetFormat = pTgtFmt
+/// If pTgtFmt = "SDA3": return SourceField + SdaField from rows where
+///   TargetFormat matches any stored pair whose SourceFormat = pSrcFmt
+ClassMethod QueryPartial(pSrcFmt As %String, pTgtFmt As %String, pSdaType As %String = "") As %DynamicArray
+{
+    Set arr = []
+
+    If pSrcFmt = "SDA3" {
+        ; User wants SDA3 → X: find rows where TargetFormat = X
+        Set sql = "SELECT SourceField, SdaField, TargetField, Status, SourceSegment, SourceClass, TargetClass, SdaNormalized, SdaType FROM AgenticInterop_Data.FieldMapping WHERE TargetFormat = ?"
+        If pSdaType '= "" {
+            Set sql = sql _ " AND SdaType = ? ORDER BY SdaNormalized"
+            Set rs = ##class(%SQL.Statement).%ExecDirect(, sql, pTgtFmt, pSdaType)
+        } Else {
+            Set sql = sql _ " ORDER BY SdaType, SdaNormalized"
+            Set rs = ##class(%SQL.Statement).%ExecDirect(, sql, pTgtFmt)
+        }
+        While rs.%Next() {
+            Set row = {}
+            ; For SDA3→X, source is the SDA field, target is the external field
+            Set row.sourceField = rs.%Get("SdaField")
+            Set row.sdaField = rs.%Get("SdaField")
+            Set row.targetField = rs.%Get("TargetField")
+            Set sdaF = rs.%Get("SdaField")
+            Set tgtF = rs.%Get("TargetField")
+            If (sdaF '= "") && (tgtF '= "") { Set row.status = "complete" }
+            ElseIf sdaF '= "" { Set row.status = "in-only" }
+            Else  { Set row.status = "out-only" }
+            Set row.sourceSegment = ""
+            Set row.sourceClass = rs.%Get("TargetClass")
+            Set row.targetClass = rs.%Get("TargetClass")
+            Set row.sdaNormalized = rs.%Get("SdaNormalized")
+            Set row.sdaType = rs.%Get("SdaType")
+            Do arr.%Push(row)
+        }
+    } ElseIf pTgtFmt = "SDA3" {
+        ; User wants X → SDA3: find rows where SourceFormat = X
+        Set sql = "SELECT SourceField, SdaField, TargetField, Status, SourceSegment, SourceClass, TargetClass, SdaNormalized, SdaType FROM AgenticInterop_Data.FieldMapping WHERE SourceFormat = ?"
+        If pSdaType '= "" {
+            Set sql = sql _ " AND SdaType = ? ORDER BY SdaNormalized"
+            Set rs = ##class(%SQL.Statement).%ExecDirect(, sql, pSrcFmt, pSdaType)
+        } Else {
+            Set sql = sql _ " ORDER BY SdaType, SdaNormalized"
+            Set rs = ##class(%SQL.Statement).%ExecDirect(, sql, pSrcFmt)
+        }
+        While rs.%Next() {
+            Set row = {}
+            ; For X→SDA3, source is the external field, target is the SDA field
+            Set row.sourceField = rs.%Get("SourceField")
+            Set row.sdaField = rs.%Get("SdaField")
+            Set row.targetField = rs.%Get("SdaField")
+            Set srcF = rs.%Get("SourceField")
+            Set sdaF = rs.%Get("SdaField")
+            If (srcF '= "") && (sdaF '= "") { Set row.status = "complete" }
+            ElseIf srcF '= "" { Set row.status = "in-only" }
+            Else  { Set row.status = "out-only" }
+            Set row.sourceSegment = rs.%Get("SourceSegment")
+            Set row.sourceClass = rs.%Get("SourceClass")
+            Set row.targetClass = ""
+            Set row.sdaNormalized = rs.%Get("SdaNormalized")
+            Set row.sdaType = rs.%Get("SdaType")
+            Do arr.%Push(row)
+        }
+    } Else {
+        ; Normal full-chain query — delegate to standard Query
+        Quit ..Query(pSrcFmt, pTgtFmt, pSdaType)
+    }
+
     Quit arr
 }
 
