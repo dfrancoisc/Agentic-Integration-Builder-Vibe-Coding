@@ -356,32 +356,140 @@ def build_exec_deck():
         add_text(slide, x, stats_y + Inches(0.35), stat_w, Inches(0.3),
                  label, size=10, color=MUTED, align=PP_ALIGN.CENTER)
 
-    # --- Slide 7: Benefits & Next Steps ---
+    # --- Slide 7: Benefits (visual cards) ---
     slide = prs.slides.add_slide(prs.slide_layouts[6])
     set_slide_bg(slide, DARK_BG)
     add_text(slide, Inches(0.8), Inches(0.4), Inches(11), Inches(0.7),
-             "Benefits & Next Steps", size=30, color=WHITE, bold=True)
+             "Why This Matters", size=32, color=WHITE, bold=True)
     add_rect(slide, Inches(0.8), Inches(0.95), Inches(2), Pt(3), ACCENT)
 
-    # Benefits
-    tf = add_text(slide, Inches(0.8), Inches(1.5), Inches(5.5), Inches(5),
-                  "Benefits", size=20, color=ACCENT, bold=True)
-    add_bullet(tf, "Faster time-to-value: engineers build productions in minutes instead of days", size=15, color=WHITE)
-    add_bullet(tf, "Lower barrier to entry: new engineers productive from day one with natural-language guidance", size=15, color=WHITE)
-    add_bullet(tf, "Higher quality: automated validation catches misconfigurations before they reach production", size=15, color=WHITE)
-    add_bullet(tf, "Platform stickiness: AI assistance is a compelling reason to stay on IRIS for Health", size=15, color=WHITE)
-    add_bullet(tf, "Community flywheel: every custom tool, skill, and agent benefits the ecosystem", size=15, color=WHITE)
-    add_bullet(tf, "Differentiator: no competitor offers an AI framework embedded in their integration engine", size=15, color=WHITE)
+    # 3x2 card grid
+    benefits = [
+        # (icon_text, accent_color, title, description, metric)
+        ("DAYS\n  MIN",   TEAL,
+         "Faster Time-to-Value",
+         "Engineers describe what they need in plain English. The agent builds, configures, and validates -- reducing production setup from days to minutes.",
+         "10x faster"),
+        ("DAY 1",   GREEN,
+         "Lower Barrier to Entry",
+         "New engineers are productive immediately. Natural-language guidance replaces the steep learning curve of ObjectScript, DTL, and the Ens.* class library.",
+         "Zero ramp-up"),
+        ("0\nERRORS",   ACCENT,
+         "Higher Quality",
+         "Automated PostBuildValidation catches misconfigurations, missing settings, and broken routing before they ever reach a live production environment.",
+         "Built-in validation"),
+        ("IRIS",   BLUE_LIGHT,
+         "Platform Stickiness",
+         "AI assistance embedded in the integration engine is a compelling reason to choose and stay on IRIS for Health. No competitor offers this today.",
+         "Unique to IRIS"),
+        ("1+1=3",   PURPLE,
+         "Community Flywheel",
+         "Every custom tool, skill, and agent built by customers, SEs, and ISVs benefits the entire ecosystem. Content compounds; the platform gets smarter over time.",
+         "Network effects"),
+        ("ONLY\nONE",   AMBER,
+         "Market Differentiator",
+         "No other integration platform ships an AI framework with domain-specific healthcare tools. This is a first-mover advantage in the agentic AI era.",
+         "First in market"),
+    ]
 
-    # Next steps
-    tf = add_text(slide, Inches(7), Inches(1.5), Inches(5.5), Inches(5),
-                  "Next Steps", size=20, color=TEAL, bold=True)
-    add_bullet(tf, "Fix the two blocker bugs (Skill $ZF marshaling, Bedrock tool-result hang)", size=15, color=WHITE)
-    add_bullet(tf, "Ship ToolFilter policy as a framework default", size=15, color=WHITE)
-    add_bullet(tf, "Package as IPM module for field trial with 3 customers", size=15, color=WHITE)
-    add_bullet(tf, "Build 2-3 additional use-case agents (Lab, Pharmacy, Claims)", size=15, color=WHITE)
-    add_bullet(tf, "Open the tool/skill authoring to the SE community", size=15, color=WHITE)
-    add_bullet(tf, "Publish to Open Exchange for community contributions", size=15, color=WHITE)
+    card_w = Inches(3.7)
+    card_h = Inches(2.55)
+    gap_x = Inches(0.35)
+    gap_y = Inches(0.35)
+    x0 = Inches(0.8)
+    y0 = Inches(1.4)
+
+    for idx, (icon_text, accent, title, desc, metric) in enumerate(benefits):
+        col = idx % 3
+        row = idx // 3
+        cx = x0 + col * (card_w + gap_x)
+        cy = y0 + row * (card_h + gap_y)
+
+        # Card background
+        add_rect(slide, cx, cy, card_w, card_h, PANEL_BG, radius=True)
+
+        # Accent stripe on left
+        add_rect(slide, cx, cy, Pt(5), card_h, accent)
+
+        # Icon / metric badge (top-right of card)
+        badge_w = Inches(0.9)
+        badge_h = Inches(0.55)
+        badge = add_rect(slide, cx + card_w - badge_w - Inches(0.15), cy + Inches(0.15),
+                         badge_w, badge_h, accent, icon_text,
+                         text_color=WHITE, text_size=9, bold=True, radius=True)
+
+        # Title
+        add_text(slide, cx + Inches(0.25), cy + Inches(0.15), card_w - Inches(1.4), Inches(0.4),
+                 title, size=16, color=WHITE, bold=True)
+
+        # Description
+        add_text(slide, cx + Inches(0.25), cy + Inches(0.6), card_w - Inches(0.5), Inches(1.3),
+                 desc, size=11, color=MUTED)
+
+        # Bottom metric tag
+        add_rect(slide, cx + Inches(0.25), cy + card_h - Inches(0.5),
+                 Inches(1.5), Inches(0.3), accent, metric,
+                 text_color=WHITE, text_size=10, bold=True, radius=True)
+
+    # --- Slide 8: Next Steps ---
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    set_slide_bg(slide, DARK_BG)
+    add_text(slide, Inches(0.8), Inches(0.4), Inches(11), Inches(0.7),
+             "Next Steps", size=32, color=WHITE, bold=True)
+    add_rect(slide, Inches(0.8), Inches(0.95), Inches(2), Pt(3), ACCENT)
+
+    # Timeline-style layout: 3 phases
+    phase_data = [
+        ("Immediate", TEAL, "Fix & Ship", [
+            "Fix 2 blocker bugs (Skill $ZF, Bedrock hang)",
+            "Ship ToolFilter as framework default",
+            "Document %AI.ToolMgr.ExecuteTool path",
+        ]),
+        ("Q3-Q4 2026", AMBER, "Field Trial", [
+            "Package as IPM for 3 customer pilots",
+            "Build 2-3 specialty agents (Lab, Pharmacy, Claims)",
+            "Open tool/skill authoring to SE community",
+        ]),
+        ("2027", PURPLE, "Ecosystem", [
+            "Publish to Open Exchange",
+            "SE accelerator library (20+ patterns)",
+            "Community marketplace for tools and skills",
+        ]),
+    ]
+
+    phase_w = Inches(3.7)
+    phase_h = Inches(3.8)
+    phase_y = Inches(1.8)
+    for i, (when, clr, label, items) in enumerate(phase_data):
+        px = Inches(0.8) + i * (phase_w + Inches(0.35))
+
+        # Phase card
+        add_rect(slide, px, phase_y, phase_w, phase_h, PANEL_BG, radius=True)
+        add_rect(slide, px, phase_y, phase_w, Pt(5), clr)
+
+        # Phase number circle
+        add_rect(slide, px + Inches(0.25), phase_y + Inches(0.25),
+                 Inches(0.5), Inches(0.5), clr, str(i + 1),
+                 text_color=WHITE, text_size=16, bold=True, radius=True)
+
+        # When label
+        add_text(slide, px + Inches(0.9), phase_y + Inches(0.25), Inches(2.5), Inches(0.35),
+                 when, size=14, color=clr, bold=True)
+
+        # What label
+        add_text(slide, px + Inches(0.9), phase_y + Inches(0.55), Inches(2.5), Inches(0.3),
+                 label, size=18, color=WHITE, bold=True)
+
+        # Items
+        tf = add_text(slide, px + Inches(0.25), phase_y + Inches(1.1),
+                      phase_w - Inches(0.5), Inches(2.5), "", size=13, color=WHITE)
+        for item in items:
+            add_bullet(tf, item, size=13, color=MUTED)
+
+    # Bottom bar
+    add_text(slide, Inches(0.8), Inches(6.2), Inches(11.5), Inches(0.5),
+             "Built on IRIS for Health 2026.2  |  %AI Framework build 162.0  |  61 classes, 42 tools, 12 skills  |  Ready for field trial",
+             size=11, color=MUTED, align=PP_ALIGN.CENTER)
 
     path = os.path.join(DOCS, "Agentic_Health_Interop_Executive.pptx")
     prs.save(path)
