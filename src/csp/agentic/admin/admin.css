@@ -955,13 +955,54 @@ code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
    Clean table layout replacing the old SVG three-column view.
    ──────────────────────────────────────────────────── */
 
+/* ── Legend (explains status tags) ──────────────── */
+.tf-legend {
+  display: flex; gap: 20px; align-items: center;
+  padding: 8px 14px; margin-bottom: 8px;
+  background: rgba(30, 35, 44, 0.6);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 11px; color: var(--muted);
+}
+.tf-legend-item {
+  display: flex; align-items: center; gap: 6px;
+}
+
+/* ── Status tags (text labels replacing dots) ───── */
+.tf-tag {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+.tf-tag-ok {
+  background: rgba(34, 197, 94, 0.12);
+  color: #4ade80;
+  border: 1px solid rgba(34, 197, 94, 0.25);
+}
+.tf-tag-in {
+  background: rgba(96, 165, 250, 0.12);
+  color: #93c5fd;
+  border: 1px solid rgba(96, 165, 250, 0.25);
+}
+.tf-tag-out {
+  background: rgba(251, 191, 36, 0.12);
+  color: #fbbf24;
+  border: 1px solid rgba(251, 191, 36, 0.25);
+}
+
+/* ── Table wrap ────────────────────────────────── */
 .tf-tbl-wrap {
-  max-height: 520px;
+  max-height: 560px;
   overflow-y: auto;
   scrollbar-width: thin;
   scrollbar-color: var(--border) transparent;
   border: 1px solid var(--border);
   border-radius: 6px;
+  position: relative;
 }
 .tf-tbl-wrap::-webkit-scrollbar { width: 6px; }
 .tf-tbl-wrap::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
@@ -980,43 +1021,46 @@ code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 }
 
 .tf-tbl th {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--muted);
-  padding: 8px 12px;
+  letter-spacing: 0.05em;
+  padding: 10px 14px;
   text-align: left;
   background: var(--panel-2);
   border-bottom: 2px solid var(--border);
   white-space: nowrap;
 }
-.tf-tbl th:nth-child(2) { color: var(--primary); }
+.tf-th-src { color: var(--text); }
+.tf-th-sda { color: var(--primary); }
+.tf-th-tgt { color: #86efac; }
 
 .tf-tbl-status-col {
-  width: 52px;
+  width: 90px;
   text-align: center !important;
+  color: var(--muted) !important;
 }
 
 .tf-tbl-row {
-  transition: background-color 0.1s;
-  border-bottom: 1px solid rgba(100, 116, 139, 0.08);
+  transition: background-color 0.12s;
+  border-bottom: 1px solid rgba(100, 116, 139, 0.1);
 }
 .tf-tbl-row:hover {
-  background: rgba(59, 130, 246, 0.06);
+  background: rgba(59, 130, 246, 0.07);
 }
 .tf-tbl-row:last-child {
   border-bottom: none;
 }
 
 .tf-tbl-cell {
-  padding: 5px 12px;
+  padding: 8px 14px;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 11px;
+  font-size: 12px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 0;
+  vertical-align: middle;
 }
 
 .tf-tbl-src { color: var(--text); }
@@ -1025,25 +1069,24 @@ code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 
 .tf-tbl-empty {
   color: var(--muted);
-  opacity: 0.3;
+  opacity: 0.35;
+  font-style: italic;
 }
 
 .tf-tbl-status {
   text-align: center;
+  width: 90px;
 }
 
-/* Status dots */
-.tf-dot {
-  display: inline-block;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-}
-.tf-dot-ok { background: var(--success); }
-.tf-dot-in { background: #60a5fa; }
-.tf-dot-out { background: #86efac; }
-
-/* Row status tinting */
+/* Row status tinting — dim the empty side */
 .tf-row-ok { }
 .tf-row-in .tf-tbl-tgt { opacity: 0.25; }
 .tf-row-out .tf-tbl-src { opacity: 0.25; }
+
+/* No results message inside table wrap */
+.tf-no-results {
+  padding: 24px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 12px;
+}

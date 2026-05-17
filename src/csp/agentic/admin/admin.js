@@ -1343,13 +1343,14 @@ function tfRenderThreeColumns(container, model, src, tgt, inData, outData, row) 
         return;
     }
 
-    // Determine column layout based on what formats are selected
-    var isTwoCol = (src === 'SDA3' || tgt === 'SDA3');
-
     // Column headers
     var colSrc = (src === 'SDA3') ? null : src;
     var colSda = 'SDA3';
     var colTgt = (tgt === 'SDA3') ? null : tgt;
+
+    // The SDA type name is included in the search index so that
+    // filtering "add" while viewing "Address" still shows all rows
+    var sdaContext = (row && row.sdaType) ? row.sdaType.toLowerCase() : '';
 
     // Count stats
     var counts = { complete: 0, inOnly: 0, outOnly: 0 };
@@ -1361,15 +1362,17 @@ function tfRenderThreeColumns(container, model, src, tgt, inData, outData, row) 
 
     var html = '';
 
-    // Info badge
-    if (inData && inData.fromTable) {
-        html += '<div class="tf-dtl-refs"><span class="tf-dtl-ref tf-dtl-table">Pre-computed table (' + inData.count + ' rows)</span></div>';
-    }
+    // Legend row — explains the status labels
+    html += '<div class="tf-legend">';
+    html += '<span class="tf-legend-item"><span class="tf-tag tf-tag-ok">Mapped</span> Source and target both linked</span>';
+    html += '<span class="tf-legend-item"><span class="tf-tag tf-tag-in">Source only</span> No outbound target</span>';
+    html += '<span class="tf-legend-item"><span class="tf-tag tf-tag-out">Target only</span> No inbound source</span>';
+    html += '</div>';
 
     // Stats row
     html += '<div class="tf-field-stats">' +
         '<span class="tf-field-stat">' + model.length + ' fields</span>' +
-        '<span class="tf-field-stat tf-field-stat-ok">' + counts.complete + ' end-to-end</span>' +
+        '<span class="tf-field-stat tf-field-stat-ok">' + counts.complete + ' mapped</span>' +
         (counts.inOnly > 0 ? '<span class="tf-field-stat tf-field-stat-in">' + counts.inOnly + ' source only</span>' : '') +
         (counts.outOnly > 0 ? '<span class="tf-field-stat tf-field-stat-out">' + counts.outOnly + ' target only</span>' : '') +
         '</div>';
@@ -1380,10 +1383,10 @@ function tfRenderThreeColumns(container, model, src, tgt, inData, outData, row) 
 
     // Header row
     html += '<thead><tr>';
-    if (colSrc) html += '<th>' + escapeHtml(colSrc) + '</th>';
-    html += '<th>' + escapeHtml(colSda) + '</th>';
-    if (colTgt) html += '<th>' + escapeHtml(colTgt) + '</th>';
-    html += '<th class="tf-tbl-status-col">Status</th>';
+    if (colSrc) html += '<th class="tf-th-src">' + escapeHtml(colSrc) + '</th>';
+    html += '<th class="tf-th-sda">' + escapeHtml(colSda) + '</th>';
+    if (colTgt) html += '<th class="tf-th-tgt">' + escapeHtml(colTgt) + '</th>';
+    html += '<th class="tf-tbl-status-col">Coverage</th>';
     html += '</tr></thead>';
 
     // Body rows
@@ -1392,15 +1395,23 @@ function tfRenderThreeColumns(container, model, src, tgt, inData, outData, row) 
         var r = model[i];
         var statusCls = r.status === 'complete' ? 'tf-row-ok' :
                         r.status === 'in-only' ? 'tf-row-in' : 'tf-row-out';
-        var statusDot = r.status === 'complete' ? 'tf-dot-ok' :
-                        r.status === 'in-only' ? 'tf-dot-in' : 'tf-dot-out';
 
-        html += '<tr class="tf-tbl-row ' + statusCls + '" data-idx="' + i + '">';
+        // Status text label
+        var statusLabel, statusTagCls;
+        if (r.status === 'complete') { statusLabel = 'Mapped'; statusTagCls = 'tf-tag-ok'; }
+        else if (r.status === 'in-only') { statusLabel = 'Source only'; statusTagCls = 'tf-tag-in'; }
+        else { statusLabel = 'Target only'; statusTagCls = 'tf-tag-out'; }
+
+        // Search index: all visible text + the parent SDA type name
+        var srcLabel = r.srcField || '';
+        var tgtLabel = r.tgtField || '';
+        var searchIdx = (srcLabel + ' ' + r.sdaField + ' ' + tgtLabel + ' ' + sdaContext + ' ' + statusLabel).toLowerCase();
+
+        html += '<tr class="tf-tbl-row ' + statusCls + '" data-idx="' + i + '" data-search="' + escapeAttr(searchIdx) + '">';
 
         if (colSrc) {
-            var srcLabel = r.srcField || '';
             html += '<td class="tf-tbl-cell tf-tbl-src" title="' + escapeAttr(srcLabel) + '">';
-            html += srcLabel ? escapeHtml(srcLabel) : '<span class="tf-tbl-empty">-</span>';
+            html += srcLabel ? escapeHtml(srcLabel) : '<span class="tf-tbl-empty">--</span>';
             html += '</td>';
         }
 
@@ -1409,13 +1420,12 @@ function tfRenderThreeColumns(container, model, src, tgt, inData, outData, row) 
         html += '</td>';
 
         if (colTgt) {
-            var tgtLabel = r.tgtField || '';
             html += '<td class="tf-tbl-cell tf-tbl-tgt" title="' + escapeAttr(tgtLabel) + '">';
-            html += tgtLabel ? escapeHtml(tgtLabel) : '<span class="tf-tbl-empty">-</span>';
+            html += tgtLabel ? escapeHtml(tgtLabel) : '<span class="tf-tbl-empty">--</span>';
             html += '</td>';
         }
 
-        html += '<td class="tf-tbl-cell tf-tbl-status"><span class="tf-dot ' + statusDot + '"></span></td>';
+        html += '<td class="tf-tbl-cell tf-tbl-status"><span class="tf-tag ' + statusTagCls + '">' + statusLabel + '</span></td>';
         html += '</tr>';
     }
     html += '</tbody></table></div>';
@@ -1434,17 +1444,30 @@ function tfWireFieldFilter() {
         var q = filter.value.toLowerCase().trim();
         var rows = document.querySelectorAll('.tf-tbl-row');
         if (!rows.length) return;
-
+        var visible = 0;
         rows.forEach(function(tr) {
-            if (!q) { tr.style.display = ''; return; }
-            var cells = tr.querySelectorAll('.tf-tbl-cell');
-            var match = false;
-            cells.forEach(function(td) {
-                var text = (td.title || td.textContent).toLowerCase();
-                if (text.indexOf(q) !== -1) match = true;
-            });
-            tr.style.display = match ? '' : 'none';
+            if (!q) { tr.style.display = ''; visible++; return; }
+            // data-search includes: all cell text + the parent SDA type name
+            // so "add" matches all rows under "Address" even if the enriched
+            // sub-field names (City, State, Zip) don't contain "add"
+            var idx = tr.dataset.search || '';
+            var show = idx.indexOf(q) !== -1;
+            tr.style.display = show ? '' : 'none';
+            if (show) visible++;
         });
+        // Show/hide "no results" if everything is filtered out
+        var wrap = $('tf-tbl-wrap');
+        if (wrap) {
+            var noRes = wrap.querySelector('.tf-no-results');
+            if (visible === 0 && q) {
+                if (!noRes) {
+                    noRes = document.createElement('div');
+                    noRes.className = 'tf-no-results';
+                    noRes.textContent = 'No fields match "' + filter.value.trim() + '"';
+                    wrap.appendChild(noRes);
+                } else { noRes.textContent = 'No fields match "' + filter.value.trim() + '"'; }
+            } else if (noRes) { noRes.remove(); }
+        }
     });
 }
 
