@@ -12,7 +12,7 @@ All build phases complete (Phase 0 through Phase 7). The agent operates under th
 
 | Metric | Value |
 |---|---|
-| ObjectScript classes | 61 |
+| ObjectScript classes | 64 |
 | Tool classes (%AI.Tool) | 5 (Production, Transform, Testing, Catalog, Monitoring) |
 | Tools (public ClassMethods) | 42 |
 | ToolSets (%AI.ToolSet) | 5 |
@@ -23,31 +23,127 @@ All build phases complete (Phase 0 through Phase 7). The agent operates under th
 | Persistent data classes | 5 (Connection, AgentOverride, MCPOverride, ToolSetOverride, AuditLog) |
 | Git commits | 100+ |
 
-## Three core use cases
+## Features
 
-### 1. Build Productions
+- Streaming chat with Server-Sent Events (SSE) -- token-by-token responses with inline tool-call cards
+- 42 tools across 5 domains: Production, Transform, Testing, Catalog, Monitoring
+- 12 domain skills covering Productions, DTL, BPL, Routing Rules, HL7v2, FHIR R4, SDA, REST, ESB, X12/HIPAA, CDA/C-CDA, and Adapters
+- Confirmation gate on every mutating tool -- create, update, delete, compile, start, stop all require explicit user approval before executing
+- Semantic vector search over the IRIS class library (164 Business Hosts, 58 transformation classes) using FastEmbed 384-dimensional embeddings and HNSW index
+- Transformation and Mapping Catalog with 1,538 pre-computed field-level mappings across HL7 v2, SDA3, FHIR R4, CDA, and X12
+- Configuration-driven admin UI -- no code edits needed to add a tool, change a model, or reconfigure an agent
+- LLM connection management with Secured Wallet storage for API keys -- never in plaintext, never in SQL tables, never in source code, never returned by REST endpoints
+- Audit trail for every API request (method, path, status, duration, user, namespace)
+- Namespace-agnostic: install once per namespace, tools execute in the namespace specified by the request header
+- IPM (ZPM) package for one-command install and upgrade
+- Source control integration: agent-created artifacts flow through %SourceControl hooks into the Git/CI/CD pipeline
+- 60-second deadline and 50,000-token budget per chat turn -- no runaway costs or infinite loops
+- Overlay pattern for configuration persistence across IPM upgrades (user edits survive package reload)
 
-Engineers describe their integration goal in plain English. The agent searches the Ens.* vector catalog for the right Business Hosts, proposes a production layout for approval, creates the production with all hosts and settings, sends test messages, and validates the result end-to-end. Each mutating step goes through a confirmation gate.
+## Four personas, four experiences
 
-Example: "Build a production that receives ADT^A01 messages over MLLP, transforms patient demographics to FHIR R4, and sends them to a REST endpoint."
+### Developer
 
-### 2. Review and Improve Existing Productions
+Builds agent infrastructure: writes Tool classes in ObjectScript, authors Skill documents with INSTRUCTIONS, builds vector catalog embeddings, packages and deploys via IPM. Work happens in VS Code and ships as compiled classes. The Developer defines what the copilot can do.
 
-The agent triages errors across productions (grouping by Business Host, identifying suspended messages), assesses production health (queue depths, throughput, bottlenecks), reviews DTL definitions for common issues (hardcoded values, missing null checks, repeating-field bugs), and recommends modernization using newer IRIS features.
+| Attribute | Detail |
+|---|---|
+| Primary interface | VS Code with InterSystems ObjectScript extension, terminal |
+| Security scope | Full %DB access, %Dictionary write, source control, IPM packaging |
+| Deliverable | Compiled classes inside an IPM package that the AI Hub Admin configures |
 
-Example: "Review the last 2 hours of errors across all productions and recommend remediation steps."
+### AI Hub Admin
 
-### 3. Create and Optimize Transformations
+Configures all AI settings through the admin UI: creates agents with custom system prompts, assembles MCP Servers from available ToolSets, links Skills to Agents, manages LLM connections, builds vector catalogs, reviews audit logs. Assigns Interface Engineer and Operator roles to end users. The AI Hub Admin decides how the copilot behaves -- no code editing required.
 
-The agent traces data flow through the SDA3 pivot (HL7 v2 -> SDA3 -> FHIR R4), introspects HL7 schemas at sub-field level, creates DTL definitions with correct source/target classes, and dry-runs transformations against sample data. The Transformation and Mapping Catalog provides field-level gap analysis across 1,538 pre-computed mappings.
+| Attribute | Detail |
+|---|---|
+| Primary interface | IRIS Management Portal -- AI Hub admin UI at /agentic/admin/ |
+| Security scope | %ISCMgtPortal group membership, /api/agentic/ endpoints, Secured Wallet write for API keys |
+| Deliverable | A fully configured agent ready for end users, with appropriate tool access per role |
 
-Example: "Create an interface that transforms any HL7 v2 message to FHIR R4 using the built-in HL7-to-SDA-to-FHIR pipeline."
+### Interface Engineer (End User -- dev-time)
 
-## Two personas, two experiences
+Uses the chatbot to create new integration artifacts: productions, DTLs (Data Transformation Language classes), BPLs (Business Process Language classes), routing rules, lookup tables. This is a dev-time role -- the Interface Engineer authors new content that flows through source control and CI/CD into deployment. Tool access includes all mutating tools: create_production, add_business_host, create_dtl, compile_dtl, create_routing_rule, start_production, stop_production.
 
-**Developer Experience (DX)** -- InterSystems engineers and partners who author the underlying capabilities: writing Tool classes in ObjectScript/Python, authoring Skill documents, building catalog embeddings. This work happens in VS Code and ships as compiled classes inside an IPM package. Developers define what the copilot can do.
+| Attribute | Detail |
+|---|---|
+| Primary interface | Chatbot at /agentic/chat/index.html (standalone or embedded in the Interop Editor) |
+| Security scope | Chat access plus create/update/delete permissions on interoperability classes. All mutating operations require explicit approval. Changes flow through source control hooks |
+| Deliverable | New or modified productions, transformations, and routing rules -- exported to source control |
 
-**Builder Experience (End User)** -- Integration engineers inside IRIS for Health and Health Connect who configure and use the copilot: creating Agents with custom system prompts, assembling MCP Servers from available ToolSets, linking Skills to Agents, and chatting with the copilot to build productions. This work happens entirely in the IRIS Management Portal UI. Builders decide how the copilot behaves for their use case.
+### Operator (End User -- run-time)
+
+Uses the chatbot to monitor, triage, and review existing integrations at run-time. The Operator does not create new productions or DTLs -- they observe, diagnose, and recommend. Can adjust operational settings (pool size, throttle, retry intervals) but not structural changes (add/remove hosts, create classes). Structural changes escalate to the Interface Engineer.
+
+| Attribute | Detail |
+|---|---|
+| Primary interface | Chatbot at /agentic/chat/index.html (standalone or embedded in the Interop Editor) |
+| Security scope | Chat access plus read-only access to production configurations and monitoring data |
+| Deliverable | Diagnosis reports, remediation recommendations, settings adjustments, modernization advice |
+
+### Interface Engineer vs Operator: Tool Access
+
+| Tool Category | Int. Eng. | Operator | Examples |
+|---|---|---|---|
+| Create/Update/Delete | Yes | No | create_production, create_dtl, add_business_host |
+| Start/Stop | Yes | No | start_production, stop_production |
+| Compile | Yes | No | compile_dtl |
+| Read/Inspect | Yes | Yes | get_production, list_dtls, describe_class |
+| Monitoring | Yes | Yes | query_event_log, top_errors, queue_status |
+| Search | Yes | Yes | search_ens, search_hs |
+| Testing | Yes | Limited | send_hl7, validate_hl7_structure |
+| Settings adjustment | Yes | Yes (operational only) | update_business_host_settings (pool size, throttle, retry) |
+
+## Use cases by persona
+
+### Developer (5 use cases)
+
+1. **Write a new Tool class.** A developer writes an ObjectScript class extending %AI.Tool with public ClassMethods that become callable tools. Each method has a JSON Schema for input/output and a description that serves as the LLM's contract. The developer ships the class in the IPM package and the AI Hub Admin makes it available to end users through ToolSet configuration.
+
+2. **Author a domain Skill.** A developer distills InterSystems documentation into a markdown INSTRUCTIONS document for a specific domain (DTL syntax, BPL activities, HL7 v2 segment anatomy). The skill is packaged as a %AI.Agent.Skill subclass. When the LLM needs domain knowledge, it invokes the skill rather than carrying all knowledge in the system prompt -- saving thousands of tokens per request.
+
+3. **Build and refresh vector catalogs.** A developer writes the catalog builder class (AgenticInterop.Catalog.Builder) that walks %Dictionary.ClassDefinition for Business Hosts and transformation classes, extracts curated prose descriptions, and feeds them into %AI.RAG.KnowledgeBase for embedding. The catalog is rebuilt when IRIS is upgraded or new classes are added.
+
+4. **Extend the MCP layer.** A developer creates a new %AI.MCP.Service subclass to expose a new domain of tools (for example, a Monitoring MCP for production health metrics). The MCP groups related ToolSets and is registered in the agent configuration through the admin UI.
+
+5. **Package and deploy via IPM.** A developer maintains the module.xml that defines the IPM package: ObjectScript classes, seed data, web application definitions, install/uninstall hooks. A single `zpm "load /path/to/agentic_interop"` command installs all 64 classes, two web apps, seed data, and the curated class catalog into any namespace.
+
+### AI Hub Admin (5 use cases)
+
+1. **Configure an LLM connection.** An AI Hub Admin opens the Connections tab, pastes an API key into the masked input, selects the provider type (Anthropic, Bedrock, Azure OpenAI), and clicks "Test connection." The key is stored in the IRIS Secured Wallet -- never in plaintext. A green status with model name and latency confirms the wire path works. A red status shows the verbatim error.
+
+2. **Assemble an agent with custom behavior.** An AI Hub Admin creates an agent profile with a custom system prompt, selects which MCP servers are bound, attaches relevant skills, and sets temperature and max iterations. Different agent profiles can be created for Interface Engineer and Operator roles, each with different ToolSet bindings that enforce which tools are available.
+
+3. **Build vector catalogs for a namespace.** An AI Hub Admin navigates to the Catalogs tab, selects the source namespace, and clicks "Rebuild this catalog" on search_ens and search_hs. The knowledge bases are populated with curated class descriptions from %Dictionary. A test search field lets the admin verify relevance before making the catalog available to end users.
+
+4. **Review the audit trail.** An AI Hub Admin opens the Audit tab to see every API request: method, path, HTTP status, duration, user, namespace. An "Errors only" toggle filters to failures. The audit captures both successful tool executions and rejected requests, providing full traceability for compliance and debugging.
+
+5. **Manage ToolSet visibility per role.** An AI Hub Admin includes or excludes specific tools from a ToolSet, then binds that ToolSet to either the Interface Engineer or Operator agent profile. This controls which tools the LLM can call for each role -- Operators cannot access create/delete/compile tools even if the user crafts a prompt that requests them.
+
+### Interface Engineer (5 use cases)
+
+1. **Build a production from a natural-language description.** An Interface Engineer opens the chatbot and describes the integration: "Build a production that receives ADT^A01 messages via MLLP, transforms patient demographics to FHIR R4, and sends them to a REST endpoint." The agent searches the Ens.* catalog for the right Business Hosts, proposes a production layout for approval, creates the production with all hosts and settings, sends a test HL7 message, and validates the result end-to-end. Every mutating step requires explicit approval.
+
+2. **Create a DTL transformation.** An Interface Engineer asks "Create a DTL that maps PID fields from an ADT message to a FHIR Patient resource." The agent introspects the HL7 v2.5.1 schema at sub-field level, searches the HS.* catalog for existing SDA-to-FHIR mappers, creates the DTL with correct source and target classes, compiles it, and dry-runs it against a sample message. The Transformation and Mapping Catalog provides field-level gap analysis showing which source fields map through SDA3 to FHIR and which have no outbound mapping.
+
+3. **Add Business Hosts to an existing production.** An Interface Engineer asks "Add an SMTP operation to the Lab Results production so we can email PDF reports." The agent searches the catalog for email-capable operations, proposes EnsLib.EMail.OutboundAdapter with appropriate settings, adds it to the production, and configures the routing rule to send messages to the new operation.
+
+4. **Create routing rules with conditions.** An Interface Engineer describes "Route ADT messages by message type: A01 goes to Admissions, A08 goes to Updates, everything else goes to the dead-letter queue." The agent creates the routing rule set with the specified conditions, compiles it, and adds it to the production's business process.
+
+5. **Trace data flow and create an end-to-end interface.** An Interface Engineer asks "Show me how patient address fields flow from HL7 v2 PID.11 through SDA3 to FHIR R4 Patient.address." The agent uses the Transformation and Mapping Catalog to trace PID.11 sub-fields (Street, City, State, ZIP) through SDA3 Address properties to FHIR Address elements, identifies any coverage gaps, then builds the complete interface (service, process, DTL, operation) in one conversation.
+
+### Operator (5 use cases)
+
+1. **Triage production errors.** An Operator asks "Show me the errors in the last 2 hours across all productions." The agent queries the event log, groups errors by Business Host and error type, identifies the most frequent failures, and recommends remediation steps (restart a host, check connectivity, review a DTL for null-handling issues). No mutating actions are taken without Interface Engineer escalation.
+
+2. **Assess production health.** An Operator asks "How healthy is the ADT Inbound production?" The agent checks queue depths, throughput rates, error counts, suspended messages, and host status. It presents a summary with specific metrics and highlights any hosts that are degraded, suspended, or accumulating queued messages.
+
+3. **Review a DTL for common issues.** An Operator asks "Review the PatientDemographics DTL for issues." The agent reads the DTL definition and checks for common problems: hardcoded values that should use lookup tables, missing null checks on optional fields, repeating-field handling bugs, deprecated API usage. The Operator gets a report with specific recommendations that an Interface Engineer can implement.
+
+4. **Compare messages before and after transformation.** An Operator asks "Compare this inbound HL7 ADT with the outbound FHIR Patient to verify the demographics mapped correctly." The agent parses both messages, aligns the fields using the Transformation and Mapping Catalog, and highlights discrepancies -- fields that changed unexpectedly, fields that were expected but are missing, and fields with format differences.
+
+5. **Monitor throughput and recommend tuning.** An Operator asks "The Lab Results production seems slow -- what's the bottleneck?" The agent checks throughput summaries, queue depths across all hosts, and host pool sizes. It identifies the bottleneck (for example, a single-threaded operation with a growing queue) and recommends operational adjustments the Operator can make directly (increase pool size, adjust retry interval) versus structural changes that require an Interface Engineer.
 
 ## Admin UI
 
@@ -161,7 +257,7 @@ ZN "<your-namespace>"
 zpm "load /path/to/agentic_interop"
 ```
 
-The module installs all 61 classes, two web apps (`/agentic/` for the UI, `/api/agentic/` for REST), seed data, and the curated class catalog. To install in multiple namespaces, run the command once per namespace.
+The module installs all 64 classes, two web apps (`/agentic/` for the UI, `/api/agentic/` for REST), seed data, and the curated class catalog. To install in multiple namespaces, run the command once per namespace.
 
 ## After install
 
@@ -185,7 +281,7 @@ Project documentation with embedded screenshots from the live system:
 
 | Document | Description |
 |---|---|
-| [01_Requirements_User_Stories.md](docs/01_Requirements_User_Stories.md) | End-to-end requirements, three core use cases, Developer and Builder user stories |
+| [01_Requirements_User_Stories.md](docs/01_Requirements_User_Stories.md) | End-to-end requirements, four personas, use cases, Interface Engineer and Operator user stories |
 | [02_Technical_Build_Specification.md](docs/02_Technical_Build_Specification.md) | Technical specification for all 11 components (Chatbot, Agent, Skills, MCPs, Tools, Catalogs, Transformation and Mapping Catalog, Connections, Audit, Performance) |
 | [03_Lessons_Learned.md](docs/03_Lessons_Learned.md) | Framework bugs, Vector Search optimization, token reduction strategies with before/after metrics |
 | [PLAN.md](docs/PLAN.md) | Architecture decisions, restrictions, build phases |

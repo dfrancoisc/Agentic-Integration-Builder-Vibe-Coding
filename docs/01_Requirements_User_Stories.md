@@ -48,7 +48,7 @@ The %AI Framework exposes default tools (FileSystem, SQL, ShellTools) that are i
 
 ## 2. Personas
 
-The system serves four distinct personas. The End User role is split into Builder and Operator because the distinction affects which tools are available, which permissions are required, and whether the agent operates as a dev-time or run-time tool.
+The system serves four distinct personas. The End User role is split into Interface Engineer and Operator because the distinction affects which tools are available, which permissions are required, and whether the agent operates as a dev-time or run-time tool.
 
 ### 2.1 Developer
 
@@ -65,24 +65,24 @@ The Developer defines what the copilot can do. They write the code that implemen
 
 | Attribute | Detail |
 |---|---|
-| Role | Configures all AI settings: creates agents with custom system prompts, assembles MCP Servers from available ToolSets, links Skills to Agents, manages LLM connections, builds vector catalogs, reviews audit logs. Assigns Builder and Operator roles to end users |
+| Role | Configures all AI settings: creates agents with custom system prompts, assembles MCP Servers from available ToolSets, links Skills to Agents, manages LLM connections, builds vector catalogs, reviews audit logs. Assigns Interface Engineer and Operator roles to end users |
 | Primary interface | IRIS Management Portal -- AI Hub admin UI at /agentic/admin/ |
 | Security scope | %ISCMgtPortal group membership, /api/agentic/ endpoints, Secured Wallet write for API keys |
 | Deliverable | A fully configured agent ready for end users to interact with, with appropriate tool access per role |
 
-The AI Hub Admin decides how the copilot behaves. They configure the agent's personality, which tools are available, which skills are loaded, and which LLM provider powers the responses. They also control which tools are available to Builders versus Operators through ToolSet configuration and role-based tool filtering. No code editing required -- everything is configuration through the admin UI.
+The AI Hub Admin decides how the copilot behaves. They configure the agent's personality, which tools are available, which skills are loaded, and which LLM provider powers the responses. They also control which tools are available to Interface Engineers versus Operators through ToolSet configuration and role-based tool filtering. No code editing required -- everything is configuration through the admin UI.
 
-### 2.3 End User: Builder
+### 2.3 End User: Interface Engineer
 
 | Attribute | Detail |
 |---|---|
-| Role | Uses the chatbot to create new integration artifacts: productions, DTLs, BPLs, routing rules, lookup tables. This is a dev-time role -- the Builder authors new content that will be deployed |
+| Role | Uses the chatbot to create new integration artifacts: productions, DTLs, BPLs, routing rules, lookup tables. This is a dev-time role -- the Interface Engineer authors new content that will be deployed |
 | Primary interface | Chatbot at /agentic/chat/index.html (standalone or embedded in the Interop Editor) |
 | Security scope | Chat access plus create/update/delete permissions on interoperability classes. All mutating operations require explicit approval via the confirmation gate. Changes flow through source control hooks |
 | Deliverable | New or modified productions, transformations, and routing rules -- exported to source control |
 | Primary use cases | UC-1 (Build Productions), UC-3 (Create Transformations) |
 
-The Builder creates new integration artifacts through conversation. Because Builders create and modify class definitions, their work triggers source control hooks (see Section 10) and feeds into the CI/CD pipeline. Builder tool access includes create_production, add_business_host, create_dtl, compile_dtl, create_routing_rule, and other mutating tools.
+The Interface Engineer creates new integration artifacts through conversation. Because Interface Engineers create and modify class definitions, their work triggers source control hooks (see Section 10) and feeds into the CI/CD pipeline. Interface Engineer tool access includes create_production, add_business_host, create_dtl, compile_dtl, create_routing_rule, and other mutating tools.
 
 ### 2.4 End User: Operator
 
@@ -94,13 +94,13 @@ The Builder creates new integration artifacts through conversation. Because Buil
 | Deliverable | Diagnosis reports, remediation recommendations, settings adjustments, modernization advice |
 | Primary use cases | UC-2 (Review and Improve Existing Productions) |
 
-The Operator focuses on run-time concerns: error triage, throughput monitoring, queue depth analysis, and production health assessment. They can recommend changes (refactor this DTL, add a dead-letter queue, increase pool size) but structural changes require a Builder. Operator tool access includes get_production, query_event_log, top_errors, message_summary, queue_status, and other read/monitoring tools.
+The Operator focuses on run-time concerns: error triage, throughput monitoring, queue depth analysis, and production health assessment. They can recommend changes (refactor this DTL, add a dead-letter queue, increase pool size) but structural changes require an Interface Engineer. Operator tool access includes get_production, query_event_log, top_errors, message_summary, queue_status, and other read/monitoring tools.
 
-### 2.5 Builder vs Operator: Tool Access
+### 2.5 Interface Engineer vs Operator: Tool Access
 
-The distinction between Builder and Operator is enforced through tool availability. The AI Hub Admin configures which ToolSets are available to each role:
+The distinction between Interface Engineer and Operator is enforced through tool availability. The AI Hub Admin configures which ToolSets are available to each role:
 
-| Tool Category | Builder | Operator | Examples |
+| Tool Category | Int. Eng. | Operator | Examples |
 |---|---|---|---|
 | Create/Update/Delete | Yes | No | create_production, create_dtl, add_business_host, create_routing_rule |
 | Start/Stop | Yes | No | start_production, stop_production |
@@ -111,7 +111,7 @@ The distinction between Builder and Operator is enforced through tool availabili
 | Testing | Yes | Limited | send_hl7, validate_hl7_structure (Operators can validate but not send to live productions) |
 | Settings adjustment | Yes | Yes (operational only) | update_business_host_settings (Operators limited to pool size, throttle, retry -- not adapter reconfiguration) |
 
-This separation matters for security: the Operator's agent instance cannot create or modify class definitions, which means it cannot accidentally (or through prompt injection) alter production behavior. The AI Hub Admin enforces this by binding different ToolSets to Builder-mode and Operator-mode agent configurations.
+This separation matters for security: the Operator's agent instance cannot create or modify class definitions, which means it cannot accidentally (or through prompt injection) alter production behavior. The AI Hub Admin enforces this by binding different ToolSets to Interface Engineer-mode and Operator-mode agent configurations.
 
 ---
 
@@ -195,16 +195,16 @@ All API keys are stored exclusively in the IRIS Secured Wallet (%Wallet.KeyValue
 
 ## 5. Core Use Cases
 
-The copilot addresses three primary use cases that cover the full lifecycle of healthcare integration work inside IRIS for Health. Each use case maps to a primary End User persona (Builder or Operator).
+The copilot addresses three primary use cases that cover the full lifecycle of healthcare integration work inside IRIS for Health. Each use case maps to a primary End User persona (Interface Engineer or Operator).
 
-### 5.1 Use Case 1: Build Productions (Builder)
+### 5.1 Use Case 1: Build Productions (Interface Engineer)
 
 The most common task for an integration engineer is building new Productions -- the runtime message-processing pipelines in IRIS for Health. A Production consists of Business Services (inbound), Business Processes (routing/orchestration), and Business Operations (outbound), wired together with settings, routing rules, and message transformations.
 
-The agent assists the Builder through the entire production lifecycle:
+The agent assists the Interface Engineer through the entire production lifecycle:
 
-- **Discovery**: The Builder describes their integration goal in plain English (e.g., "build a production that receives ADT messages over MLLP, transforms them to FHIR R4, and sends them to a REST endpoint"). The agent searches the Ens.* vector catalog to find the right Business Host classes (EnsLib.HL7.Service.TCPService, EnsLib.FHIR.Operation.REST, etc.).
-- **Proposal**: The agent presents a production layout -- which hosts to add, what settings to configure, which adapters to use -- and asks the Builder to approve before making changes.
+- **Discovery**: The Interface Engineer describes their integration goal in plain English (e.g., "build a production that receives ADT messages over MLLP, transforms them to FHIR R4, and sends them to a REST endpoint"). The agent searches the Ens.* vector catalog to find the right Business Host classes (EnsLib.HL7.Service.TCPService, EnsLib.FHIR.Operation.REST, etc.).
+- **Proposal**: The agent presents a production layout -- which hosts to add, what settings to configure, which adapters to use -- and asks the Interface Engineer to approve before making changes.
 - **Build**: Upon approval, the agent creates the production class, adds each Business Host with appropriate settings, creates routing rules, and compiles everything. Each mutating step goes through the confirmation gate.
 - **Validation**: The agent runs PostBuildValidation to check for configuration errors, sends a test HL7 message through the pipeline, and verifies that messages flow end-to-end without errors.
 - **Source Control**: After successful build, the newly created classes (production definition, routing rules) are captured by Health Connect Cloud source control hooks and exported to the Git repository for CI/CD review (see Section 10).
@@ -217,26 +217,26 @@ The agent assists the Builder through the entire production lifecycle:
 - "Build a complete production that receives HL7 v2.5 ADT^A01 admission messages over an inbound folder, transforms each ADT into an ORU^R01 observation report, routes the transformed messages to an outbound folder, and sends failures to a dead-letter folder."
 - "I need a production that receives X12 270 eligibility inquiries over SFTP, calls our internal eligibility REST API, constructs the X12 271 response, and writes it back to the payer's SFTP outbound folder."
 
-### 5.2 Use Case 2: Review and Improve Existing Productions (Operator, with Builder escalation)
+### 5.2 Use Case 2: Review and Improve Existing Productions (Operator, with Interface Engineer escalation)
 
 Integration engineers inherit productions built by others, or maintain productions that were built months or years ago. They need to understand what a production does, identify problems, and find opportunities to modernize it using newer IRIS features and best practices.
 
-This use case spans both personas. The Operator handles the read-only investigative work (error triage, health assessment, throughput analysis). When the investigation reveals changes that need to be made (refactor a DTL, add a dead-letter queue, restructure routing rules), those changes escalate to the Builder.
+This use case spans both personas. The Operator handles the read-only investigative work (error triage, health assessment, throughput analysis). When the investigation reveals changes that need to be made (refactor a DTL, add a dead-letter queue, restructure routing rules), those changes escalate to the Interface Engineer.
 
 **Operator activities (read-only, run-time):**
 
 - **Error Triage**: The agent queries the Event Log and Message Header tables to find recent errors, groups them by Business Host, identifies the most frequent error messages, and recommends remediation steps. It can spot suspended or errored messages that need manual intervention.
 - **Production Health Assessment**: The agent inspects the production configuration, checks queue depths, reviews throughput statistics, and identifies bottlenecks. It can recommend settings changes (pool size, throttle, retry intervals) based on what it observes.
-- **Operational Settings Adjustment**: The Operator can adjust operational settings (pool size, throttle, retry intervals, call interval) through the agent without Builder involvement. These are runtime tuning changes, not structural modifications.
+- **Operational Settings Adjustment**: The Operator can adjust operational settings (pool size, throttle, retry intervals, call interval) through the agent without Interface Engineer involvement. These are runtime tuning changes, not structural modifications.
 
-**Builder activities (mutating, dev-time):**
+**Interface Engineer activities (mutating, dev-time):**
 
-- **DTL Review and Refactoring**: The agent reviews Data Transformation Language (DTL) definitions and identifies hardcoded values that should be lookup tables, missing null checks on source fields, incorrect handling of repeating fields, and segments being dropped. It suggests refactored versions with explanations. Implementing the refactored DTL requires Builder permissions.
-- **Modernization**: The agent knows about newer IRIS features (via Skills) and can recommend upgrades -- for example, replacing a custom BPL with a built-in DTL, using record maps instead of custom parsers, or adopting the HL7-to-SDA-to-FHIR pipeline instead of point-to-point transformations. Implementing these changes requires Builder permissions.
+- **DTL Review and Refactoring**: The agent reviews Data Transformation Language (DTL) definitions and identifies hardcoded values that should be lookup tables, missing null checks on source fields, incorrect handling of repeating fields, and segments being dropped. It suggests refactored versions with explanations. Implementing the refactored DTL requires Interface Engineer permissions.
+- **Modernization**: The agent knows about newer IRIS features (via Skills) and can recommend upgrades -- for example, replacing a custom BPL with a built-in DTL, using record maps instead of custom parsers, or adopting the HL7-to-SDA-to-FHIR pipeline instead of point-to-point transformations. Implementing these changes requires Interface Engineer permissions.
 
 **Tools involved (Operator)**: get_production, query_event_log, top_errors, query_message_status, message_summary, queue_status, describe_class, list_dtls, get_dtl
 
-**Tools involved (Builder escalation)**: update_business_host_settings, update_dtl, compile_dtl, create_routing_rule
+**Tools involved (Interface Engineer escalation)**: update_business_host_settings, update_dtl, compile_dtl, create_routing_rule
 
 **Skills involved**: Productions, DTL, BPL, Adapters, ESBPattern
 
@@ -244,19 +244,19 @@ This use case spans both personas. The Operator handles the read-only investigat
 - "Review the last 2 hours of errors across all productions. Group them by Business Host, show the top 5 most frequent error messages with counts, identify messages stuck in Suspended or Error state, and recommend remediation steps."
 - "What is the throughput of the ADT_Router process over the last 24 hours? Are there any queue depth spikes?"
 
-**Example prompts (Builder)**:
+**Example prompts (Interface Engineer)**:
 - "Review our current ADT_A08_to_SDA3 DTL for: hardcoded values that should be lookup tables, missing null checks on source fields, incorrect handling of repeating PID-3 identifiers, and segments we are dropping that we should not."
 - "Refactor the ADT routing to use the built-in HL7-to-SDA-to-FHIR pipeline instead of our custom point-to-point DTLs."
 
-### 5.3 Use Case 3: Create and Optimize Transformations (Builder)
+### 5.3 Use Case 3: Create and Optimize Transformations (Interface Engineer)
 
 Data Transformations are the heart of healthcare interoperability. Integration engineers spend most of their time writing, debugging, and optimizing DTL (Data Transformation Language) and BPL (Business Process Language) definitions that convert messages between formats -- HL7 v2 to SDA3, SDA3 to FHIR R4, CDA to SDA3, and more.
 
-The agent assists the Builder with transformation work at every stage:
+The agent assists the Interface Engineer with transformation work at every stage:
 
 - **Pipeline Discovery**: The agent traces the full transformation pipeline for any format pair (e.g., HL7 v2 to FHIR R4) showing which IRIS classes handle each step, what intermediate formats are used, and where the data flows. The Transformation and Mapping Catalog (Transforms tab in the admin UI) provides this information visually at the field level.
 - **DTL Creation**: The agent creates new DTL definitions by first searching the HS.* catalog for existing transformations that handle the same or similar format pair, then scaffolding a new DTL with the correct source/target classes and document types. It can populate field mappings based on the Transformation and Mapping Catalog.
-- **Schema Introspection**: The agent can introspect HL7 v2 message schemas (segments, fields, components) and FHIR R4 resource structures so the Builder understands what data is available at each point in the pipeline. It knows about composite types (XAD for addresses, XPN for names, CX for identifiers) and can show sub-field level detail.
+- **Schema Introspection**: The agent can introspect HL7 v2 message schemas (segments, fields, components) and FHIR R4 resource structures so the Interface Engineer understands what data is available at each point in the pipeline. It knows about composite types (XAD for addresses, XPN for names, CX for identifiers) and can show sub-field level detail.
 - **Dry-Run Testing**: The agent can execute a DTL against a sample message (DryRunDTL) to verify the transformation produces the expected output without deploying to a production. It can compare before/after messages field by field.
 - **Cross-Format Mapping Insights**: Through the Transformation and Mapping Catalog, the agent (and the AI Hub Admin via the admin UI) can see exactly which HL7 fields map through SDA3 to FHIR, which fields are inbound-only (arrive but don't continue), and which are outbound-only (produced in the target but not sourced from the input). This enables gap analysis before writing any code.
 - **Source Control**: After creating or modifying DTLs and BPLs, the source control hooks capture the new class definitions and export them to Git for CI/CD review (see Section 10).
@@ -291,7 +291,7 @@ Developers work exclusively through VS Code with the InterSystems ObjectScript e
 - Tool description follows the contract format: imperative verb, scope, side effects, expected inputs
 - Tool input/output schemas are valid JSON Schema
 - Tool includes at least one happy-path unit test
-- Tool specifies whether it is available to Builder, Operator, or both roles
+- Tool specifies whether it is available to Interface Engineer, Operator, or both roles
 
 **Technical notes:**
 - Tools live under AgenticInterop.Tool.* and extend %AI.Tool
@@ -400,7 +400,7 @@ The AI Hub Admin customizes the agent's system prompt, temperature, max iteratio
 - Changes saved as override rows (survive IPM upgrades)
 - "Reset to defaults" button restores shipped class values
 
-Note: The AI Hub Admin can configure separate agent profiles for Builder and Operator roles, each with different ToolSet bindings. This enforces the privilege separation described in Section 2.5.
+Note: The AI Hub Admin can configure separate agent profiles for Interface Engineer and Operator roles, each with different ToolSet bindings. This enforces the privilege separation described in Section 2.5.
 
 ### 7.3 Configure MCP Servers
 
@@ -504,7 +504,7 @@ If any of these are not provided by the framework, they must be built at the app
 
 ### 8.1 The Chatbot
 
-The End User (Builder or Operator) interacts with the copilot through a streaming chat interface. The chatbot is available at /agentic/chat/index.html (standalone) or embedded in the Interop Editor via an AI button (iframe mode).
+The End User (Interface Engineer or Operator) interacts with the copilot through a streaming chat interface. The chatbot is available at /agentic/chat/index.html (standalone) or embedded in the Interop Editor via an AI button (iframe mode).
 
 Key capabilities:
 - SSE streaming: tokens appear in real time, no loading spinner
@@ -520,11 +520,11 @@ Key capabilities:
 - Complex tasks broken into multiple short turns with visible progress at each phase
 - If a turn exceeds limits, the monitor triggers a graceful stop and the agent summarizes partial results
 
-### 8.3 Builder User Stories
+### 8.3 Interface Engineer User Stories
 
 #### US-E01: Build a production through conversation
 
-**As a** Builder,  
+**As a** Interface Engineer,  
 **I want to** describe an integration requirement in plain English and have the agent build the production,  
 **So that** I can create working integrations without manually navigating the Management Portal.
 
@@ -538,7 +538,7 @@ Key capabilities:
 
 #### US-E02: Create a transformation through conversation
 
-**As a** Builder,  
+**As a** Interface Engineer,  
 **I want to** describe a data transformation requirement and have the agent scaffold the DTL,  
 **So that** I can create transformations with the correct source/target classes and field mappings.
 
@@ -592,7 +592,7 @@ All REST endpoints require authentication. UnauthenticatedEnabled=0 on the /api/
 
 - AI Hub Admin operations require %ISCMgtPortal group membership
 - End User chat access requires authenticated IRIS user
-- Builder-mode tools (create, update, delete, compile, start, stop) require specific roles assigned by the AI Hub Admin
+- Interface Engineer-mode tools (create, update, delete, compile, start, stop) require specific roles assigned by the AI Hub Admin
 - Operator-mode tools (read, monitor, query) require basic authenticated access
 - Mutating operations (create, update, delete) require explicit Approve from the End User via the ConfirmationGate policy -- the agent cannot modify the system without user consent
 - Cross-namespace access validated via database-level read permissions and X-IRIS-Namespace header
@@ -646,19 +646,19 @@ Not all namespaces are equal. IRIS for Health distinguishes between Foundation n
 5. If permitted: proceed through the confirmation gate
 6. If denied: return a structured permission error
 
-### 9.5 Builder vs Operator Privilege Separation
+### 9.5 Interface Engineer vs Operator Privilege Separation
 
-The security distinction between Builder and Operator is enforced at two levels:
+The security distinction between Interface Engineer and Operator is enforced at two levels:
 
 **Level 1: Tool availability (configured by AI Hub Admin)**
-- The AI Hub Admin binds different ToolSets to Builder-mode and Operator-mode agent configurations
+- The AI Hub Admin binds different ToolSets to Interface Engineer-mode and Operator-mode agent configurations
 - Operator agents do not have access to mutating tools (create_production, create_dtl, compile_dtl, etc.)
 - Even if an Operator user has database-level write access, the agent cannot call tools that are not bound to the Operator configuration
-- This prevents prompt injection attacks from escalating Operator sessions to Builder-level access
+- This prevents prompt injection attacks from escalating Operator sessions to Interface Engineer-level access
 
 **Level 2: Permission validation (enforced by tools)**
-- Even in Builder mode, every mutating tool validates the user's permissions before executing
-- A Builder user without %DB_WRITE on a specific namespace cannot create classes there
+- Even in Interface Engineer mode, every mutating tool validates the user's permissions before executing
+- An Interface Engineer user without %DB_WRITE on a specific namespace cannot create classes there
 - The ConfirmationGate provides a third layer: the user must explicitly approve each mutating action
 
 ### 9.6 Audit Logging
@@ -720,18 +720,18 @@ The agent's work must integrate with this model. Agent-created artifacts are NOT
 
 **Artifact capture**: When the agent creates or modifies a class (production, DTL, BPL, routing rule, lookup table), the %SourceControl hooks fire automatically because the agent uses standard IRIS APIs ($System.OBJ.Compile, %Dictionary) that trigger the hooks.
 
-**User attribution**: Changes are attributed to the authenticated user (the Builder), not to the agent's service account. The source control hooks capture the $username from the IRIS process context. Since the REST layer sets the process context to the authenticated user, the commit is attributed correctly.
+**User attribution**: Changes are attributed to the authenticated user (the Interface Engineer), not to the agent's service account. The source control hooks capture the $username from the IRIS process context. Since the REST layer sets the process context to the authenticated user, the commit is attributed correctly.
 
 **No bypass**: The agent does not use any mechanism that would bypass source control hooks. It does not write directly to globals, manipulate ^ROUTINE or ^oddDEF, or use any undocumented internal API. All class modifications go through the documented %Dictionary and $System.OBJ APIs.
 
 ### 10.4 CI/CD Pipeline Flow
 
 ```
-Builder asks agent to create a production
+Interface Engineer asks agent to create a production
   --> Agent creates class via $System.OBJ.Compile()
     --> %SourceControl hook fires
       --> Class definition exported to local Git working directory
-        --> Builder (or automated process) commits and pushes to GitLab
+        --> Interface Engineer (or automated process) commits and pushes to GitLab
           --> CI/CD pipeline runs: lint, validate, test
             --> On success: deploy to staging/production
 ```
@@ -740,7 +740,7 @@ Builder asks agent to create a production
 
 #### US-SC01: Agent-created artifacts appear in source control
 
-**As a** Builder,  
+**As a** Interface Engineer,  
 **I want** the productions, DTLs, and BPLs that the agent creates to be captured by source control hooks,  
 **So that** they flow through the same CI/CD pipeline as manually created artifacts.
 
@@ -754,7 +754,7 @@ Builder asks agent to create a production
 
 #### US-SC02: Agent reports source control status
 
-**As a** Builder,  
+**As a** Interface Engineer,  
 **I want** the agent to report whether source control captured the new classes after a build,  
 **So that** I know whether my changes are tracked.
 
@@ -765,7 +765,7 @@ Builder asks agent to create a production
 
 #### US-SC03: Agent respects source control locks
 
-**As a** Builder,  
+**As a** Interface Engineer,  
 **I want** the agent to respect source control locks on classes,  
 **So that** it does not modify a class that another user has locked for editing.
 
@@ -782,22 +782,22 @@ This scenario demonstrates all four personas working together:
 
 1. **Developer** writes a new Tool class that creates HL7 routing rules, compiles it, and deploys via zpm load
 2. **AI Hub Admin** opens the admin UI, sees the new tool in the Tools tab, reviews its description and tests it with the dry-run panel
-3. **AI Hub Admin** configures Builder and Operator agent profiles with appropriate ToolSet bindings
+3. **AI Hub Admin** configures Interface Engineer and Operator agent profiles with appropriate ToolSet bindings
 4. **AI Hub Admin** goes to the Connections tab, verifies the LLM connection shows a green status dot
 5. **AI Hub Admin** opens the Catalogs tab, verifies both catalogs (search_ens: 164 classes, search_hs: 58 classes) are indexed
 6. **AI Hub Admin** opens the Transforms tab, selects HL7 v2 -> FHIR R4, reviews Address field mappings to verify the Transformation and Mapping Catalog is populated
-7. **Builder** opens the chatbot and asks: "Build me a production that receives ADT^A04 messages via MLLP, transforms patient demographics to FHIR R4, and sends them to a REST endpoint"
-8. **Agent** validates that the Builder has %DB_WRITE permission on the target namespace
+7. **Interface Engineer** opens the chatbot and asks: "Build me a production that receives ADT^A04 messages via MLLP, transforms patient demographics to FHIR R4, and sends them to a REST endpoint"
+8. **Agent** validates that the Interface Engineer has %DB_WRITE permission on the target namespace
 9. **Agent** searches the Ens.* catalog for appropriate Business Hosts (EnsLib.HL7.Service.TCPService, EnsLib.FHIR.Operation.REST)
-10. **Agent** proposes the production layout and asks the Builder to approve
-11. **Builder** clicks Approve
+10. **Agent** proposes the production layout and asks the Interface Engineer to approve
+11. **Interface Engineer** clicks Approve
 12. **Agent** creates the production, adds the hosts, configures settings. Source control hooks capture each class change
 13. **Agent** builds and sends a test HL7 ADT^A04 message
 14. **Agent** validates the result and reports success, confirms source control captured the changes
 15. **Operator** opens the chatbot the next day and asks: "How is the ADT production performing? Any errors in the last 24 hours?"
 16. **Agent** queries the Event Log (read-only), reports throughput statistics and any issues
 17. **Operator** asks: "Increase the pool size on the TCPService to 3" -- the agent adjusts the operational setting after approval
-18. **AI Hub Admin** reviews the audit log to see the complete trace of all actions by both Builder and Operator
+18. **AI Hub Admin** reviews the audit log to see the complete trace of all actions by both Interface Engineer and Operator
 
 ---
 
@@ -849,7 +849,7 @@ The agent's actions pass through four enforcement layers before any mutation occ
 
 | Layer | Enforced By | What It Checks |
 |---|---|---|
-| 1. Tool availability | AI Hub Admin (ToolSet binding) | Is this tool bound to the user's agent profile (Builder vs Operator)? |
+| 1. Tool availability | AI Hub Admin (ToolSet binding) | Is this tool bound to the user's agent profile (Interface Engineer vs Operator)? |
 | 2. Namespace validation | Tool implementation | Is the target namespace non-Foundation? Does the user have database access? |
 | 3. Permission delegation | Tool implementation | Does the authenticated user have the required IRIS role for this operation? |
 | 4. User confirmation | ConfirmationGate policy | Did the user click Approve for this specific mutating action? |

@@ -372,7 +372,7 @@ The full PRD is at [docs/PRD.md](PRD.md) (also available as [PRD.docx](PRD.docx)
 
 - Three primary use cases: guided production build, production review and optimization, complex HL7-to-HL7 transformations
 - Performance, scalability, and quality requirements with specific targets
-- DX (Developer Experience) vs Builder (End User) persona separation
+- DX (Developer Experience) vs Interface Engineer (End User) persona separation
 - Tool depth requirements across 12 artifact domains (Productions, DTL, BPL, Routing Rules, Lookup Tables, HL7 Schemas, FHIR R4, SDA, Catalog, X12/HIPAA, CDA/C-CDA, Adapters)
 - Daniel system integrator persona (docs/system_integrator_persona.md) defining agent identity, expertise, and behavioral rules
 - Chatbot experience requirements (conversation lifecycle, memory, access control, streaming, guided interaction, reports, audit)

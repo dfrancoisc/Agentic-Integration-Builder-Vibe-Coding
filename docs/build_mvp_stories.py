@@ -175,7 +175,7 @@ doc.add_heading('How to Read This Document', level=1)
 add_para(
     'This document defines the MVP at the product feature level. '
     'Each feature is written as a user story: '
-    '"As a [Developer or Builder], I want to [action] so that '
+    '"As a [Developer or Interface Engineer], I want to [action] so that '
     'I can [goal]." Features are grouped into epics.'
 )
 
@@ -188,7 +188,7 @@ add_table(
          'Writes ObjectScript or Python code. Builds tools, '
          'skills, and integrations. Ships IPM packages.',
          'IDE (VS Code, Studio), terminal, source control'],
-        ['Builder',
+        ['Int. Eng.',
          'Configures and operates the AI copilot. No code. '
          'Assembles agents from available components, tests '
          'connections, runs conversations.',
@@ -291,14 +291,14 @@ doc.add_heading('Epic A: LLM Provider Connection', level=1)
 
 add_para(
     'Before the copilot can do anything, it needs a working '
-    'connection to a large language model. Both Builders (via the '
+    'connection to a large language model. Both Interface Engineers (via the '
     'Management Portal) and Developers (via code) need to be able '
     'to configure, test, and monitor this connection.'
 )
 
 feature_block(
     'A.1  Configure an LLM provider via the Management Portal',
-    'As a Builder, I want to configure an LLM provider connection '
+    'As an Interface Engineer, I want to configure an LLM provider connection '
     'by selecting a provider type, entering the required credentials, '
     'and saving the configuration so that the AI copilot has a '
     'working LLM to use.',
@@ -332,7 +332,7 @@ feature_block(
 
 feature_block(
     'A.3  Test the LLM connection and see a status indicator',
-    'As a Builder, I want to click a Test button after configuring '
+    'As an Interface Engineer, I want to click a Test button after configuring '
     'a provider and immediately see a green or red status indicator '
     'so that I know the connection works before anyone tries to '
     'use the chatbot.',
@@ -352,7 +352,7 @@ feature_block(
 
 feature_block(
     'A.4  Secure credential management',
-    'As a Builder, I want my API keys and tokens to be stored '
+    'As an Interface Engineer, I want my API keys and tokens to be stored '
     'securely and never visible in plaintext so that credentials '
     'cannot be leaked through the UI, logs, database queries, or '
     'API responses.',
@@ -372,10 +372,10 @@ feature_block(
 # EPIC B — BUILDER CONFIGURATION EXPERIENCE
 # ═══════════════════════════════════════════════════════════════════
 
-doc.add_heading('Epic B: AI Configuration for Builders', level=1)
+doc.add_heading('Epic B: AI Configuration for Interface Engineers', level=1)
 
 add_para(
-    'Builders work in the IRIS Management Portal. They need to '
+    'Interface Engineers work in the IRIS Management Portal. They need to '
     'assemble and configure AI agents without writing code: choosing '
     'which tools and skills an agent has, setting safety limits, and '
     'understanding what each component does.'
@@ -383,7 +383,7 @@ add_para(
 
 feature_block(
     'B.1  Create and configure an agent via UI',
-    'As a Builder, I want to create and configure an AI agent '
+    'As an Interface Engineer, I want to create and configure an AI agent '
     'through a form in the Management Portal so that I can define '
     'its behavior, set safety limits, and choose its LLM provider '
     'without writing code.',
@@ -403,13 +403,13 @@ feature_block(
 
 feature_block(
     'B.2  Assemble tools and skills for an agent',
-    'As a Builder, I want to select which tool groups and domain '
+    'As an Interface Engineer, I want to select which tool groups and domain '
     'skills are available to my agent so that I can control what '
     'the agent can do and what it knows about.',
     [
         'The agent configuration shows a list of available tool '
         'groups (organized by functional area) and domain skills.',
-        'The Builder adds or removes tool groups and skills using '
+        'The Interface Engineer adds or removes tool groups and skills using '
         'a multi-select interface.',
         'Each tool group shows its name, a plain-language '
         'description, and how many individual tools it contains.',
@@ -422,7 +422,7 @@ feature_block(
 
 feature_block(
     'B.3  Browse and understand available tools',
-    'As a Builder, I want to browse all available tools, read their '
+    'As an Interface Engineer, I want to browse all available tools, read their '
     'descriptions, and see their parameters so that I understand '
     'what each tool does before including it in an agent.',
     [
@@ -430,7 +430,7 @@ feature_block(
         'Each tool shows: name, plain-language description, input '
         'parameters with types and descriptions, and whether it '
         'changes state (read-only vs. mutating).',
-        'Tools are read-only in the Builder UI. Developers create '
+        'Tools are read-only in the Interface Engineer UI. Developers create '
         'tools in code.',
         'The tool browser supports search and filtering.',
     ]
@@ -438,7 +438,7 @@ feature_block(
 
 feature_block(
     'B.4  Set approval policies for state-changing actions',
-    'As a Builder, I want to configure whether the agent asks for '
+    'As an Interface Engineer, I want to configure whether the agent asks for '
     'my approval before making changes so that I can control the '
     'level of autonomy the agent has.',
     [
@@ -561,7 +561,7 @@ feature_block(
 doc.add_heading('Epic D: Chatbot Experience', level=1)
 
 add_para(
-    'The chatbot is where Builders interact with the agent. It must '
+    'The chatbot is where Interface Engineers interact with the agent. It must '
     'feel responsive, show what the agent is doing at every moment, '
     'give the user control over state-changing actions, and maintain '
     'conversation context across sessions.'
@@ -569,7 +569,7 @@ add_para(
 
 feature_block(
     'D.1  Streaming responses',
-    'As a Builder, I want to see the agent\'s response appear '
+    'As an Interface Engineer, I want to see the agent\'s response appear '
     'word by word as it is generated so that the chat feels '
     'responsive and I can start reading before the full answer '
     'is ready.',
@@ -587,7 +587,7 @@ feature_block(
 
 feature_block(
     'D.2  Visible tool activity',
-    'As a Builder, I want to see a card in the chat every time the '
+    'As an Interface Engineer, I want to see a card in the chat every time the '
     'agent uses a tool so that I can follow each step of a '
     'multi-step operation and understand what the agent is doing.',
     [
@@ -604,14 +604,14 @@ feature_block(
 
 feature_block(
     'D.3  Approval gate for state-changing actions',
-    'As a Builder, I want the agent to pause and show me what it '
+    'As an Interface Engineer, I want the agent to pause and show me what it '
     'is about to do whenever it wants to make a change, and let me '
     'Approve or Reject before anything happens.',
     [
         'When the agent reaches a state-changing tool, the chat '
         'shows an approval card with: what will change, the key '
         'arguments, and Approve / Reject buttons.',
-        'Nothing changes in IRIS until the Builder clicks Approve.',
+        'Nothing changes in IRIS until the Interface Engineer clicks Approve.',
         'Clicking Reject cancels the action and the agent is '
         'informed so it can adjust its plan.',
         'The approval card clearly distinguishes read-only actions '
@@ -621,7 +621,7 @@ feature_block(
 
 feature_block(
     'D.4  Conversation history and context',
-    'As a Builder, I want to see my past conversations, reopen any '
+    'As an Interface Engineer, I want to see my past conversations, reopen any '
     'of them, and continue where I left off so that I do not lose '
     'work between sessions.',
     [
@@ -638,7 +638,7 @@ feature_block(
 
 feature_block(
     'D.5  Namespace awareness',
-    'As a Builder, I want to see which IRIS namespace I am working '
+    'As an Interface Engineer, I want to see which IRIS namespace I am working '
     'in so that I always know where the agent will make changes.',
     [
         'The chatbot header shows the active namespace.',
@@ -654,7 +654,7 @@ feature_block(
 
 feature_block(
     'D.6  Guided onboarding',
-    'As a Builder, I want to see example prompts when I start a '
+    'As an Interface Engineer, I want to see example prompts when I start a '
     'new conversation so that I can discover what the agent can '
     'do without guessing.',
     [
@@ -668,7 +668,7 @@ feature_block(
 
 feature_block(
     'D.7  Continuous visible feedback',
-    'As a Builder, I want the chat to never appear frozen or stuck '
+    'As an Interface Engineer, I want the chat to never appear frozen or stuck '
     'so that I always know the system is working.',
     [
         'When the LLM is thinking, a visible indicator is shown.',
@@ -689,14 +689,14 @@ feature_block(
 doc.add_heading('Epic E: Trust, Safety, and Audit', level=1)
 
 add_para(
-    'The agent operates on production data. Builders need to trust '
+    'The agent operates on production data. Interface Engineers need to trust '
     'that it does what it says, that every action is recorded, and '
     'that safety limits prevent runaway behavior.'
 )
 
 feature_block(
     'E.1  Complete audit trail',
-    'As a Builder, I want every tool invocation to produce an '
+    'As an Interface Engineer, I want every tool invocation to produce an '
     'immutable audit record so that I have a complete history of '
     'what the agent did, when, who requested it, and in which '
     'namespace.',
@@ -713,7 +713,7 @@ feature_block(
 
 feature_block(
     'E.2  Agent honesty — no unverified claims',
-    'As a Builder, I want the agent to never claim an operation '
+    'As an Interface Engineer, I want the agent to never claim an operation '
     'succeeded unless it has tool confirmation so that I can trust '
     'every statement the agent makes.',
     [
@@ -728,7 +728,7 @@ feature_block(
 
 feature_block(
     'E.3  Safety limits',
-    'As a Builder, I want the agent to stop gracefully when it '
+    'As an Interface Engineer, I want the agent to stop gracefully when it '
     'reaches its configured limits (turns or tokens) so that a '
     'confused model cannot loop indefinitely or consume unlimited '
     'resources.',
@@ -745,7 +745,7 @@ feature_block(
 
 feature_block(
     'E.4  Post-build validation',
-    'As a Builder, I want the agent to validate the results of '
+    'As an Interface Engineer, I want the agent to validate the results of '
     'every build operation before claiming success so that I know '
     'the production or transformation actually works.',
     [
@@ -773,7 +773,7 @@ add_para(
 
 feature_block(
     'F.1  Catalog search before building',
-    'As a Builder, I want the agent to search a catalog of '
+    'As an Interface Engineer, I want the agent to search a catalog of '
     'available IRIS classes before building anything so that it '
     'uses real class names from my instance, not guessed ones.',
     [
@@ -783,7 +783,7 @@ feature_block(
         'Search results include: class name, description, key '
         'settings, and when-to-use guidance.',
         'The agent cites catalog results in its plan so the '
-        'Builder can verify the choices.',
+        'Interface Engineer can verify the choices.',
     ]
 )
 
@@ -806,7 +806,7 @@ feature_block(
 
 feature_block(
     'F.3  Auto-index new artifacts',
-    'As a Builder, I want new artifacts created during a build '
+    'As an Interface Engineer, I want new artifacts created during a build '
     'session (transformations, routing rules, productions) to '
     'automatically appear in the catalog so that the next user '
     'can discover and reuse them.',
@@ -859,7 +859,7 @@ doc.add_paragraph()
 doc.add_heading('UC1: Guided Production Build', level=1)
 
 add_para(
-    'The Builder says: "I need to receive ADT admission messages '
+    'The Interface Engineer says: "I need to receive ADT admission messages '
     'from our HIS and send observation reports to the downstream '
     'LIS." The agent guides them through the entire build process.'
 )
@@ -873,7 +873,7 @@ add_para(
 
 feature_block(
     'UC1.1  Guided requirements gathering',
-    'As a Builder, I want the agent to ask me clarifying questions '
+    'As an Interface Engineer, I want the agent to ask me clarifying questions '
     'about my integration needs before building anything so that '
     'the resulting production matches my actual requirements.',
     [
@@ -884,14 +884,14 @@ feature_block(
         'Each question explains why it matters in plain language.',
         'The agent does not proceed to planning until the '
         'requirements are clear.',
-        'The agent summarizes the requirements back to the Builder '
+        'The agent summarizes the requirements back to the Interface Engineer '
         'for confirmation before moving on.',
     ]
 )
 
 feature_block(
     'UC1.2  Structured plan with catalog grounding',
-    'As a Builder, I want the agent to present a structured plan '
+    'As an Interface Engineer, I want the agent to present a structured plan '
     'listing every component it will create, which IRIS classes it '
     'will use, and the data flow before building anything so that '
     'I can review and approve the design.',
@@ -903,13 +903,13 @@ feature_block(
         'Every IRIS class in the plan comes from a catalog search '
         'result, not from the LLM guessing.',
         'The plan ends with a clear "Shall I proceed?" question.',
-        'No mutating tool runs until the Builder approves the plan.',
+        'No mutating tool runs until the Interface Engineer approves the plan.',
     ]
 )
 
 feature_block(
     'UC1.3  End-to-end build',
-    'As a Builder, I want the agent to build the complete '
+    'As an Interface Engineer, I want the agent to build the complete '
     'production in a single session so that I do not have to '
     'manually wire up each component.',
     [
@@ -921,14 +921,14 @@ feature_block(
         'point to real transformations, transformations reference '
         'real lookup tables.',
         'All artifacts compile without errors.',
-        'Each creation step shows a tool card so the Builder can '
+        'Each creation step shows a tool card so the Interface Engineer can '
         'follow progress.',
     ]
 )
 
 feature_block(
     'UC1.4  Automated testing and validation',
-    'As a Builder, I want the agent to send a test message through '
+    'As an Interface Engineer, I want the agent to send a test message through '
     'the production after building it and show me the results so '
     'that I know it actually works.',
     [
@@ -950,7 +950,7 @@ feature_block(
 doc.add_heading('UC2: Production Review and Optimization', level=1)
 
 add_para(
-    'The Builder says: "Review the LAB.Production and tell me what '
+    'The Interface Engineer says: "Review the LAB.Production and tell me what '
     'it does and how to improve it." The agent inspects the '
     'production, explains it in plain language, and gives '
     'actionable recommendations.'
@@ -958,7 +958,7 @@ add_para(
 
 feature_block(
     'UC2.1  Plain-language production explanation',
-    'As a Builder, I want to ask the agent to review an existing '
+    'As an Interface Engineer, I want to ask the agent to review an existing '
     'production and explain what it does so that I understand the '
     'data flow without reading code.',
     [
@@ -976,7 +976,7 @@ feature_block(
 
 feature_block(
     'UC2.2  Actionable recommendations',
-    'As a Builder, I want the agent to give me specific, '
+    'As an Interface Engineer, I want the agent to give me specific, '
     'setting-level optimization recommendations so that each '
     'suggestion tells me exactly what to change and why.',
     [
@@ -991,7 +991,7 @@ feature_block(
 
 feature_block(
     'UC2.3  Error pattern analysis',
-    'As a Builder, I want the agent to check the Event Log for '
+    'As an Interface Engineer, I want the agent to check the Event Log for '
     'recent errors and include error patterns in its review so '
     'that I see both configuration issues and runtime problems.',
     [
@@ -1012,7 +1012,7 @@ feature_block(
 doc.add_heading('UC3: Complex HL7 Transformations', level=1)
 
 add_para(
-    'The Builder says: "Transform ADT^A01 into ORU^R01 with '
+    'The Interface Engineer says: "Transform ADT^A01 into ORU^R01 with '
     'cross-segment field mappings." The agent builds the complete '
     'transformation, handling the schema differences between the '
     'two message types.'
@@ -1020,7 +1020,7 @@ add_para(
 
 feature_block(
     'UC3.1  Schema-aware mapping',
-    'As a Builder, I want the agent to look up the exact message '
+    'As an Interface Engineer, I want the agent to look up the exact message '
     'structure for both my source and target message types before '
     'writing any transformation so that the mapping uses verified '
     'paths, not guessed ones.',
@@ -1037,7 +1037,7 @@ feature_block(
 
 feature_block(
     'UC3.2  Complete transformation in one pass',
-    'As a Builder, I want the agent to build the complete '
+    'As an Interface Engineer, I want the agent to build the complete '
     'transformation with all field mappings efficiently so that '
     'the transformation is created in a single step, not through '
     'many incremental updates.',
@@ -1053,7 +1053,7 @@ feature_block(
 
 feature_block(
     'UC3.3  Test and verify field-level output',
-    'As a Builder, I want the agent to test the transformation with '
+    'As an Interface Engineer, I want the agent to test the transformation with '
     'a sample message and verify that every mapped field actually '
     'produces data so that I know the mapping is complete.',
     [
@@ -1062,7 +1062,7 @@ feature_block(
         'value.',
         'If any field is empty or incorrect, the agent checks the '
         'paths and offers to correct them.',
-        'The Builder can provide their own sample message or use '
+        'The Interface Engineer can provide their own sample message or use '
         'an agent-generated one.',
     ]
 )
@@ -1081,7 +1081,7 @@ add_table(
     ['Epic', 'Features', 'Scope'],
     [
         ['A. LLM Provider Connection', '4', 'Generic'],
-        ['B. AI Configuration for Builders', '4', 'Generic'],
+        ['B. AI Configuration for Interface Engineers', '4', 'Generic'],
         ['C. AI Development for Developers', '5', 'Generic'],
         ['D. Chatbot Experience', '7', 'Generic'],
         ['E. Trust, Safety, and Audit', '4', 'Generic'],

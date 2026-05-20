@@ -230,11 +230,11 @@ add_table(
          'Author Tool classes in ObjectScript or Python. Write Skill '
          'documents. Build catalog embeddings. Package as IPM modules. '
          'Developers define what the copilot CAN do.'],
-        ['Builder (End User)',
+        ['Interface Engineer (End User)',
          'IRIS Management Portal, browser UI',
          'Create Agents with system prompts. Assemble MCP Servers from '
          'ToolSets. Attach Skills. Configure LLM providers. Chat with '
-         'the copilot. Builders decide HOW the copilot BEHAVES for '
+         'the copilot. Interface Engineers decide HOW the copilot BEHAVES for '
          'their use case.'],
     ]
 )
@@ -672,7 +672,7 @@ add_table(
          'All UCs',
          '%AI.Agent supports Parameter and XData blocks. Subclasses '
          'declare their system prompt, tools, and provider binding.',
-         'Builders need to configure agents without writing ObjectScript.'],
+         'Interface Engineers need to configure agents without writing ObjectScript.'],
         ['Iteration limit',
          'Framework (proposed)',
          'All UCs',
@@ -1089,15 +1089,15 @@ add_table(
 
 doc.add_heading('5. MVP Experience Requirements', level=1)
 
-doc.add_heading('5.1 Builder Experience (End-User UX)', level=2)
+doc.add_heading('5.1 Interface Engineer Experience (End-User UX)', level=2)
 
 add_para(
-    'Builders work inside the IRIS Management Portal. The framework '
+    'Interface Engineers work inside the IRIS Management Portal. The framework '
     'must provide these configuration surfaces for the MVP.'
 )
 
 add_table(
-    ['Capability', 'What the Builder Does', 'Driven By'],
+    ['Capability', 'What the Int. Eng. Does', 'Driven By'],
     [
         ['Agent configuration',
          'Create or clone an agent. Edit system prompt. Set iteration '
@@ -1537,7 +1537,7 @@ add_table(
         ['SDA',
          'Summary Document Architecture. IRIS clinical data model; '
          'intermediary hub between HL7, FHIR, and other formats.'],
-        ['Builder',
+        ['Interface Engineer',
          'End-user persona. Works in IRIS Management Portal. Configures '
          'agents without code.'],
         ['Developer (DX)',

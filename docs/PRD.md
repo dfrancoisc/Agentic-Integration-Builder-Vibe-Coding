@@ -20,7 +20,7 @@ The product separates two distinct user journeys:
 
 **Developer Experience (DX)** - InterSystems engineers and partners who author the underlying capabilities: writing Tool classes in ObjectScript/Python, authoring Skill documents, building catalog embeddings. This work happens in VS Code (or any IDE) and ships as compiled classes inside an IPM package. Developers define what the copilot can do.
 
-**Builder Experience (End User)** - Integration engineers inside IRIS for Health and Health Connect who configure and use the copilot: creating Agents with custom system prompts, assembling MCP Servers from available Toolsets, linking Skills to Agents, and chatting with the copilot to build productions. This work happens entirely in the IRIS Management Portal UI. Builders decide how the copilot behaves for their use case.
+**Interface Engineer Experience (End User)** - Integration engineers inside IRIS for Health and Health Connect who configure and use the copilot: creating Agents with custom system prompts, assembling MCP Servers from available Toolsets, linking Skills to Agents, and chatting with the copilot to build productions. This work happens entirely in the IRIS Management Portal UI. Interface Engineers decide how the copilot behaves for their use case.
 
 ---
 
@@ -104,9 +104,9 @@ The agent builds the complete DTL XML (e.g., `CreateDTL`) with all field mapping
 
 ### 3.4 User Experience
 
-#### 3.4.1 Builder Experience (End Users in IRIS for Health)
+#### 3.4.1 Interface Engineer Experience (End Users in IRIS for Health)
 
-Builders work inside the IRIS Management Portal. They do not write code. Their experience is entirely configuration-driven through the admin UI.
+Interface Engineers work inside the IRIS Management Portal. They do not write code. Their experience is entirely configuration-driven through the admin UI.
 
 | Requirement | Description |
 |---|---|

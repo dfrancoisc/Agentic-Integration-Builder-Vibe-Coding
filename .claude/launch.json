@@ -4,7 +4,7 @@
     {
       "name": "iris-proxy",
       "runtimeExecutable": "python3",
-      "runtimeArgs": [".claude/preview_proxy.py", "8088"],
+      "runtimeArgs": ["/tmp/iris-proxy.py", "8088"],
       "port": 8088,
       "url": "http://127.0.0.1:8088/agentic/admin/index.html"
     }

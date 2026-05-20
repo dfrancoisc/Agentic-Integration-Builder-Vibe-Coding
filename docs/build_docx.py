@@ -132,11 +132,11 @@ bold_para('Developer Experience (DX) —',
     'VS Code (or any IDE) and ships as compiled classes inside an IPM package. Developers define what the '
     'copilot can do.')
 
-bold_para('Builder Experience (End User) —',
+bold_para('Interface Engineer Experience (End User) —',
     'Integration engineers inside IRIS for Health and Health Connect who configure and use the copilot: '
     'creating Agents with custom system prompts, assembling MCP Servers from available Toolsets, linking '
     'Skills to Agents, and chatting with the copilot to build productions. This work happens entirely in '
-    'the IRIS Management Portal UI. Builders decide how the copilot behaves for their use case.')
+    'the IRIS Management Portal UI. Interface Engineers decide how the copilot behaves for their use case.')
 
 # ============================================================
 # 2. USE CASES
@@ -279,9 +279,9 @@ add_table(
 # 3.4 User Experience
 doc.add_heading('3.4 User Experience', level=3)
 
-doc.add_heading('3.4.1 Builder Experience (End Users in IRIS for Health)', level=3)
+doc.add_heading('3.4.1 Interface Engineer Experience (End Users in IRIS for Health)', level=3)
 doc.add_paragraph(
-    'Builders work inside the IRIS Management Portal. They do not write code. Their experience is entirely '
+    'Interface Engineers work inside the IRIS Management Portal. They do not write code. Their experience is entirely '
     'configuration-driven through the admin UI.'
 )
 add_table(

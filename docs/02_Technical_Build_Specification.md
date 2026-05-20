@@ -11,7 +11,7 @@ This document specifies the components InterSystems must build to deliver a prod
 
 The solution is built on the IRIS %AI Framework (Agent, MCP, ToolSet, Tool, Skill primitives) and extends it with application-specific infrastructure: a chat UX, an admin UI, vector catalogs, the Transformation and Mapping Catalog, connection management, and audit/security controls.
 
-Four personas interact with the system: Developers who build capabilities in code, AI Hub Admins who configure the copilot through the admin UI, Builders (dev-time End Users) who create new integration artifacts through conversation, and Operators (run-time End Users) who monitor, triage, and review existing integrations.
+Four personas interact with the system: Developers who build capabilities in code, AI Hub Admins who configure the copilot through the admin UI, Interface Engineers (dev-time End Users) who create new integration artifacts through conversation, and Operators (run-time End Users) who monitor, triage, and review existing integrations.
 
 ---
 
@@ -232,7 +232,7 @@ Tool descriptions are LLM-facing contracts. They follow this format:
 
 ### 6.5 Dry-run support
 
-Non-mutating tools support dry-run from the admin UI: the Builder enters input JSON, clicks Execute, and sees the output. This enables tool validation without chat context.
+Non-mutating tools support dry-run from the admin UI: the Interface Engineer enters input JSON, clicks Execute, and sees the output. This enables tool validation without chat context.
 
 ---
 
@@ -323,7 +323,7 @@ A multi-provider LLM connection manager that stores credentials securely and pro
 
 ### 9.3 Connection lifecycle
 
-1. **Create**: Builder enters connection details in admin UI
+1. **Create**: AI Hub Admin enters connection details in admin UI
 2. **Store secret**: API key sent to `POST /connections/:name/secret`, written to IRIS Secured Wallet under collection `AgenticInteropConnections`
 3. **Test**: `POST /connections/:name/test` sends a minimal completion request (1 token) to the configured provider, records latency, model, and error
 4. **Status**: green (last test OK), red (last test failed), gray (never tested)
@@ -390,18 +390,18 @@ Not all namespaces are equal. IRIS for Health distinguishes between Foundation n
 
 All code uses `$namespace` at request time. No hardcoded namespace references. The system works in any namespace where the classes are installed (typically HSCUSTOM for Health Connect installations).
 
-### 10.5 Builder vs Operator Privilege Separation
+### 10.5 Interface Engineer vs Operator Privilege Separation
 
-The security distinction between Builder and Operator is enforced at two levels:
+The security distinction between Interface Engineer and Operator is enforced at two levels:
 
 **Level 1: Tool availability (configured by AI Hub Admin)**
-- The AI Hub Admin binds different ToolSets to Builder-mode and Operator-mode agent configurations
+- The AI Hub Admin binds different ToolSets to Interface Engineer-mode and Operator-mode agent configurations
 - Operator agents do not have access to mutating tools (create_production, create_dtl, compile_dtl, etc.)
 - Even if an Operator user has database-level write access, the agent cannot call tools that are not bound to the Operator configuration
-- This prevents prompt injection attacks from escalating Operator sessions to Builder-level access
+- This prevents prompt injection attacks from escalating Operator sessions to Interface Engineer-level access
 
 **Level 2: Permission validation (enforced by tools)**
-- Even in Builder mode, every mutating tool validates the user's permissions before executing
+- Even in Interface Engineer mode, every mutating tool validates the user's permissions before executing
 - The ConfirmationGate provides a third layer: the user must explicitly approve each mutating action
 
 ### 10.6 Security Policies
@@ -415,7 +415,7 @@ The security distinction between Builder and Operator is enforced at two levels:
 Agent-created artifacts (productions, DTLs, BPLs, routing rules) integrate with Health Connect Cloud's `%SourceControl` hooks:
 
 - The agent uses standard IRIS APIs (`$System.OBJ.Compile`, `%Dictionary`) that trigger `%SourceControl` hooks automatically
-- Changes are attributed to the authenticated user (the Builder), not the agent's service account
+- Changes are attributed to the authenticated user (the Interface Engineer), not the agent's service account
 - The CI/CD pipeline (GitLab) validates, tests, and deploys changes across environments (dev -> staging -> production)
 - The agent checks whether source control hooks are active after creating classes and reports status
 - The agent respects source control locks: if a class is locked by another user, the agent will not modify it

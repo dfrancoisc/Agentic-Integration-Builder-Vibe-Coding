@@ -145,21 +145,21 @@ def build_doc1():
     doc.add_paragraph("2. Personas")
     doc.add_paragraph("    2.1 Developer")
     doc.add_paragraph("    2.2 AI Hub Admin")
-    doc.add_paragraph("    2.3 End User: Builder")
+    doc.add_paragraph("    2.3 End User: Interface Engineer")
     doc.add_paragraph("    2.4 End User: Operator")
-    doc.add_paragraph("    2.5 Builder vs Operator: Tool Access")
+    doc.add_paragraph("    2.5 Interface Engineer vs Operator: Tool Access")
     doc.add_paragraph("3. Building the Foundation: Vector Catalogs")
     doc.add_paragraph("4. Building the Foundation: LLM Connections")
     doc.add_paragraph("5. Core Use Cases")
-    doc.add_paragraph("    5.1 Build Productions (Builder)")
-    doc.add_paragraph("    5.2 Review and Improve Existing Productions (Operator, with Builder escalation)")
-    doc.add_paragraph("    5.3 Create and Optimize Transformations (Builder)")
+    doc.add_paragraph("    5.1 Build Productions (Interface Engineer)")
+    doc.add_paragraph("    5.2 Review and Improve Existing Productions (Operator, with Interface Engineer escalation)")
+    doc.add_paragraph("    5.3 Create and Optimize Transformations (Interface Engineer)")
     doc.add_paragraph("6. Developer Experience")
     doc.add_paragraph("7. AI Hub Admin Experience")
     doc.add_paragraph("8. End User Experience")
     doc.add_paragraph("    8.1 The Chatbot")
     doc.add_paragraph("    8.2 Performance Guardrails")
-    doc.add_paragraph("    8.3 Builder User Stories")
+    doc.add_paragraph("    8.3 Interface Engineer User Stories")
     doc.add_paragraph("    8.4 Operator User Stories")
     doc.add_paragraph("9. Audit and Security Requirements")
     doc.add_paragraph("10. Source Control and Change Control Integration")
@@ -251,7 +251,7 @@ def build_doc1():
     doc.add_page_break()
     doc.add_heading("2. Personas", level=1)
     doc.add_paragraph(
-        "The system serves four distinct personas. The End User role is split into Builder "
+        "The system serves four distinct personas. The End User role is split into Interface Engineer "
         "and Operator because the distinction affects which tools are available, which "
         "permissions are required, and whether the agent operates as a dev-time or run-time tool.")
 
@@ -273,7 +273,7 @@ def build_doc1():
     add_table(doc,
         ["Attribute", "Detail"],
         [
-            ["Role", "Configures all AI settings: creates agents with custom system prompts, assembles MCP Servers from available ToolSets, links Skills to Agents, manages LLM connections, builds vector catalogs, reviews audit logs. Assigns Builder and Operator roles to end users"],
+            ["Role", "Configures all AI settings: creates agents with custom system prompts, assembles MCP Servers from available ToolSets, links Skills to Agents, manages LLM connections, builds vector catalogs, reviews audit logs. Assigns Interface Engineer and Operator roles to end users"],
             ["Primary interface", "IRIS Management Portal -- AI Hub admin UI at /agentic/admin/"],
             ["Security scope", "%ISCMgtPortal group membership, /api/agentic/ endpoints, Secured Wallet write for API keys"],
             ["Deliverable", "A fully configured agent ready for end users to interact with, with appropriate tool access per role"],
@@ -282,26 +282,26 @@ def build_doc1():
         "The AI Hub Admin decides how the copilot behaves. They configure the agent's "
         "personality, which tools are available, which skills are loaded, and which LLM "
         "provider powers the responses. They also control which tools are available to "
-        "Builders versus Operators through ToolSet configuration and role-based tool "
+        "Interface Engineers versus Operators through ToolSet configuration and role-based tool "
         "filtering. No code editing required -- everything is configuration through the "
         "admin UI.")
     add_figure(doc, img("01_agents_list.png"),
         "Admin UI -- the AI Hub Admin's primary interface for configuring the copilot")
 
-    doc.add_heading("2.3 End User: Builder", level=2)
+    doc.add_heading("2.3 End User: Interface Engineer", level=2)
     add_table(doc,
         ["Attribute", "Detail"],
         [
-            ["Role", "Uses the chatbot to create new integration artifacts: productions, DTLs, BPLs, routing rules, lookup tables. This is a dev-time role -- the Builder authors new content that will be deployed"],
+            ["Role", "Uses the chatbot to create new integration artifacts: productions, DTLs, BPLs, routing rules, lookup tables. This is a dev-time role -- the Interface Engineer authors new content that will be deployed"],
             ["Primary interface", "Chatbot at /agentic/chat/index.html (standalone or embedded in the Interop Editor)"],
             ["Security scope", "Chat access plus create/update/delete permissions on interoperability classes. All mutating operations require explicit approval via the confirmation gate. Changes flow through source control hooks"],
             ["Deliverable", "New or modified productions, transformations, and routing rules -- exported to source control"],
             ["Primary use cases", "UC-1 (Build Productions), UC-3 (Create Transformations)"],
         ])
     doc.add_paragraph(
-        "The Builder creates new integration artifacts through conversation. Because Builders "
+        "The Interface Engineer creates new integration artifacts through conversation. Because Interface Engineers "
         "create and modify class definitions, their work triggers source control hooks (see "
-        "Section 10) and feeds into the CI/CD pipeline. Builder tool access includes "
+        "Section 10) and feeds into the CI/CD pipeline. Interface Engineer tool access includes "
         "create_production, add_business_host, create_dtl, compile_dtl, create_routing_rule, "
         "and other mutating tools.")
 
@@ -319,16 +319,16 @@ def build_doc1():
         "The Operator focuses on run-time concerns: error triage, throughput monitoring, "
         "queue depth analysis, and production health assessment. They can recommend changes "
         "(refactor this DTL, add a dead-letter queue, increase pool size) but structural "
-        "changes require a Builder. Operator tool access includes get_production, "
+        "changes require an Interface Engineer. Operator tool access includes get_production, "
         "query_event_log, top_errors, message_summary, queue_status, and other read/monitoring "
         "tools.")
 
-    doc.add_heading("2.5 Builder vs Operator: Tool Access", level=2)
+    doc.add_heading("2.5 Interface Engineer vs Operator: Tool Access", level=2)
     doc.add_paragraph(
-        "The distinction between Builder and Operator is enforced through tool availability. "
+        "The distinction between Interface Engineer and Operator is enforced through tool availability. "
         "The AI Hub Admin configures which ToolSets are available to each role:")
     add_table(doc,
-        ["Tool Category", "Builder", "Operator", "Examples"],
+        ["Tool Category", "Int. Eng.", "Operator", "Examples"],
         [
             ["Create/Update/Delete", "Yes", "No", "create_production, create_dtl, add_business_host"],
             ["Start/Stop", "Yes", "No", "start_production, stop_production"],
@@ -343,7 +343,7 @@ def build_doc1():
         "This separation matters for security: the Operator's agent instance cannot create or "
         "modify class definitions, which means it cannot accidentally (or through prompt "
         "injection) alter production behavior. The AI Hub Admin enforces this by binding "
-        "different ToolSets to Builder-mode and Operator-mode agent configurations.")
+        "different ToolSets to Interface Engineer-mode and Operator-mode agent configurations.")
 
     # =========================================================================
     # 3. Building the Foundation: Vector Catalogs
@@ -476,19 +476,19 @@ def build_doc1():
     doc.add_paragraph(
         "The copilot addresses three primary use cases that cover the full lifecycle of "
         "healthcare integration work inside IRIS for Health. Each use case maps to a primary "
-        "End User persona (Builder or Operator).")
+        "End User persona (Interface Engineer or Operator).")
     add_figure(doc, img("15_chatbot.png"),
         "Chat interface showing starter prompts organized by use case category: Build, Transform, Operate, and Review")
 
-    # UC-1: Build Productions (Builder)
-    doc.add_heading("5.1 Use Case 1: Build Productions (Builder)", level=2)
+    # UC-1: Build Productions (Interface Engineer)
+    doc.add_heading("5.1 Use Case 1: Build Productions (Interface Engineer)", level=2)
     doc.add_paragraph(
         "The most common task for an integration engineer is building new Productions -- "
         "the runtime message-processing pipelines in IRIS for Health. A Production consists "
         "of Business Services (inbound), Business Processes (routing/orchestration), and "
         "Business Operations (outbound), wired together with settings, routing rules, and "
         "message transformations.")
-    doc.add_paragraph("The agent assists the Builder through the entire production lifecycle:")
+    doc.add_paragraph("The agent assists the Interface Engineer through the entire production lifecycle:")
     doc.add_paragraph(
         "Discovery: The End User describes their integration goal in plain English (e.g., "
         "'build a production that receives ADT messages over MLLP, transforms them to FHIR "
@@ -498,7 +498,7 @@ def build_doc1():
         style="List Bullet")
     doc.add_paragraph(
         "Proposal: The agent presents a production layout -- which hosts to add, what "
-        "settings to configure, which adapters to use -- and asks the Builder to approve "
+        "settings to configure, which adapters to use -- and asks the Interface Engineer to approve "
         "before making changes.",
         style="List Bullet")
     doc.add_paragraph(
@@ -545,8 +545,8 @@ def build_doc1():
         "back to the payer's SFTP outbound folder.\"",
         style="List Bullet")
 
-    # UC-2: Review and Improve Productions (Operator, with Builder escalation)
-    doc.add_heading("5.2 Use Case 2: Review and Improve Existing Productions (Operator, with Builder escalation)", level=2)
+    # UC-2: Review and Improve Productions (Operator, with Interface Engineer escalation)
+    doc.add_heading("5.2 Use Case 2: Review and Improve Existing Productions (Operator, with Interface Engineer escalation)", level=2)
     doc.add_paragraph(
         "Integration engineers inherit productions built by others, or maintain productions "
         "that were built months or years ago. They need to understand what a production does, "
@@ -556,7 +556,7 @@ def build_doc1():
         "This use case spans both personas. The Operator handles the read-only investigative "
         "work (error triage, health assessment, throughput analysis). When the investigation "
         "reveals changes that need to be made (refactor a DTL, add a dead-letter queue, "
-        "restructure routing rules), those changes escalate to the Builder.")
+        "restructure routing rules), those changes escalate to the Interface Engineer.")
 
     doc.add_paragraph("")
     doc.add_paragraph("Operator activities (read-only, run-time):")
@@ -575,24 +575,24 @@ def build_doc1():
     doc.add_paragraph(
         "Operational Settings Adjustment: The Operator can adjust operational settings "
         "(pool size, throttle, retry intervals, call interval) through the agent without "
-        "Builder involvement. These are runtime tuning changes, not structural modifications.",
+        "Interface Engineer involvement. These are runtime tuning changes, not structural modifications.",
         style="List Bullet")
 
     doc.add_paragraph("")
-    doc.add_paragraph("Builder activities (mutating, dev-time):")
+    doc.add_paragraph("Interface Engineer activities (mutating, dev-time):")
     doc.add_paragraph(
         "DTL Review and Refactoring: The agent reviews Data Transformation Language (DTL) "
         "definitions and identifies hardcoded values that should be lookup tables, missing "
         "null checks on source fields, incorrect handling of repeating fields, and segments "
         "being dropped. It suggests refactored versions with explanations. Implementing the "
-        "refactored DTL requires Builder permissions.",
+        "refactored DTL requires Interface Engineer permissions.",
         style="List Bullet")
     doc.add_paragraph(
         "Modernization: The agent knows about newer IRIS features (via Skills) and can "
         "recommend upgrades -- for example, replacing a custom BPL with a built-in DTL, "
         "using record maps instead of custom parsers, or adopting the HL7-to-SDA-to-FHIR "
         "pipeline instead of point-to-point transformations. Implementing these changes "
-        "requires Builder permissions.",
+        "requires Interface Engineer permissions.",
         style="List Bullet")
 
     doc.add_paragraph("")
@@ -607,7 +607,7 @@ def build_doc1():
     doc.add_paragraph("list_dtls / get_dtl -- review existing transformation logic", style="List Bullet")
 
     doc.add_paragraph("")
-    doc.add_paragraph("Tools involved (Builder escalation):")
+    doc.add_paragraph("Tools involved (Interface Engineer escalation):")
     doc.add_paragraph("update_business_host_settings -- reconfigure adapter settings", style="List Bullet")
     doc.add_paragraph("update_dtl / compile_dtl -- modify and compile transformation logic", style="List Bullet")
     doc.add_paragraph("create_routing_rule -- add new routing rules", style="List Bullet")
@@ -626,7 +626,7 @@ def build_doc1():
         'there any queue depth spikes?"',
         style="List Bullet")
     doc.add_paragraph("")
-    doc.add_paragraph("Example prompts (Builder):")
+    doc.add_paragraph("Example prompts (Interface Engineer):")
     doc.add_paragraph(
         '"Review our current ADT_A08_to_SDA3 DTL for: hardcoded values that should be '
         'lookup tables, missing null checks on source fields, incorrect handling of '
@@ -637,15 +637,15 @@ def build_doc1():
         'instead of our custom point-to-point DTLs."',
         style="List Bullet")
 
-    # UC-3: Create and Optimize Transformations (Builder)
-    doc.add_heading("5.3 Use Case 3: Create and Optimize Transformations (Builder)", level=2)
+    # UC-3: Create and Optimize Transformations (Interface Engineer)
+    doc.add_heading("5.3 Use Case 3: Create and Optimize Transformations (Interface Engineer)", level=2)
     doc.add_paragraph(
         "Data Transformations are the heart of healthcare interoperability. Integration "
         "engineers spend most of their time writing, debugging, and optimizing DTL (Data "
         "Transformation Language) and BPL (Business Process Language) definitions that "
         "convert messages between formats -- HL7 v2 to SDA3, SDA3 to FHIR R4, CDA to "
         "SDA3, and more.")
-    doc.add_paragraph("The agent assists the Builder with transformation work at every stage:")
+    doc.add_paragraph("The agent assists the Interface Engineer with transformation work at every stage:")
     doc.add_paragraph(
         "Pipeline Discovery: The agent traces the full transformation pipeline for any "
         "format pair (e.g., HL7 v2 to FHIR R4) showing which IRIS classes handle each "
@@ -661,7 +661,7 @@ def build_doc1():
         style="List Bullet")
     doc.add_paragraph(
         "Schema Introspection: The agent can introspect HL7 v2 message schemas (segments, "
-        "fields, components) and FHIR R4 resource structures so the Builder understands "
+        "fields, components) and FHIR R4 resource structures so the Interface Engineer understands "
         "what data is available at each point in the pipeline.",
         style="List Bullet")
     doc.add_paragraph(
@@ -735,7 +735,7 @@ def build_doc1():
           "Tool description follows the contract format: imperative verb, scope, side effects",
           "Tool input/output schemas are valid JSON Schema",
           "Tool includes at least one happy-path unit test",
-          "Tool specifies whether it is available to Builder, Operator, or both roles"]),
+          "Tool specifies whether it is available to Interface Engineer, Operator, or both roles"]),
         ("US-D02: Create a New Skill",
          "As a Developer, I want to write a Skill class with INSTRUCTIONS content (markdown "
          "text up to 32K characters), so that the agent can delegate domain-specific questions "
@@ -821,7 +821,7 @@ def build_doc1():
     doc.add_paragraph("Changes saved as override rows that survive IPM upgrades", style="List Bullet 2")
     doc.add_paragraph("")
     doc.add_paragraph(
-        "Note: The AI Hub Admin can configure separate agent profiles for Builder and "
+        "Note: The AI Hub Admin can configure separate agent profiles for Interface Engineer and "
         "Operator roles, each with different ToolSet bindings. This enforces the privilege "
         "separation described in Section 2.5.")
 
@@ -936,7 +936,7 @@ def build_doc1():
 
     doc.add_heading("8.1 The Chatbot", level=2)
     doc.add_paragraph(
-        "The End User (Builder or Operator) interacts with the copilot through a streaming "
+        "The End User (Interface Engineer or Operator) interacts with the copilot through a streaming "
         "chat interface. The chatbot is available at /agentic/chat/index.html (standalone) "
         "or embedded in the Interop Editor via an AI button (iframe mode).")
     add_figure(doc, img("15_chatbot.png"),
@@ -954,12 +954,12 @@ def build_doc1():
     doc.add_paragraph("Complex tasks broken into multiple short turns with visible progress at each phase", style="List Bullet")
     doc.add_paragraph("If a turn exceeds limits, the monitor triggers a graceful stop and the agent summarizes partial results", style="List Bullet")
 
-    # Builder User Stories
-    doc.add_heading("8.3 Builder User Stories", level=2)
+    # Interface Engineer User Stories
+    doc.add_heading("8.3 Interface Engineer User Stories", level=2)
 
     doc.add_heading("US-E01: Build a Production Through Conversation", level=3)
     doc.add_paragraph(
-        "As a Builder, I want to describe an integration requirement in plain English and "
+        "As an Interface Engineer, I want to describe an integration requirement in plain English and "
         "have the agent build the production, so that I can create working integrations "
         "without manually navigating the Management Portal.")
     doc.add_paragraph("Acceptance criteria:")
@@ -972,7 +972,7 @@ def build_doc1():
 
     doc.add_heading("US-E02: Create a Transformation Through Conversation", level=3)
     doc.add_paragraph(
-        "As a Builder, I want to describe a data transformation requirement and have the "
+        "As an Interface Engineer, I want to describe a data transformation requirement and have the "
         "agent scaffold the DTL, so that I can create transformations with the correct "
         "source/target classes and field mappings.")
     doc.add_paragraph("Acceptance criteria:")
@@ -1028,7 +1028,7 @@ def build_doc1():
     doc.add_paragraph("AI Hub Admin operations require %ISCMgtPortal group membership", style="List Bullet")
     doc.add_paragraph("End User chat access requires authenticated IRIS user", style="List Bullet")
     doc.add_paragraph(
-        "Builder-mode tools (create, update, delete, compile, start, stop) require "
+        "Interface Engineer-mode tools (create, update, delete, compile, start, stop) require "
         "specific roles assigned by the AI Hub Admin",
         style="List Bullet")
     doc.add_paragraph(
@@ -1103,20 +1103,20 @@ def build_doc1():
         "and modify classes (through the agent with confirmation). Users with read-only "
         "access can inspect and search but not modify.")
 
-    doc.add_heading("9.5 Builder vs Operator Privilege Separation", level=2)
+    doc.add_heading("9.5 Interface Engineer vs Operator Privilege Separation", level=2)
     doc.add_paragraph(
-        "The security distinction between Builder and Operator is enforced at two levels:")
+        "The security distinction between Interface Engineer and Operator is enforced at two levels:")
     doc.add_paragraph("")
     doc.add_paragraph(
         "Level 1: Tool availability (configured by AI Hub Admin). The AI Hub Admin binds "
-        "different ToolSets to Builder-mode and Operator-mode agent configurations. Operator "
+        "different ToolSets to Interface Engineer-mode and Operator-mode agent configurations. Operator "
         "agents do not have access to mutating tools. Even if an Operator user has "
         "database-level write access, the agent cannot call tools that are not bound to the "
         "Operator configuration. This prevents prompt injection attacks from escalating "
-        "Operator sessions to Builder-level access.")
+        "Operator sessions to Interface Engineer-level access.")
     doc.add_paragraph("")
     doc.add_paragraph(
-        "Level 2: Permission validation (enforced by tools). Even in Builder mode, every "
+        "Level 2: Permission validation (enforced by tools). Even in Interface Engineer mode, every "
         "mutating tool validates the user's permissions before executing. The ConfirmationGate "
         "provides a third layer: the user must explicitly approve each mutating action.")
 
@@ -1196,7 +1196,7 @@ def build_doc1():
         "($System.OBJ.Compile, %Dictionary) that trigger the hooks.",
         style="List Bullet")
     doc.add_paragraph(
-        "User attribution: Changes are attributed to the authenticated user (the Builder), "
+        "User attribution: Changes are attributed to the authenticated user (the Interface Engineer), "
         "not to the agent's service account. The source control hooks capture the $username "
         "from the IRIS process context.",
         style="List Bullet")
@@ -1213,7 +1213,7 @@ def build_doc1():
     doc.add_heading("10.5 User Stories", level=2)
     doc.add_heading("US-SC01: Agent-Created Artifacts Appear in Source Control", level=3)
     doc.add_paragraph(
-        "As a Builder, I want the productions, DTLs, and BPLs that the agent creates to be "
+        "As an Interface Engineer, I want the productions, DTLs, and BPLs that the agent creates to be "
         "captured by source control hooks, so that they flow through the same CI/CD pipeline "
         "as manually created artifacts.")
     doc.add_paragraph("Acceptance criteria:")
@@ -1224,7 +1224,7 @@ def build_doc1():
 
     doc.add_heading("US-SC02: Agent Reports Source Control Status", level=3)
     doc.add_paragraph(
-        "As a Builder, I want the agent to report whether source control captured the new "
+        "As an Interface Engineer, I want the agent to report whether source control captured the new "
         "classes after a build, so that I know whether my changes are tracked.")
     doc.add_paragraph("Acceptance criteria:")
     doc.add_paragraph("After creating classes, the agent checks whether %SourceControl hooks are active", style="List Bullet")
@@ -1233,7 +1233,7 @@ def build_doc1():
 
     doc.add_heading("US-SC03: Agent Respects Source Control Locks", level=3)
     doc.add_paragraph(
-        "As a Builder, I want the agent to respect source control locks on classes, so that "
+        "As an Interface Engineer, I want the agent to respect source control locks on classes, so that "
         "it does not modify a class that another user has locked for editing.")
     doc.add_paragraph("Acceptance criteria:")
     doc.add_paragraph("Before modifying a class, the agent checks whether it is locked", style="List Bullet")
@@ -1249,22 +1249,22 @@ def build_doc1():
     steps = [
         ("Developer", "writes a new Tool class that creates HL7 routing rules, compiles it, and deploys via zpm load"),
         ("AI Hub Admin", "opens the admin UI, sees the new tool in the Tools tab, reviews its description and tests it with the dry-run panel"),
-        ("AI Hub Admin", "configures Builder and Operator agent profiles with appropriate ToolSet bindings"),
+        ("AI Hub Admin", "configures Interface Engineer and Operator agent profiles with appropriate ToolSet bindings"),
         ("AI Hub Admin", "goes to the Connections tab, verifies the LLM connection shows a green status dot"),
         ("AI Hub Admin", "opens the Catalogs tab, verifies both catalogs (search_ens: 164 classes, search_hs: 58 classes) are indexed"),
         ("AI Hub Admin", "opens the Transforms tab, selects HL7 v2 -> FHIR R4, reviews Address field mappings to verify the Transformation and Mapping Catalog is populated"),
-        ("Builder", "opens the chatbot and asks: 'Build me a production that receives ADT^A04 messages via MLLP, transforms patient demographics to FHIR R4, and sends them to a REST endpoint'"),
-        ("Agent", "validates that the Builder has %DB_WRITE permission on the target namespace"),
+        ("Int. Eng.", "opens the chatbot and asks: 'Build me a production that receives ADT^A04 messages via MLLP, transforms patient demographics to FHIR R4, and sends them to a REST endpoint'"),
+        ("Agent", "validates that the Interface Engineer has %DB_WRITE permission on the target namespace"),
         ("Agent", "searches the Ens.* catalog for appropriate Business Hosts (EnsLib.HL7.Service.TCPService, EnsLib.FHIR.Operation.REST)"),
-        ("Agent", "proposes the production layout and asks the Builder to approve"),
-        ("Builder", "clicks Approve"),
+        ("Agent", "proposes the production layout and asks the Interface Engineer to approve"),
+        ("Int. Eng.", "clicks Approve"),
         ("Agent", "creates the production, adds the hosts, configures settings. Source control hooks capture each class change"),
         ("Agent", "builds and sends a test HL7 ADT^A04 message"),
         ("Agent", "validates the result and reports success, confirms source control captured the changes"),
         ("Operator", "opens the chatbot the next day and asks: 'How is the ADT production performing? Any errors in the last 24 hours?'"),
         ("Agent", "queries the Event Log (read-only), reports throughput statistics and any issues"),
         ("Operator", "asks: 'Increase the pool size on the TCPService to 3' -- the agent adjusts the operational setting after approval"),
-        ("AI Hub Admin", "reviews the audit log to see the complete trace of all actions by both Builder and Operator"),
+        ("AI Hub Admin", "reviews the audit log to see the complete trace of all actions by both Interface Engineer and Operator"),
     ]
     for i, (persona, action) in enumerate(steps, 1):
         p = doc.add_paragraph(f"{i}. ")
@@ -1328,7 +1328,7 @@ def build_doc1():
     add_table(doc,
         ["Layer", "Enforced By", "What It Checks"],
         [
-            ["1. Tool availability", "AI Hub Admin (ToolSet binding)", "Is this tool bound to the user's agent profile (Builder vs Operator)?"],
+            ["1. Tool availability", "AI Hub Admin (ToolSet binding)", "Is this tool bound to the user's agent profile (Interface Engineer vs Operator)?"],
             ["2. Namespace validation", "Tool implementation", "Is the target namespace non-Foundation? Does the user have database access?"],
             ["3. Permission delegation", "Tool implementation", "Does the authenticated user have the required IRIS role for this operation?"],
             ["4. User confirmation", "ConfirmationGate policy", "Did the user click Approve for this specific mutating action?"],
@@ -1368,7 +1368,7 @@ def build_doc2():
         "management, and audit/security controls.")
     doc.add_paragraph(
         "Four personas interact with the system: Developers who build capabilities in code, "
-        "AI Hub Admins who configure the copilot through the admin UI, Builders (dev-time "
+        "AI Hub Admins who configure the copilot through the admin UI, Interface Engineers (dev-time "
         "End Users) who create new integration artifacts, and Operators (run-time End Users) "
         "who monitor, triage, and review existing integrations.")
 
@@ -1619,10 +1619,10 @@ def build_doc2():
         "regardless of user permissions. Non-Foundation namespaces respect the authenticated "
         "user's database-level permissions.")
 
-    doc.add_heading("10.4 Builder vs Operator Privilege Separation", level=2)
+    doc.add_heading("10.4 Interface Engineer vs Operator Privilege Separation", level=2)
     doc.add_paragraph(
         "Enforced at two levels: (1) Tool availability -- the AI Hub Admin binds different "
-        "ToolSets to Builder-mode and Operator-mode agent configurations; (2) Permission "
+        "ToolSets to Interface Engineer-mode and Operator-mode agent configurations; (2) Permission "
         "validation -- every mutating tool checks the user's IRIS roles before executing.")
 
     doc.add_heading("10.5 Audit Log Fields", level=2)

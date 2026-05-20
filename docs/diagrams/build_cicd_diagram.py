@@ -60,19 +60,19 @@ THEMES = {
 
 # ── pipeline steps ─────────────────────────────────────────────────────────
 STEPS = [
-    ("builder", "REQUEST",  "Builder asks agent\nto create a production", "Builder"),
+    ("builder", "REQUEST",  "Int. Eng. asks agent\nto create a production", "Int. Eng."),
     ("agent",   "COMPILE",  "$System.OBJ.Compile()\ncreates the class",   "Agent"),
     ("iris",    "HOOK",     "%SourceControl fires,\nexports to Git repo",  "IRIS"),
-    ("git",     "PUSH",     "Builder commits\nand pushes to GitLab",       "Builder"),
+    ("git",     "PUSH",     "Int. Eng. commits\nand pushes to GitLab",       "Int. Eng."),
     ("cicd",    "VALIDATE", "CI/CD pipeline:\nlint, validate, test",       "GitLab CI"),
     ("deploy",  "DEPLOY",   "On success: staging\nthen production",        "Pipeline"),
 ]
 
 DETAILS = [
-    ("builder", "Builder",   "Asks the agent to create a new production, DTL, BPL, or routing rule via the chatbot"),
+    ("builder", "Int. Eng.",  "Asks the agent to create a new production, DTL, BPL, or routing rule via the chatbot"),
     ("agent",   "Agent",     "Creates the class definition via $System.OBJ.Compile() using standard %Dictionary APIs"),
     ("iris",    "IRIS",      "%SourceControl hook fires automatically, exports the class definition to the local Git working directory"),
-    ("git",     "Builder",   "Commits the exported class definitions and pushes to the GitLab remote repository"),
+    ("git",     "Int. Eng.",  "Commits the exported class definitions and pushes to the GitLab remote repository"),
     ("cicd",    "GitLab CI", "CI/CD pipeline triggers: lint class definitions, validate configuration, run integration tests"),
     ("deploy",  "Pipeline",  "On success: deploy to staging environment, then promote to production after approval"),
 ]
@@ -265,7 +265,7 @@ for i, (theme_name, actor, text) in enumerate(DETAILS):
 
 # ── legend ─────────────────────────────────────────────────────────────────
 legend_items = [
-    ("builder", "Builder (End User)"),
+    ("builder", "Interface Engineer (End User)"),
     ("agent",   "AI Agent"),
     ("iris",    "IRIS Platform"),
     ("git",     "Git / Version Control"),
