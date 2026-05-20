@@ -9,7 +9,9 @@
 
 This document specifies the components InterSystems must build to deliver a production-grade Agentic Health Interoperability solution. The system is a configuration-driven AI Copilot embedded in IRIS for Health that enables integration engineers to build Productions, create Transformations, and test healthcare messages through natural-language conversation.
 
-The solution is built on the IRIS %AI Framework (Agent, MCP, ToolSet, Tool, Skill primitives) and extends it with application-specific infrastructure: a chat UX, an admin UI, vector catalogs, a transformation data atlas, connection management, and audit/security controls.
+The solution is built on the IRIS %AI Framework (Agent, MCP, ToolSet, Tool, Skill primitives) and extends it with application-specific infrastructure: a chat UX, an admin UI, vector catalogs, the Transformation and Mapping Catalog, connection management, and audit/security controls.
+
+Three personas interact with the system: Developers who build capabilities in code, AI Hub Admins who configure the copilot through the admin UI, and End Users (System Integrators) who use the chatbot to get integration work done.
 
 ---
 
@@ -17,7 +19,7 @@ The solution is built on the IRIS %AI Framework (Agent, MCP, ToolSet, Tool, Skil
 
 ### 2.1 What to build
 
-A streaming chat interface embedded in the IRIS Management Portal that connects to a %AI.Agent via Server-Sent Events (SSE). The chatbot is the Builder's primary interface for interacting with the agent.
+A streaming chat interface embedded in the IRIS Management Portal that connects to a %AI.Agent via Server-Sent Events (SSE). The chatbot is the End User's primary interface for interacting with the agent.
 
 ### 2.2 Core capabilities
 
@@ -150,7 +152,7 @@ Declarative sub-agents that package domain knowledge as markdown INSTRUCTIONS. T
 
 ### 4.3 Skill registration mechanism
 
-Skills extend `AgenticInterop.Skill.Base` (not `%AI.Agent.Skill` directly -- see Lessons Learned for the bug workaround). At agent build time, `SkillLoader` discovers all `Skill.Base` subclasses, instantiates them, and registers them as tools in the agent's tool catalog.
+Skills extend `AgenticInterop.Skill.Base` (not `%AI.Agent.Skill` directly -- see Lessons Learned for the bug that required this extension). At agent build time, `SkillLoader` discovers all `Skill.Base` subclasses, instantiates them, and registers them as tools in the agent's tool catalog.
 
 The LLM sees each skill as a callable tool: `skill_productions(question: "How do I add a Business Service to a production?")`. The skill runs as a sub-agent with its own INSTRUCTIONS context and returns a specialist answer.
 

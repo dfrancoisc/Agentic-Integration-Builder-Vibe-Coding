@@ -11,7 +11,11 @@ This document captures the key lessons learned during the experimental build of 
 
 ---
 
-## 2. Bugs in the %AI Framework
+## 2. %AI Framework Bugs and Extensions
+
+The solution is built entirely on the %AI Framework primitives (Agent, MCP, ToolSet, Tool, Skill, KnowledgeBase). Where we extended the framework, it was to work around specific bugs -- not to replace framework functionality. These extensions are documented here as recommendations for InterSystems.
+
+### Framework Bugs
 
 ### 2.1 BUG: %AI.Agent.Skill %OnNew $ZF marshaling error
 
