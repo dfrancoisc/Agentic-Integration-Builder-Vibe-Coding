@@ -1207,13 +1207,8 @@ def build_doc1():
         style="List Bullet")
 
     doc.add_heading("10.4 CI/CD Pipeline Flow", level=2)
-    doc.add_paragraph("Builder asks agent to create a production")
-    doc.add_paragraph("  --> Agent creates class via $System.OBJ.Compile()")
-    doc.add_paragraph("    --> %SourceControl hook fires")
-    doc.add_paragraph("      --> Class definition exported to local Git working directory")
-    doc.add_paragraph("        --> Builder commits and pushes to GitLab")
-    doc.add_paragraph("          --> CI/CD pipeline runs: lint, validate, test")
-    doc.add_paragraph("            --> On success: deploy to staging/production")
+    add_figure(doc, img("16_cicd_pipeline.png"),
+        "CI/CD Pipeline Flow: how agent-created artifacts flow from conversation to production deployment through source control hooks, Git, and the CI/CD pipeline")
 
     doc.add_heading("10.5 User Stories", level=2)
     doc.add_heading("US-SC01: Agent-Created Artifacts Appear in Source Control", level=3)
@@ -1663,6 +1658,8 @@ def build_doc2():
         "($System.OBJ.Compile, %Dictionary) that trigger the hooks automatically. Changes "
         "are attributed to the authenticated user, not the agent's service account. The "
         "CI/CD pipeline (GitLab) validates, tests, and deploys changes across environments.")
+    add_figure(doc, img("16_cicd_pipeline.png"),
+        "CI/CD Pipeline Flow: agent-created artifacts flow through source control hooks to Git and CI/CD")
 
     # 11. Performance
     doc.add_page_break()

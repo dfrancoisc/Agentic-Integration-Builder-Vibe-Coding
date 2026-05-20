@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CI/CD Pipeline Flow</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: #f8f9fc;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    min-height: 100vh;
+    padding: 32px 24px;
+  }
+  .container {
+    width: 940px;
+    background: #fff;
+    border-radius: 16px;
+    box-shadow: 0 2px 20px rgba(26,26,46,0.08);
+    padding: 40px 48px 44px;
+  }
+  .title {
+    font-size: 20px;
+    font-weight: 700;
+    color: #1a1a2e;
+    margin-bottom: 6px;
+    letter-spacing: -0.3px;
+  }
+  .subtitle {
+    font-size: 13px;
+    color: #8890a4;
+    margin-bottom: 32px;
+  }
+
+  /* ── pipeline row ── */
+  .pipeline {
+    display: flex;
+    align-items: stretch;
+    gap: 0;
+    position: relative;
+  }
+
+  /* ── single step card ── */
+  .step {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    position: relative;
+    min-width: 0;
+  }
+  .step-inner {
+    width: 100%;
+    border-radius: 10px;
+    padding: 16px 10px 14px;
+    text-align: center;
+    position: relative;
+    z-index: 2;
+    border: 1.5px solid;
+    transition: box-shadow .2s;
+  }
+  .step-icon {
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 10px;
+    font-size: 18px;
+  }
+  .step-label {
+    font-size: 11.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    margin-bottom: 5px;
+  }
+  .step-text {
+    font-size: 12px;
+    color: #4a5068;
+    line-height: 1.45;
+  }
+  .step-actor {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 10px;
+    margin-top: 8px;
+    letter-spacing: 0.3px;
+  }
+
+  /* ── arrow between steps ── */
+  .arrow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    min-width: 36px;
+    position: relative;
+    z-index: 1;
+  }
+  .arrow svg {
+    width: 28px;
+    height: 20px;
+    flex-shrink: 0;
+  }
+
+  /* ── colour themes ── */
+  /* Builder (blue) */
+  .theme-builder .step-inner  { background: #eef3ff; border-color: #b8cdf8; }
+  .theme-builder .step-icon   { background: #4a7cf7; color: #fff; }
+  .theme-builder .step-label  { color: #3264d6; }
+  .theme-builder .step-actor  { background: #dbe6fd; color: #2c59b8; }
+
+  /* Agent (purple) */
+  .theme-agent .step-inner  { background: #f3eeff; border-color: #c9b5f0; }
+  .theme-agent .step-icon   { background: #7c4dff; color: #fff; }
+  .theme-agent .step-label  { color: #6236c9; }
+  .theme-agent .step-actor  { background: #e6dbfa; color: #5a2fb3; }
+
+  /* IRIS (teal) */
+  .theme-iris .step-inner  { background: #e8f8f5; border-color: #a3ddd2; }
+  .theme-iris .step-icon   { background: #00a88e; color: #fff; }
+  .theme-iris .step-label  { color: #008a74; }
+  .theme-iris .step-actor  { background: #c9f0e7; color: #007a66; }
+
+  /* Git (orange) */
+  .theme-git .step-inner  { background: #fff5eb; border-color: #f0cfa0; }
+  .theme-git .step-icon   { background: #e8850c; color: #fff; }
+  .theme-git .step-label  { color: #c06e00; }
+  .theme-git .step-actor  { background: #fde5c5; color: #a55e00; }
+
+  /* CI/CD (green) */
+  .theme-cicd .step-inner  { background: #edf9ee; border-color: #a8dba9; }
+  .theme-cicd .step-icon   { background: #2da44e; color: #fff; }
+  .theme-cicd .step-label  { color: #1a7f37; }
+  .theme-cicd .step-actor  { background: #d4f0d5; color: #18692e; }
+
+  /* Deploy (dark blue) */
+  .theme-deploy .step-inner  { background: #e8ebf5; border-color: #a9b2d6; }
+  .theme-deploy .step-icon   { background: #1a1a2e; color: #fff; }
+  .theme-deploy .step-label  { color: #1a1a2e; }
+  .theme-deploy .step-actor  { background: #d1d5e6; color: #1a1a2e; }
+
+  /* ── bottom detail rows ── */
+  .details {
+    margin-top: 32px;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+  .detail-row {
+    display: flex;
+    align-items: center;
+    padding: 11px 16px;
+    border-bottom: 1px solid #eef0f5;
+    gap: 14px;
+  }
+  .detail-row:last-child { border-bottom: none; }
+  .detail-num {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 700;
+    color: #fff;
+    flex-shrink: 0;
+  }
+  .detail-actor {
+    width: 80px;
+    font-size: 11px;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+  .detail-text {
+    flex: 1;
+    font-size: 12.5px;
+    color: #3a3f54;
+    line-height: 1.4;
+  }
+  .detail-api {
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+    font-size: 11px;
+    color: #6236c9;
+    background: #f3eeff;
+    padding: 2px 7px;
+    border-radius: 4px;
+    white-space: nowrap;
+  }
+
+  /* ── legend ── */
+  .legend {
+    margin-top: 24px;
+    display: flex;
+    gap: 20px;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: #6b7186;
+  }
+  .legend-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <div class="title">Section 10.4 &mdash; CI/CD Pipeline Flow</div>
+  <div class="subtitle">How agent-created artifacts flow from conversation to production deployment</div>
+
+  <!-- ══════════ PIPELINE ROW ══════════ -->
+  <div class="pipeline">
+
+    <!-- 1 ── Builder Request -->
+    <div class="step theme-builder">
+      <div class="step-inner">
+        <div class="step-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        </div>
+        <div class="step-label">Request</div>
+        <div class="step-text">Builder asks the agent to create a production</div>
+        <span class="step-actor">Builder</span>
+      </div>
+    </div>
+
+    <div class="arrow"><svg viewBox="0 0 28 20"><path d="M4 10h18m-6-5l6 5-6 5" fill="none" stroke="#b0b8cc" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+
+    <!-- 2 ── Agent Compile -->
+    <div class="step theme-agent">
+      <div class="step-inner">
+        <div class="step-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M9 9l3 3-3 3"/><line x1="14" y1="15" x2="17" y2="15"/></svg>
+        </div>
+        <div class="step-label">Compile</div>
+        <div class="step-text">Agent creates class via <code>$System.OBJ</code></div>
+        <span class="step-actor">Agent</span>
+      </div>
+    </div>
+
+    <div class="arrow"><svg viewBox="0 0 28 20"><path d="M4 10h18m-6-5l6 5-6 5" fill="none" stroke="#b0b8cc" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+
+    <!-- 3 ── Source Control Hook -->
+    <div class="step theme-iris">
+      <div class="step-inner">
+        <div class="step-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2v6m0 8v6M4.93 4.93l4.24 4.24m5.66 5.66l4.24 4.24M2 12h6m8 0h6M4.93 19.07l4.24-4.24m5.66-5.66l4.24-4.24"/></svg>
+        </div>
+        <div class="step-label">Hook</div>
+        <div class="step-text">%SourceControl hook fires &amp; exports to Git</div>
+        <span class="step-actor">IRIS</span>
+      </div>
+    </div>
+
+    <div class="arrow"><svg viewBox="0 0 28 20"><path d="M4 10h18m-6-5l6 5-6 5" fill="none" stroke="#b0b8cc" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+
+    <!-- 4 ── Git Push -->
+    <div class="step theme-git">
+      <div class="step-inner">
+        <div class="step-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><circle cx="19" cy="5" r="2"/><circle cx="5" cy="19" r="2"/><path d="M14.5 9.5L17 7M9.5 14.5L7 17"/></svg>
+        </div>
+        <div class="step-label">Push</div>
+        <div class="step-text">Builder commits and pushes to GitLab</div>
+        <span class="step-actor">Builder</span>
+      </div>
+    </div>
+
+    <div class="arrow"><svg viewBox="0 0 28 20"><path d="M4 10h18m-6-5l6 5-6 5" fill="none" stroke="#b0b8cc" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+
+    <!-- 5 ── CI/CD Pipeline -->
+    <div class="step theme-cicd">
+      <div class="step-inner">
+        <div class="step-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+        </div>
+        <div class="step-label">Validate</div>
+        <div class="step-text">CI/CD pipeline: lint, validate, test</div>
+        <span class="step-actor">GitLab CI</span>
+      </div>
+    </div>
+
+    <div class="arrow"><svg viewBox="0 0 28 20"><path d="M4 10h18m-6-5l6 5-6 5" fill="none" stroke="#b0b8cc" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+
+    <!-- 6 ── Deploy -->
+    <div class="step theme-deploy">
+      <div class="step-inner">
+        <div class="step-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M22 12l-10 7V5z"/><line x1="2" y1="5" x2="2" y2="19"/></svg>
+        </div>
+        <div class="step-label">Deploy</div>
+        <div class="step-text">Staging &rarr; Production on success</div>
+        <span class="step-actor">Pipeline</span>
+      </div>
+    </div>
+
+  </div><!-- /pipeline -->
+
+  <!-- ══════════ DETAIL ROWS ══════════ -->
+  <div class="details">
+    <div class="detail-row">
+      <div class="detail-num" style="background:#4a7cf7">1</div>
+      <div class="detail-actor" style="color:#3264d6">Builder</div>
+      <div class="detail-text">Asks the agent to create a new production, DTL, BPL, or routing rule via the chatbot</div>
+    </div>
+    <div class="detail-row">
+      <div class="detail-num" style="background:#7c4dff">2</div>
+      <div class="detail-actor" style="color:#6236c9">Agent</div>
+      <div class="detail-text">Creates the class definition via <span class="detail-api">$System.OBJ.Compile()</span> using standard %Dictionary APIs</div>
+    </div>
+    <div class="detail-row">
+      <div class="detail-num" style="background:#00a88e">3</div>
+      <div class="detail-actor" style="color:#008a74">IRIS</div>
+      <div class="detail-text"><span class="detail-api">%SourceControl</span> hook fires automatically, exports the class definition to the local Git working directory. Change attributed to the authenticated user.</div>
+    </div>
+    <div class="detail-row">
+      <div class="detail-num" style="background:#e8850c">4</div>
+      <div class="detail-actor" style="color:#c06e00">Builder</div>
+      <div class="detail-text">Commits the exported class definitions and pushes to the GitLab remote repository</div>
+    </div>
+    <div class="detail-row">
+      <div class="detail-num" style="background:#2da44e">5</div>
+      <div class="detail-actor" style="color:#1a7f37">GitLab CI</div>
+      <div class="detail-text">CI/CD pipeline triggers: lint class definitions, validate configuration, run integration tests</div>
+    </div>
+    <div class="detail-row">
+      <div class="detail-num" style="background:#1a1a2e">6</div>
+      <div class="detail-actor" style="color:#1a1a2e">Pipeline</div>
+      <div class="detail-text">On success: deploy to staging environment, then promote to production after approval</div>
+    </div>
+  </div>
+
+  <!-- ══════════ LEGEND ══════════ -->
+  <div class="legend">
+    <div class="legend-item"><div class="legend-dot" style="background:#4a7cf7"></div>Builder (End User)</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#7c4dff"></div>AI Agent</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#00a88e"></div>IRIS Platform</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#e8850c"></div>Git / Version Control</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#2da44e"></div>CI/CD Pipeline</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#1a1a2e"></div>Deployment</div>
+  </div>
+
+</div>
+</body>
+</html>
