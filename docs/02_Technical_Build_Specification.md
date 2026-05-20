@@ -11,7 +11,7 @@ This document specifies the components InterSystems must build to deliver a prod
 
 The solution is built on the IRIS %AI Framework (Agent, MCP, ToolSet, Tool, Skill primitives) and extends it with application-specific infrastructure: a chat UX, an admin UI, vector catalogs, the Transformation and Mapping Catalog, connection management, and audit/security controls.
 
-Three personas interact with the system: Developers who build capabilities in code, AI Hub Admins who configure the copilot through the admin UI, and End Users (System Integrators) who use the chatbot to get integration work done.
+Four personas interact with the system: Developers who build capabilities in code, AI Hub Admins who configure the copilot through the admin UI, Builders (dev-time End Users) who create new integration artifacts through conversation, and Operators (run-time End Users) who monitor, triage, and review existing integrations.
 
 ---
 
@@ -370,15 +370,55 @@ Property ErrorText As %String
 Property Kind As %String       // registry, editor.agent, chat, etc.
 ```
 
-### 10.3 Security policies
+### 10.3 LLM Permission Delegation
 
-**ToolFilter policy**: Removes framework-default tools (FileSystem, SQL, ShellTools) from the LLM's tool catalog. Without this, the LLM could theoretically access file system operations or raw SQL execution.
+The agent must NEVER bypass the authenticated user's permissions, even if the agent's service identity has broader access. Every tool call is executed under the authenticated user's security context. If the user cannot perform an action through the Management Portal, the agent must not perform it either.
 
-**ConfirmationGate policy**: Mutating operations require explicit user approval before execution. The agent cannot create, modify, or delete Productions, DTLs, or routing rules without the Builder clicking Approve.
+**Implementation:**
+- Every tool receives the authenticated username from the REST layer (extracted from Basic auth or JWT)
+- Before executing a mutating operation, the tool checks the user's roles and database privileges via `$System.Security.Check()` or equivalent
+- If the user lacks the required permission, the tool returns a structured error: `{ "error": { "code": "PERMISSION_DENIED", "message": "...", "required_permission": "..." } }`
+- The agent surfaces this error to the user in plain language
+- The audit log records both the attempted action and the permission denial
 
-### 10.4 Namespace isolation
+### 10.4 Namespace Constraints
+
+Not all namespaces are equal. IRIS for Health distinguishes between Foundation namespaces (shipped with the product) and non-Foundation namespaces (created by users).
+
+- **Foundation namespaces** (HSLIB, HSSYS, ENSLIB): Always read-only for the agent, regardless of user permissions. The agent can search and inspect classes but MUST NOT create, modify, or delete any class definition. This is a hard constraint -- the ConfirmationGate cannot override it.
+- **Non-Foundation namespaces** (HSCUSTOM, user-created): The agent respects the authenticated user's database-level permissions. Users with %DB_WRITE can create and modify classes (through the agent with confirmation).
 
 All code uses `$namespace` at request time. No hardcoded namespace references. The system works in any namespace where the classes are installed (typically HSCUSTOM for Health Connect installations).
+
+### 10.5 Builder vs Operator Privilege Separation
+
+The security distinction between Builder and Operator is enforced at two levels:
+
+**Level 1: Tool availability (configured by AI Hub Admin)**
+- The AI Hub Admin binds different ToolSets to Builder-mode and Operator-mode agent configurations
+- Operator agents do not have access to mutating tools (create_production, create_dtl, compile_dtl, etc.)
+- Even if an Operator user has database-level write access, the agent cannot call tools that are not bound to the Operator configuration
+- This prevents prompt injection attacks from escalating Operator sessions to Builder-level access
+
+**Level 2: Permission validation (enforced by tools)**
+- Even in Builder mode, every mutating tool validates the user's permissions before executing
+- The ConfirmationGate provides a third layer: the user must explicitly approve each mutating action
+
+### 10.6 Security Policies
+
+**ToolFilter policy**: Removes framework-default tools (FileSystem, SQL, ShellTools) from the LLM's tool catalog. Without this, the LLM could theoretically access file system operations or raw SQL execution that could bypass the permission model.
+
+**ConfirmationGate policy**: Mutating operations require explicit user approval before execution. The agent cannot create, modify, or delete Productions, DTLs, or routing rules without the End User clicking Approve. This is the last line of defense after permission checks and namespace validation.
+
+### 10.7 Source Control Integration
+
+Agent-created artifacts (productions, DTLs, BPLs, routing rules) integrate with Health Connect Cloud's `%SourceControl` hooks:
+
+- The agent uses standard IRIS APIs (`$System.OBJ.Compile`, `%Dictionary`) that trigger `%SourceControl` hooks automatically
+- Changes are attributed to the authenticated user (the Builder), not the agent's service account
+- The CI/CD pipeline (GitLab) validates, tests, and deploys changes across environments (dev -> staging -> production)
+- The agent checks whether source control hooks are active after creating classes and reports status
+- The agent respects source control locks: if a class is locked by another user, the agent will not modify it
 
 ---
 

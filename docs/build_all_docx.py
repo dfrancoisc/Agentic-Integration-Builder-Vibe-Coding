@@ -41,7 +41,7 @@ def style_doc(doc):
     doc.styles["Heading 3"].font.size = Pt(13)
 
 
-def add_title_page(doc, title, subtitle, version="Version 2.0 | May 2026 | InterSystems AI Hub"):
+def add_title_page(doc, title, subtitle, version="Version 3.0 | May 2026 | InterSystems AI Hub"):
     """Add a title page."""
     for _ in range(6):
         doc.add_paragraph("")
@@ -145,21 +145,29 @@ def build_doc1():
     doc.add_paragraph("2. Personas")
     doc.add_paragraph("    2.1 Developer")
     doc.add_paragraph("    2.2 AI Hub Admin")
-    doc.add_paragraph("    2.3 End User (System Integrator)")
+    doc.add_paragraph("    2.3 End User: Builder")
+    doc.add_paragraph("    2.4 End User: Operator")
+    doc.add_paragraph("    2.5 Builder vs Operator: Tool Access")
     doc.add_paragraph("3. Building the Foundation: Vector Catalogs")
     doc.add_paragraph("4. Building the Foundation: LLM Connections")
     doc.add_paragraph("5. Core Use Cases")
-    doc.add_paragraph("    5.1 Build Productions")
-    doc.add_paragraph("    5.2 Review and Improve Existing Productions")
-    doc.add_paragraph("    5.3 Create and Optimize Transformations")
+    doc.add_paragraph("    5.1 Build Productions (Builder)")
+    doc.add_paragraph("    5.2 Review and Improve Existing Productions (Operator, with Builder escalation)")
+    doc.add_paragraph("    5.3 Create and Optimize Transformations (Builder)")
     doc.add_paragraph("6. Developer Experience")
     doc.add_paragraph("7. AI Hub Admin Experience")
-    doc.add_paragraph("8. End User (System Integrator) Experience")
+    doc.add_paragraph("8. End User Experience")
+    doc.add_paragraph("    8.1 The Chatbot")
+    doc.add_paragraph("    8.2 Performance Guardrails")
+    doc.add_paragraph("    8.3 Builder User Stories")
+    doc.add_paragraph("    8.4 Operator User Stories")
     doc.add_paragraph("9. Audit and Security Requirements")
-    doc.add_paragraph("10. End-to-End Scenario")
-    doc.add_paragraph("11. Non-Functional Requirements")
+    doc.add_paragraph("10. Source Control and Change Control Integration")
+    doc.add_paragraph("11. End-to-End Scenario")
+    doc.add_paragraph("12. Non-Functional Requirements")
     doc.add_paragraph("Appendix A: Admin UI Tab Summary")
     doc.add_paragraph("Appendix B: %AI Framework Primitives Used")
+    doc.add_paragraph("Appendix C: Security Enforcement Layers")
     doc.add_page_break()
 
     # =========================================================================
@@ -243,8 +251,9 @@ def build_doc1():
     doc.add_page_break()
     doc.add_heading("2. Personas", level=1)
     doc.add_paragraph(
-        "The system serves three distinct personas, each with a different interface and "
-        "security scope.")
+        "The system serves four distinct personas. The End User role is split into Builder "
+        "and Operator because the distinction affects which tools are available, which "
+        "permissions are required, and whether the agent operates as a dev-time or run-time tool.")
 
     doc.add_heading("2.1 Developer", level=2)
     add_table(doc,
@@ -264,33 +273,77 @@ def build_doc1():
     add_table(doc,
         ["Attribute", "Detail"],
         [
-            ["Role", "Configures all AI settings: creates agents with custom system prompts, assembles MCP Servers from available ToolSets, links Skills to Agents, manages LLM connections, builds vector catalogs, reviews audit logs"],
+            ["Role", "Configures all AI settings: creates agents with custom system prompts, assembles MCP Servers from available ToolSets, links Skills to Agents, manages LLM connections, builds vector catalogs, reviews audit logs. Assigns Builder and Operator roles to end users"],
             ["Primary interface", "IRIS Management Portal -- AI Hub admin UI at /agentic/admin/"],
             ["Security scope", "%ISCMgtPortal group membership, /api/agentic/ endpoints, Secured Wallet write for API keys"],
-            ["Deliverable", "A fully configured agent ready for end users to interact with"],
+            ["Deliverable", "A fully configured agent ready for end users to interact with, with appropriate tool access per role"],
         ])
     doc.add_paragraph(
         "The AI Hub Admin decides how the copilot behaves. They configure the agent's "
         "personality, which tools are available, which skills are loaded, and which LLM "
-        "provider powers the responses. No code editing required -- everything is "
-        "configuration through the admin UI.")
+        "provider powers the responses. They also control which tools are available to "
+        "Builders versus Operators through ToolSet configuration and role-based tool "
+        "filtering. No code editing required -- everything is configuration through the "
+        "admin UI.")
     add_figure(doc, img("01_agents_list.png"),
         "Admin UI -- the AI Hub Admin's primary interface for configuring the copilot")
 
-    doc.add_heading("2.3 End User (System Integrator)", level=2)
+    doc.add_heading("2.3 End User: Builder", level=2)
     add_table(doc,
         ["Attribute", "Detail"],
         [
-            ["Role", "Uses the chatbot to build productions, review existing integrations, create transformations, test messages, and explore the IRIS class catalog"],
+            ["Role", "Uses the chatbot to create new integration artifacts: productions, DTLs, BPLs, routing rules, lookup tables. This is a dev-time role -- the Builder authors new content that will be deployed"],
             ["Primary interface", "Chatbot at /agentic/chat/index.html (standalone or embedded in the Interop Editor)"],
-            ["Security scope", "Chat access only. All mutating operations require explicit approval via the confirmation gate"],
-            ["Deliverable", "Working productions, transformations, and validated message flows"],
+            ["Security scope", "Chat access plus create/update/delete permissions on interoperability classes. All mutating operations require explicit approval via the confirmation gate. Changes flow through source control hooks"],
+            ["Deliverable", "New or modified productions, transformations, and routing rules -- exported to source control"],
+            ["Primary use cases", "UC-1 (Build Productions), UC-3 (Create Transformations)"],
         ])
     doc.add_paragraph(
-        "The End User is the system integrator who needs to get healthcare integration work "
-        "done. They describe what they need in plain English and the copilot builds it. They "
-        "do not configure the agent or write code -- they use the agent that the AI Hub Admin "
-        "has configured.")
+        "The Builder creates new integration artifacts through conversation. Because Builders "
+        "create and modify class definitions, their work triggers source control hooks (see "
+        "Section 10) and feeds into the CI/CD pipeline. Builder tool access includes "
+        "create_production, add_business_host, create_dtl, compile_dtl, create_routing_rule, "
+        "and other mutating tools.")
+
+    doc.add_heading("2.4 End User: Operator", level=2)
+    add_table(doc,
+        ["Attribute", "Detail"],
+        [
+            ["Role", "Uses the chatbot to monitor, triage, and review existing integrations at run-time. The Operator does not create new productions or DTLs -- they observe, diagnose, and recommend"],
+            ["Primary interface", "Chatbot at /agentic/chat/index.html (standalone or embedded in the Interop Editor)"],
+            ["Security scope", "Chat access plus read-only access to production configurations and monitoring data. May adjust operational settings (pool size, throttle, retry intervals) but not structural changes"],
+            ["Deliverable", "Diagnosis reports, remediation recommendations, settings adjustments, modernization advice"],
+            ["Primary use cases", "UC-2 (Review and Improve Existing Productions)"],
+        ])
+    doc.add_paragraph(
+        "The Operator focuses on run-time concerns: error triage, throughput monitoring, "
+        "queue depth analysis, and production health assessment. They can recommend changes "
+        "(refactor this DTL, add a dead-letter queue, increase pool size) but structural "
+        "changes require a Builder. Operator tool access includes get_production, "
+        "query_event_log, top_errors, message_summary, queue_status, and other read/monitoring "
+        "tools.")
+
+    doc.add_heading("2.5 Builder vs Operator: Tool Access", level=2)
+    doc.add_paragraph(
+        "The distinction between Builder and Operator is enforced through tool availability. "
+        "The AI Hub Admin configures which ToolSets are available to each role:")
+    add_table(doc,
+        ["Tool Category", "Builder", "Operator", "Examples"],
+        [
+            ["Create/Update/Delete", "Yes", "No", "create_production, create_dtl, add_business_host"],
+            ["Start/Stop", "Yes", "No", "start_production, stop_production"],
+            ["Compile", "Yes", "No", "compile_dtl"],
+            ["Read/Inspect", "Yes", "Yes", "get_production, list_dtls, describe_class"],
+            ["Monitoring", "Yes", "Yes", "query_event_log, top_errors, message_summary"],
+            ["Search", "Yes", "Yes", "search_ens, search_hs"],
+            ["Testing", "Yes", "Limited", "send_hl7, validate_hl7_structure"],
+            ["Settings adjustment", "Yes", "Yes (operational only)", "update_business_host_settings"],
+        ])
+    doc.add_paragraph(
+        "This separation matters for security: the Operator's agent instance cannot create or "
+        "modify class definitions, which means it cannot accidentally (or through prompt "
+        "injection) alter production behavior. The AI Hub Admin enforces this by binding "
+        "different ToolSets to Builder-mode and Operator-mode agent configurations.")
 
     # =========================================================================
     # 3. Building the Foundation: Vector Catalogs
@@ -422,29 +475,30 @@ def build_doc1():
     doc.add_heading("5. Core Use Cases", level=1)
     doc.add_paragraph(
         "The copilot addresses three primary use cases that cover the full lifecycle of "
-        "healthcare integration work inside IRIS for Health. These are the tasks that End "
-        "Users (System Integrators) perform through the chatbot.")
+        "healthcare integration work inside IRIS for Health. Each use case maps to a primary "
+        "End User persona (Builder or Operator).")
     add_figure(doc, img("15_chatbot.png"),
         "Chat interface showing starter prompts organized by use case category: Build, Transform, Operate, and Review")
 
-    # UC-1: Build Productions
-    doc.add_heading("5.1 Use Case 1: Build Productions", level=2)
+    # UC-1: Build Productions (Builder)
+    doc.add_heading("5.1 Use Case 1: Build Productions (Builder)", level=2)
     doc.add_paragraph(
         "The most common task for an integration engineer is building new Productions -- "
         "the runtime message-processing pipelines in IRIS for Health. A Production consists "
         "of Business Services (inbound), Business Processes (routing/orchestration), and "
         "Business Operations (outbound), wired together with settings, routing rules, and "
         "message transformations.")
-    doc.add_paragraph("The agent assists the End User through the entire production lifecycle:")
+    doc.add_paragraph("The agent assists the Builder through the entire production lifecycle:")
     doc.add_paragraph(
         "Discovery: The End User describes their integration goal in plain English (e.g., "
         "'build a production that receives ADT messages over MLLP, transforms them to FHIR "
         "R4, and sends them to a REST endpoint'). The agent searches the Ens.* vector "
-        "catalog to find the right Business Host classes.",
+        "catalog to find the right Business Host classes (EnsLib.HL7.Service.TCPService, "
+        "EnsLib.FHIR.Operation.REST, etc.).",
         style="List Bullet")
     doc.add_paragraph(
         "Proposal: The agent presents a production layout -- which hosts to add, what "
-        "settings to configure, which adapters to use -- and asks the End User to approve "
+        "settings to configure, which adapters to use -- and asks the Builder to approve "
         "before making changes.",
         style="List Bullet")
     doc.add_paragraph(
@@ -456,6 +510,11 @@ def build_doc1():
         "Validation: The agent runs PostBuildValidation to check for configuration errors, "
         "sends a test HL7 message through the pipeline, and verifies that messages flow "
         "end-to-end without errors.",
+        style="List Bullet")
+    doc.add_paragraph(
+        "Source Control: After successful build, the newly created classes (production "
+        "definition, routing rules) are captured by Health Connect Cloud source control "
+        "hooks and exported to the Git repository for CI/CD review (see Section 10).",
         style="List Bullet")
 
     doc.add_paragraph("")
@@ -486,14 +545,21 @@ def build_doc1():
         "back to the payer's SFTP outbound folder.\"",
         style="List Bullet")
 
-    # UC-2: Review and Improve Productions
-    doc.add_heading("5.2 Use Case 2: Review and Improve Existing Productions", level=2)
+    # UC-2: Review and Improve Productions (Operator, with Builder escalation)
+    doc.add_heading("5.2 Use Case 2: Review and Improve Existing Productions (Operator, with Builder escalation)", level=2)
     doc.add_paragraph(
         "Integration engineers inherit productions built by others, or maintain productions "
         "that were built months or years ago. They need to understand what a production does, "
         "identify problems, and find opportunities to modernize it using newer IRIS features "
         "and best practices.")
-    doc.add_paragraph("The agent helps the End User review and optimize existing integrations:")
+    doc.add_paragraph(
+        "This use case spans both personas. The Operator handles the read-only investigative "
+        "work (error triage, health assessment, throughput analysis). When the investigation "
+        "reveals changes that need to be made (refactor a DTL, add a dead-letter queue, "
+        "restructure routing rules), those changes escalate to the Builder.")
+
+    doc.add_paragraph("")
+    doc.add_paragraph("Operator activities (read-only, run-time):")
     doc.add_paragraph(
         "Error Triage: The agent queries the Event Log and Message Header tables to find "
         "recent errors, groups them by Business Host, identifies the most frequent error "
@@ -507,20 +573,30 @@ def build_doc1():
         "on what it observes.",
         style="List Bullet")
     doc.add_paragraph(
-        "DTL Review: The agent reviews Data Transformation Language (DTL) definitions and "
-        "identifies hardcoded values that should be lookup tables, missing null checks on "
-        "source fields, incorrect handling of repeating fields, and segments being dropped. "
-        "It suggests refactored versions with explanations.",
-        style="List Bullet")
-    doc.add_paragraph(
-        "Modernization Advice: The agent knows about newer IRIS features (via Skills) and "
-        "can recommend upgrades -- for example, replacing a custom BPL with a built-in DTL, "
-        "using record maps instead of custom parsers, or adopting the HL7-to-SDA-to-FHIR "
-        "pipeline instead of point-to-point transformations.",
+        "Operational Settings Adjustment: The Operator can adjust operational settings "
+        "(pool size, throttle, retry intervals, call interval) through the agent without "
+        "Builder involvement. These are runtime tuning changes, not structural modifications.",
         style="List Bullet")
 
     doc.add_paragraph("")
-    doc.add_paragraph("Tools involved:")
+    doc.add_paragraph("Builder activities (mutating, dev-time):")
+    doc.add_paragraph(
+        "DTL Review and Refactoring: The agent reviews Data Transformation Language (DTL) "
+        "definitions and identifies hardcoded values that should be lookup tables, missing "
+        "null checks on source fields, incorrect handling of repeating fields, and segments "
+        "being dropped. It suggests refactored versions with explanations. Implementing the "
+        "refactored DTL requires Builder permissions.",
+        style="List Bullet")
+    doc.add_paragraph(
+        "Modernization: The agent knows about newer IRIS features (via Skills) and can "
+        "recommend upgrades -- for example, replacing a custom BPL with a built-in DTL, "
+        "using record maps instead of custom parsers, or adopting the HL7-to-SDA-to-FHIR "
+        "pipeline instead of point-to-point transformations. Implementing these changes "
+        "requires Builder permissions.",
+        style="List Bullet")
+
+    doc.add_paragraph("")
+    doc.add_paragraph("Tools involved (Operator):")
     doc.add_paragraph("get_production -- inspect the full production configuration and all hosts", style="List Bullet")
     doc.add_paragraph("query_event_log -- search the Event Log for errors, warnings, and trace messages", style="List Bullet")
     doc.add_paragraph("top_errors -- group errors by frequency and identify systemic issues", style="List Bullet")
@@ -531,29 +607,45 @@ def build_doc1():
     doc.add_paragraph("list_dtls / get_dtl -- review existing transformation logic", style="List Bullet")
 
     doc.add_paragraph("")
+    doc.add_paragraph("Tools involved (Builder escalation):")
+    doc.add_paragraph("update_business_host_settings -- reconfigure adapter settings", style="List Bullet")
+    doc.add_paragraph("update_dtl / compile_dtl -- modify and compile transformation logic", style="List Bullet")
+    doc.add_paragraph("create_routing_rule -- add new routing rules", style="List Bullet")
+
+    doc.add_paragraph("")
     doc.add_paragraph("Skills involved: Productions, DTL, BPL, Adapters, ESBPattern")
     doc.add_paragraph("")
-    doc.add_paragraph("Example prompts:")
+    doc.add_paragraph("Example prompts (Operator):")
     doc.add_paragraph(
         '"Review the last 2 hours of errors across all productions. Group them by Business '
         'Host, show the top 5 most frequent error messages with counts, identify messages '
         'stuck in Suspended or Error state, and recommend remediation steps."',
         style="List Bullet")
     doc.add_paragraph(
+        '"What is the throughput of the ADT_Router process over the last 24 hours? Are '
+        'there any queue depth spikes?"',
+        style="List Bullet")
+    doc.add_paragraph("")
+    doc.add_paragraph("Example prompts (Builder):")
+    doc.add_paragraph(
         '"Review our current ADT_A08_to_SDA3 DTL for: hardcoded values that should be '
         'lookup tables, missing null checks on source fields, incorrect handling of '
         'repeating PID-3 identifiers, and segments we are dropping that we should not."',
         style="List Bullet")
+    doc.add_paragraph(
+        '"Refactor the ADT routing to use the built-in HL7-to-SDA-to-FHIR pipeline '
+        'instead of our custom point-to-point DTLs."',
+        style="List Bullet")
 
-    # UC-3: Create and Optimize Transformations
-    doc.add_heading("5.3 Use Case 3: Create and Optimize Transformations", level=2)
+    # UC-3: Create and Optimize Transformations (Builder)
+    doc.add_heading("5.3 Use Case 3: Create and Optimize Transformations (Builder)", level=2)
     doc.add_paragraph(
         "Data Transformations are the heart of healthcare interoperability. Integration "
         "engineers spend most of their time writing, debugging, and optimizing DTL (Data "
         "Transformation Language) and BPL (Business Process Language) definitions that "
         "convert messages between formats -- HL7 v2 to SDA3, SDA3 to FHIR R4, CDA to "
         "SDA3, and more.")
-    doc.add_paragraph("The agent assists the End User with transformation work at every stage:")
+    doc.add_paragraph("The agent assists the Builder with transformation work at every stage:")
     doc.add_paragraph(
         "Pipeline Discovery: The agent traces the full transformation pipeline for any "
         "format pair (e.g., HL7 v2 to FHIR R4) showing which IRIS classes handle each "
@@ -569,7 +661,7 @@ def build_doc1():
         style="List Bullet")
     doc.add_paragraph(
         "Schema Introspection: The agent can introspect HL7 v2 message schemas (segments, "
-        "fields, components) and FHIR R4 resource structures so the End User understands "
+        "fields, components) and FHIR R4 resource structures so the Builder understands "
         "what data is available at each point in the pipeline.",
         style="List Bullet")
     doc.add_paragraph(
@@ -582,6 +674,11 @@ def build_doc1():
         "the agent can see exactly which HL7 fields map through SDA3 to FHIR, which "
         "fields are inbound-only, and which are outbound-only. This enables gap analysis "
         "before writing any code.",
+        style="List Bullet")
+    doc.add_paragraph(
+        "Source Control: After creating or modifying DTLs and BPLs, the source control "
+        "hooks capture the new class definitions and export them to Git for CI/CD review "
+        "(see Section 10).",
         style="List Bullet")
 
     add_figure(doc, img("13_transforms_hl7_fhir.png"),
@@ -637,7 +734,8 @@ def build_doc1():
           "Tool appears in the admin UI Tools tab after compilation",
           "Tool description follows the contract format: imperative verb, scope, side effects",
           "Tool input/output schemas are valid JSON Schema",
-          "Tool includes at least one happy-path unit test"]),
+          "Tool includes at least one happy-path unit test",
+          "Tool specifies whether it is available to Builder, Operator, or both roles"]),
         ("US-D02: Create a New Skill",
          "As a Developer, I want to write a Skill class with INSTRUCTIONS content (markdown "
          "text up to 32K characters), so that the agent can delegate domain-specific questions "
@@ -674,6 +772,15 @@ def build_doc1():
           "Embeddings use FastEmbed (384-dim HNSW vectors) via %AI.RAG.KnowledgeBase",
           "Curated prose descriptions (not auto-generated accessor signatures) feed the embeddings",
           "Catalog rebuild can be triggered from admin UI or scheduled"]),
+        ("US-D07: Implement Permission-Aware Tools",
+         "As a Developer, I want to write tools that validate the authenticated user's permissions "
+         "before executing, so that the LLM agent cannot bypass the user's security constraints "
+         "even if the tool is technically available.",
+         ["Every mutating tool receives the authenticated username from the REST layer",
+          "The tool checks the user's roles and database privileges before executing (e.g., $System.Security.Check())",
+          "If the user lacks permission, the tool returns a structured error explaining which permission is missing",
+          "The agent receives this error and explains to the user what happened (not a silent failure)",
+          "Foundation namespace (HSLIB, HSSYS, ENSLIB) writes are always rejected regardless of user role"]),
     ]
     for title, story, criteria in stories_dev:
         doc.add_heading(title, level=3)
@@ -712,6 +819,11 @@ def build_doc1():
     doc.add_paragraph("Provider selection: dropdown of configured connections", style="List Bullet 2")
     doc.add_paragraph("Tool binding mode: MCP chain or bypass (Agent -> Tool directly)", style="List Bullet 2")
     doc.add_paragraph("Changes saved as override rows that survive IPM upgrades", style="List Bullet 2")
+    doc.add_paragraph("")
+    doc.add_paragraph(
+        "Note: The AI Hub Admin can configure separate agent profiles for Builder and "
+        "Operator roles, each with different ToolSet bindings. This enforces the privilege "
+        "separation described in Section 2.5.")
 
     # 7.3 MCP Servers
     doc.add_heading("7.2 Configure MCP Servers", level=2)
@@ -793,17 +905,40 @@ def build_doc1():
     add_figure(doc, img("14_audit.png"),
         "Audit tab showing the request log with status codes, HTTP methods, paths, kind classification, timestamps, usernames, namespace, duration, and byte counts")
 
+    # 7.9 AI Hub Covered Stories
+    doc.add_heading("7.7 User Stories Covered by the AI Hub Framework", level=2)
+    doc.add_paragraph(
+        "The following capabilities are required by this project but are expected to be "
+        "provided by the AI Hub framework itself rather than implemented in the application "
+        "layer. They are listed here to ensure coverage tracking:")
+    add_table(doc,
+        ["Story", "Requirement", "Expected Coverage"],
+        [
+            ["US-H01", "Agent lifecycle management (create, configure, delete agents)", "AI Hub admin UI"],
+            ["US-H02", "MCP server registration and discovery", "AI Hub framework (%AI.MCP.Service)"],
+            ["US-H03", "Tool schema validation and registration", "AI Hub framework (%AI.Tool)"],
+            ["US-H04", "LLM provider abstraction (Bedrock, Anthropic, OpenAI, etc.)", "AI Hub framework (LLM bridge)"],
+            ["US-H05", "SSE streaming from agent to client", "AI Hub framework (%AI.Agent.StreamChat)"],
+            ["US-H06", "Conversation state management across turns", "AI Hub framework (conversation context)"],
+            ["US-H07", "Role-based access control for AI Hub admin operations", "AI Hub framework (to be confirmed)"],
+            ["US-H08", "Source control hook integration for class changes", "Health Connect Cloud (%SourceControl hooks)"],
+        ])
+    doc.add_paragraph(
+        "If any of these are not provided by the framework, they must be built at the "
+        "application layer. The current implementation includes application-level workarounds "
+        "for US-H04 (Bedrock hang) and US-H07 (custom role checks).")
+
     # =========================================================================
-    # 8. End User (System Integrator) Experience
+    # 8. End User Experience
     # =========================================================================
     doc.add_page_break()
-    doc.add_heading("8. End User (System Integrator) Experience", level=1)
+    doc.add_heading("8. End User Experience", level=1)
 
     doc.add_heading("8.1 The Chatbot", level=2)
     doc.add_paragraph(
-        "The End User interacts with the copilot through a streaming chat interface. The "
-        "chatbot is available at /agentic/chat/index.html (standalone) or embedded in the "
-        "Interop Editor via an AI button (iframe mode).")
+        "The End User (Builder or Operator) interacts with the copilot through a streaming "
+        "chat interface. The chatbot is available at /agentic/chat/index.html (standalone) "
+        "or embedded in the Interop Editor via an AI button (iframe mode).")
     add_figure(doc, img("15_chatbot.png"),
         "Chat interface showing starter prompts (Build, Transform, Operate, Review categories), conversation history sidebar, namespace and connection indicators in the top bar")
     doc.add_paragraph("Key capabilities:")
@@ -811,20 +946,65 @@ def build_doc1():
     doc.add_paragraph("Tool calls render as inline cards with name, arguments, status, and collapsible result", style="List Bullet")
     doc.add_paragraph("Mutating tool calls pause with Approve/Reject prompt (ConfirmationGate policy)", style="List Bullet")
     doc.add_paragraph("Conversation history rail with search, resume, and rename", style="List Bullet")
-    doc.add_paragraph("Starter prompts organized by use case category", style="List Bullet")
-    doc.add_paragraph("Monitor enforces 60s deadline + 50K token budget per turn", style="List Bullet")
+    doc.add_paragraph("Starter prompts organized by use case: Build, Transform, Operate, Review", style="List Bullet")
     doc.add_paragraph("Top bar shows agent name, connection status, and New Chat button", style="List Bullet")
 
-    doc.add_heading("8.2 How the End User Works", level=2)
-    doc.add_paragraph("The End User describes what they need in plain English. The agent:")
-    doc.add_paragraph("1. Searches catalogs to discover relevant classes and transformations")
-    doc.add_paragraph("2. Proposes a plan and presents it for approval")
-    doc.add_paragraph("3. Builds step by step, pausing at each mutating action for confirmation")
-    doc.add_paragraph("4. Validates the result by running automated checks and test messages")
-    doc.add_paragraph("5. Reports what was done and what to verify")
+    doc.add_heading("8.2 Performance Guardrails", level=2)
+    doc.add_paragraph("Monitor enforces 60-second deadline + 50,000 token budget per turn", style="List Bullet")
+    doc.add_paragraph("Complex tasks broken into multiple short turns with visible progress at each phase", style="List Bullet")
+    doc.add_paragraph("If a turn exceeds limits, the monitor triggers a graceful stop and the agent summarizes partial results", style="List Bullet")
+
+    # Builder User Stories
+    doc.add_heading("8.3 Builder User Stories", level=2)
+
+    doc.add_heading("US-E01: Build a Production Through Conversation", level=3)
     doc.add_paragraph(
-        "The End User approves or rejects each mutating step. They can redirect the agent "
-        "at any point, ask clarifying questions, or request changes to the plan.")
+        "As a Builder, I want to describe an integration requirement in plain English and "
+        "have the agent build the production, so that I can create working integrations "
+        "without manually navigating the Management Portal.")
+    doc.add_paragraph("Acceptance criteria:")
+    doc.add_paragraph("Agent searches catalogs for appropriate Business Hosts", style="List Bullet")
+    doc.add_paragraph("Agent proposes a production layout and waits for approval", style="List Bullet")
+    doc.add_paragraph("Each mutating step goes through the confirmation gate", style="List Bullet")
+    doc.add_paragraph("PostBuildValidation runs after build to verify configuration", style="List Bullet")
+    doc.add_paragraph("Test message sent through the pipeline to verify end-to-end flow", style="List Bullet")
+    doc.add_paragraph("Newly created classes are captured by source control hooks (if configured)", style="List Bullet")
+
+    doc.add_heading("US-E02: Create a Transformation Through Conversation", level=3)
+    doc.add_paragraph(
+        "As a Builder, I want to describe a data transformation requirement and have the "
+        "agent scaffold the DTL, so that I can create transformations with the correct "
+        "source/target classes and field mappings.")
+    doc.add_paragraph("Acceptance criteria:")
+    doc.add_paragraph("Agent searches HS.* catalog for existing transformations", style="List Bullet")
+    doc.add_paragraph("Agent creates DTL with correct source/target document types", style="List Bullet")
+    doc.add_paragraph("Dry-run executes against sample data before deployment", style="List Bullet")
+    doc.add_paragraph("Compiled DTL is captured by source control hooks (if configured)", style="List Bullet")
+
+    # Operator User Stories
+    doc.add_heading("8.4 Operator User Stories", level=2)
+
+    doc.add_heading("US-E03: Triage Production Errors", level=3)
+    doc.add_paragraph(
+        "As an Operator, I want to ask the agent to review recent errors and group them "
+        "by cause, so that I can quickly identify systemic issues and prioritize remediation.")
+    doc.add_paragraph("Acceptance criteria:")
+    doc.add_paragraph("Agent queries Event Log for recent errors (no mutating operations)", style="List Bullet")
+    doc.add_paragraph("Results grouped by Business Host and error message", style="List Bullet")
+    doc.add_paragraph("Suspended and errored messages identified", style="List Bullet")
+    doc.add_paragraph("Remediation steps recommended (but not automatically applied)", style="List Bullet")
+    doc.add_paragraph("Agent does NOT have access to create/delete tools in Operator mode", style="List Bullet")
+
+    doc.add_heading("US-E04: Assess Production Health", level=3)
+    doc.add_paragraph(
+        "As an Operator, I want to ask the agent for a health assessment of a running "
+        "production, so that I can identify bottlenecks and tuning opportunities without "
+        "reading raw metrics.")
+    doc.add_paragraph("Acceptance criteria:")
+    doc.add_paragraph("Agent inspects production configuration, queue depths, and throughput", style="List Bullet")
+    doc.add_paragraph("Agent recommends operational settings changes (pool size, throttle, retry)", style="List Bullet")
+    doc.add_paragraph("Agent can apply operational settings adjustments if the Operator approves", style="List Bullet")
+    doc.add_paragraph("Agent cannot make structural changes (add/remove hosts, create classes)", style="List Bullet")
 
     # =========================================================================
     # 9. Audit and Security Requirements
@@ -844,9 +1024,16 @@ def build_doc1():
         "/api/agentic/ web application. No UI element (banner, button, link, modal, or "
         "text) is visible before login.")
 
-    doc.add_heading("9.2 Authorization", level=2)
+    doc.add_heading("9.2 Authorization and Role-Based Access", level=2)
     doc.add_paragraph("AI Hub Admin operations require %ISCMgtPortal group membership", style="List Bullet")
     doc.add_paragraph("End User chat access requires authenticated IRIS user", style="List Bullet")
+    doc.add_paragraph(
+        "Builder-mode tools (create, update, delete, compile, start, stop) require "
+        "specific roles assigned by the AI Hub Admin",
+        style="List Bullet")
+    doc.add_paragraph(
+        "Operator-mode tools (read, monitor, query) require basic authenticated access",
+        style="List Bullet")
     doc.add_paragraph(
         "Mutating operations require explicit Approve from the End User via the "
         "ConfirmationGate policy -- the agent cannot modify the system without user consent",
@@ -856,7 +1043,84 @@ def build_doc1():
         "X-IRIS-Namespace header",
         style="List Bullet")
 
-    doc.add_heading("9.3 Audit Logging", level=2)
+    doc.add_heading("9.3 LLM Service Identity and Permission Delegation", level=2)
+    doc.add_paragraph(
+        "The LLM agent executes tool calls within the IRIS process. This creates a critical "
+        "security requirement: the agent must NEVER bypass the authenticated user's "
+        "permissions, even if the agent's service identity has broader access.")
+    doc.add_paragraph(
+        "The principle: The agent acts on behalf of the authenticated user, not on its own "
+        "behalf. Every tool call is executed under the authenticated user's security context. "
+        "If the user cannot perform an action through the Management Portal, the agent must "
+        "not perform it either.")
+    doc.add_paragraph("")
+    doc.add_paragraph("Implementation requirements:")
+    doc.add_paragraph(
+        "Every tool receives the authenticated username from the REST layer (extracted "
+        "from Basic auth or JWT)",
+        style="List Bullet")
+    doc.add_paragraph(
+        "Before executing a mutating operation, the tool checks the user's roles and "
+        "database privileges via $System.Security.Check() or equivalent",
+        style="List Bullet")
+    doc.add_paragraph(
+        "If the user lacks the required permission, the tool returns a structured error: "
+        '{ "error": { "code": "PERMISSION_DENIED", "message": "...", "required_permission": "..." } }',
+        style="List Bullet")
+    doc.add_paragraph(
+        "The agent surfaces this error to the user in plain language",
+        style="List Bullet")
+    doc.add_paragraph(
+        "The audit log records both the attempted action and the permission denial",
+        style="List Bullet")
+    doc.add_paragraph("")
+    doc.add_paragraph("Example scenarios:")
+    add_table(doc,
+        ["User Request", "User Has Permission?", "Agent Behavior"],
+        [
+            ["Create a new production", "Yes (%DB_WRITE)", "Agent proceeds with confirmation gate"],
+            ["Create a new production", "No (read-only access)", "Agent explains the user lacks write permission"],
+            ["Create an OAuth 2.0 client", "No (requires %Admin_Secure)", "Agent explains the user needs security admin privileges"],
+            ["Query the event log", "Yes (any authenticated user)", "Agent executes the read-only query"],
+            ["Modify classes in HSLIB", "No (Foundation namespace)", "Agent explains Foundation namespaces are read-only"],
+        ])
+
+    doc.add_heading("9.4 Namespace Constraints", level=2)
+    doc.add_paragraph(
+        "Not all namespaces are equal. IRIS for Health distinguishes between Foundation "
+        "namespaces (shipped with the product) and non-Foundation namespaces (created by "
+        "users for their integration work).")
+    doc.add_paragraph("")
+    doc.add_paragraph(
+        "Foundation namespaces (HSLIB, HSSYS, ENSLIB, and others marked as Foundation): "
+        "always read-only for the agent, regardless of user permissions. The agent can search "
+        "and inspect classes but MUST NOT create, modify, or delete any class definition. "
+        "This is a hard constraint -- the ConfirmationGate cannot override it.")
+    doc.add_paragraph("")
+    doc.add_paragraph(
+        "Non-Foundation namespaces (HSCUSTOM, user-created namespaces): the agent respects "
+        "the authenticated user's database-level permissions. Users with %DB_WRITE can create "
+        "and modify classes (through the agent with confirmation). Users with read-only "
+        "access can inspect and search but not modify.")
+
+    doc.add_heading("9.5 Builder vs Operator Privilege Separation", level=2)
+    doc.add_paragraph(
+        "The security distinction between Builder and Operator is enforced at two levels:")
+    doc.add_paragraph("")
+    doc.add_paragraph(
+        "Level 1: Tool availability (configured by AI Hub Admin). The AI Hub Admin binds "
+        "different ToolSets to Builder-mode and Operator-mode agent configurations. Operator "
+        "agents do not have access to mutating tools. Even if an Operator user has "
+        "database-level write access, the agent cannot call tools that are not bound to the "
+        "Operator configuration. This prevents prompt injection attacks from escalating "
+        "Operator sessions to Builder-level access.")
+    doc.add_paragraph("")
+    doc.add_paragraph(
+        "Level 2: Permission validation (enforced by tools). Even in Builder mode, every "
+        "mutating tool validates the user's permissions before executing. The ConfirmationGate "
+        "provides a third layer: the user must explicitly approve each mutating action.")
+
+    doc.add_heading("9.6 Audit Logging", level=2)
     doc.add_paragraph("Every REST request is captured in AgenticInterop.Data.AuditLog:")
     add_table(doc,
         ["Field", "Description"],
@@ -872,13 +1136,13 @@ def build_doc1():
             ["RequestSize", "Bytes received"],
             ["ResponseSize", "Bytes sent"],
             ["DurationMs", "End-to-end request time in milliseconds"],
-            ["ErrorText", "Error message (if status >= 400)"],
+            ["ErrorText", "Error message (if status >= 400), including permission denials"],
             ["Kind", "Classification: registry, editor.agent, chat, namespace, health"],
         ])
     add_figure(doc, img("14_audit.png"),
         "Audit log showing all API requests with status codes, methods, paths, timestamps, users, and durations")
 
-    doc.add_heading("9.4 Secret Management", level=2)
+    doc.add_heading("9.7 Secret Management", level=2)
     doc.add_paragraph(
         "All API keys are stored in the IRIS Secured Wallet (%Wallet.KeyValue, collection "
         "AgenticInteropConnections):")
@@ -887,37 +1151,125 @@ def build_doc1():
     doc.add_paragraph("API keys are NEVER logged in the audit trail", style="List Bullet")
     doc.add_paragraph("The Wallet is the single source of truth for secrets", style="List Bullet")
 
-    doc.add_heading("9.5 Security Policies", level=2)
+    doc.add_heading("9.8 Security Policies", level=2)
     doc.add_paragraph(
         "ConfirmationGate policy: Mutating tools (create, update, delete, start, stop) "
         "pause execution and surface an Approve/Reject prompt in the chat UI. The agent "
         "cannot modify productions, transformations, or routing rules without the End User "
-        "clicking Approve.")
+        "clicking Approve. This is the last line of defense after permission checks and "
+        "namespace validation.")
     doc.add_paragraph(
         "ToolFilter policy: Strips framework-default tools (FileSystem, SQL, ShellTools) "
         "from the LLM's tool catalog. Reduces the catalog from 57 to 42 healthcare-specific "
-        "tools, saving ~5K tokens per request and preventing access to generic system tools.")
+        "tools, saving ~5K tokens per request. This policy also prevents the LLM from using "
+        "tools that could bypass the permission model (e.g., raw SQL execution).")
 
     # =========================================================================
-    # 10. End-to-End Scenario
+    # 10. Source Control and Change Control Integration
     # =========================================================================
     doc.add_page_break()
-    doc.add_heading("10. End-to-End Scenario", level=1)
-    doc.add_paragraph("This scenario demonstrates all three personas working together:")
+    doc.add_heading("10. Source Control and Change Control Integration", level=1)
+
+    doc.add_heading("10.1 The Problem", level=2)
+    doc.add_paragraph(
+        "When the agent creates a new production, DTL, BPL, or routing rule, it is creating "
+        "or modifying IRIS class definitions. These class changes must flow through the same "
+        "change control process as any manual edit -- version control tracking, peer review, "
+        "and CI/CD validation. Without source control integration, agent-created artifacts "
+        "become invisible to the deployment pipeline.")
+
+    doc.add_heading("10.2 Health Connect Cloud Source Control Model", level=2)
+    doc.add_paragraph(
+        "Health Connect Cloud provides version control hooks via the %SourceControl "
+        "framework. These hooks intercept class save and compile events, export class "
+        "definitions to a local Git repository, track which user made which change, and "
+        "feed into a GitLab-based CI/CD pipeline that validates, tests, and deploys changes "
+        "across environments (dev -> staging -> production).")
+    doc.add_paragraph(
+        "The agent's work must integrate with this model. Agent-created artifacts are NOT "
+        "a special case -- they follow the same path as manually created artifacts.")
+
+    doc.add_heading("10.3 Integration Requirements", level=2)
+    doc.add_paragraph(
+        "Artifact capture: When the agent creates or modifies a class, the %SourceControl "
+        "hooks fire automatically because the agent uses standard IRIS APIs "
+        "($System.OBJ.Compile, %Dictionary) that trigger the hooks.",
+        style="List Bullet")
+    doc.add_paragraph(
+        "User attribution: Changes are attributed to the authenticated user (the Builder), "
+        "not to the agent's service account. The source control hooks capture the $username "
+        "from the IRIS process context.",
+        style="List Bullet")
+    doc.add_paragraph(
+        "No bypass: The agent does not use any mechanism that would bypass source control "
+        "hooks. All class modifications go through the documented %Dictionary and "
+        "$System.OBJ APIs.",
+        style="List Bullet")
+
+    doc.add_heading("10.4 CI/CD Pipeline Flow", level=2)
+    doc.add_paragraph("Builder asks agent to create a production")
+    doc.add_paragraph("  --> Agent creates class via $System.OBJ.Compile()")
+    doc.add_paragraph("    --> %SourceControl hook fires")
+    doc.add_paragraph("      --> Class definition exported to local Git working directory")
+    doc.add_paragraph("        --> Builder commits and pushes to GitLab")
+    doc.add_paragraph("          --> CI/CD pipeline runs: lint, validate, test")
+    doc.add_paragraph("            --> On success: deploy to staging/production")
+
+    doc.add_heading("10.5 User Stories", level=2)
+    doc.add_heading("US-SC01: Agent-Created Artifacts Appear in Source Control", level=3)
+    doc.add_paragraph(
+        "As a Builder, I want the productions, DTLs, and BPLs that the agent creates to be "
+        "captured by source control hooks, so that they flow through the same CI/CD pipeline "
+        "as manually created artifacts.")
+    doc.add_paragraph("Acceptance criteria:")
+    doc.add_paragraph("Agent uses standard IRIS APIs for all class operations", style="List Bullet")
+    doc.add_paragraph("%SourceControl hooks fire on every class save and compile", style="List Bullet")
+    doc.add_paragraph("Exported class definitions appear in the local Git working directory", style="List Bullet")
+    doc.add_paragraph("Changes are attributed to the authenticated user, not the agent", style="List Bullet")
+
+    doc.add_heading("US-SC02: Agent Reports Source Control Status", level=3)
+    doc.add_paragraph(
+        "As a Builder, I want the agent to report whether source control captured the new "
+        "classes after a build, so that I know whether my changes are tracked.")
+    doc.add_paragraph("Acceptance criteria:")
+    doc.add_paragraph("After creating classes, the agent checks whether %SourceControl hooks are active", style="List Bullet")
+    doc.add_paragraph("If active: agent reports 'Classes exported to source control'", style="List Bullet")
+    doc.add_paragraph("If not active: agent warns 'Source control is not configured in this namespace'", style="List Bullet")
+
+    doc.add_heading("US-SC03: Agent Respects Source Control Locks", level=3)
+    doc.add_paragraph(
+        "As a Builder, I want the agent to respect source control locks on classes, so that "
+        "it does not modify a class that another user has locked for editing.")
+    doc.add_paragraph("Acceptance criteria:")
+    doc.add_paragraph("Before modifying a class, the agent checks whether it is locked", style="List Bullet")
+    doc.add_paragraph("If locked: agent reports 'This class is locked by [user]. Cannot modify.'", style="List Bullet")
+    doc.add_paragraph("If unlocked: agent proceeds with the normal confirmation gate flow", style="List Bullet")
+
+    # =========================================================================
+    # 11. End-to-End Scenario
+    # =========================================================================
+    doc.add_page_break()
+    doc.add_heading("11. End-to-End Scenario", level=1)
+    doc.add_paragraph("This scenario demonstrates all four personas working together:")
     steps = [
         ("Developer", "writes a new Tool class that creates HL7 routing rules, compiles it, and deploys via zpm load"),
         ("AI Hub Admin", "opens the admin UI, sees the new tool in the Tools tab, reviews its description and tests it with the dry-run panel"),
+        ("AI Hub Admin", "configures Builder and Operator agent profiles with appropriate ToolSet bindings"),
         ("AI Hub Admin", "goes to the Connections tab, verifies the LLM connection shows a green status dot"),
         ("AI Hub Admin", "opens the Catalogs tab, verifies both catalogs (search_ens: 164 classes, search_hs: 58 classes) are indexed"),
         ("AI Hub Admin", "opens the Transforms tab, selects HL7 v2 -> FHIR R4, reviews Address field mappings to verify the Transformation and Mapping Catalog is populated"),
-        ("End User", "opens the chatbot and asks: 'Build me a production that receives ADT^A04 messages via MLLP, transforms patient demographics to FHIR R4, and sends them to a REST endpoint'"),
+        ("Builder", "opens the chatbot and asks: 'Build me a production that receives ADT^A04 messages via MLLP, transforms patient demographics to FHIR R4, and sends them to a REST endpoint'"),
+        ("Agent", "validates that the Builder has %DB_WRITE permission on the target namespace"),
         ("Agent", "searches the Ens.* catalog for appropriate Business Hosts (EnsLib.HL7.Service.TCPService, EnsLib.FHIR.Operation.REST)"),
-        ("Agent", "proposes the production layout and asks the End User to approve"),
-        ("End User", "clicks Approve"),
-        ("Agent", "creates the production, adds the hosts, configures settings"),
+        ("Agent", "proposes the production layout and asks the Builder to approve"),
+        ("Builder", "clicks Approve"),
+        ("Agent", "creates the production, adds the hosts, configures settings. Source control hooks capture each class change"),
         ("Agent", "builds and sends a test HL7 ADT^A04 message"),
-        ("Agent", "validates the result and reports success"),
-        ("AI Hub Admin", "reviews the audit log to see the complete trace of all tool calls"),
+        ("Agent", "validates the result and reports success, confirms source control captured the changes"),
+        ("Operator", "opens the chatbot the next day and asks: 'How is the ADT production performing? Any errors in the last 24 hours?'"),
+        ("Agent", "queries the Event Log (read-only), reports throughput statistics and any issues"),
+        ("Operator", "asks: 'Increase the pool size on the TCPService to 3' -- the agent adjusts the operational setting after approval"),
+        ("AI Hub Admin", "reviews the audit log to see the complete trace of all actions by both Builder and Operator"),
     ]
     for i, (persona, action) in enumerate(steps, 1):
         p = doc.add_paragraph(f"{i}. ")
@@ -926,9 +1278,9 @@ def build_doc1():
         p.add_run(f" {action}")
 
     # =========================================================================
-    # 11. Non-Functional Requirements
+    # 12. Non-Functional Requirements
     # =========================================================================
-    doc.add_heading("11. Non-Functional Requirements", level=1)
+    doc.add_heading("12. Non-Functional Requirements", level=1)
     add_table(doc,
         ["Requirement", "Target"],
         [
@@ -939,6 +1291,7 @@ def build_doc1():
             ["Availability", "System operational whenever IRIS is running; no external dependencies except LLM provider"],
             ["Data retention", "Audit logs retained indefinitely; no automatic purge"],
             ["Browser support", "Chrome 120+, Edge 120+, Firefox 120+ (ES2020 baseline)"],
+            ["Permission check latency", "< 10ms per tool call (cached role lookups)"],
         ])
 
     # =========================================================================
@@ -974,6 +1327,22 @@ def build_doc1():
             ["%AI.Agent.Policy", "ConfirmationGate, ToolFilter", "Security and token policies"],
         ])
 
+    doc.add_heading("Appendix C: Security Enforcement Layers", level=1)
+    doc.add_paragraph(
+        "The agent's actions pass through four enforcement layers before any mutation occurs:")
+    add_table(doc,
+        ["Layer", "Enforced By", "What It Checks"],
+        [
+            ["1. Tool availability", "AI Hub Admin (ToolSet binding)", "Is this tool bound to the user's agent profile (Builder vs Operator)?"],
+            ["2. Namespace validation", "Tool implementation", "Is the target namespace non-Foundation? Does the user have database access?"],
+            ["3. Permission delegation", "Tool implementation", "Does the authenticated user have the required IRIS role for this operation?"],
+            ["4. User confirmation", "ConfirmationGate policy", "Did the user click Approve for this specific mutating action?"],
+        ])
+    doc.add_paragraph(
+        "A mutating action must pass all four layers. A failure at any layer prevents "
+        "execution and returns a clear error to the agent, which explains the denial to "
+        "the user.")
+
     path = os.path.join(DOCS, "01_Requirements_User_Stories.docx")
     doc.save(path)
     print(f"  saved {path}")
@@ -1003,9 +1372,10 @@ def build_doc2():
         "admin UI, vector catalogs, the Transformation and Mapping Catalog, connection "
         "management, and audit/security controls.")
     doc.add_paragraph(
-        "Three personas interact with the system: Developers who build capabilities in code, "
-        "AI Hub Admins who configure the copilot through the admin UI, and End Users "
-        "(System Integrators) who use the chatbot to get integration work done.")
+        "Four personas interact with the system: Developers who build capabilities in code, "
+        "AI Hub Admins who configure the copilot through the admin UI, Builders (dev-time "
+        "End Users) who create new integration artifacts, and Operators (run-time End Users) "
+        "who monitor, triage, and review existing integrations.")
 
     # 2. Chatbot UX
     doc.add_page_break()
@@ -1240,7 +1610,27 @@ def build_doc2():
     doc.add_paragraph(
         "All REST endpoints require authentication. No UI element is visible before login.")
 
-    doc.add_heading("10.2 Audit Log Fields", level=2)
+    doc.add_heading("10.2 LLM Permission Delegation", level=2)
+    doc.add_paragraph(
+        "The agent must NEVER bypass the authenticated user's permissions. Every tool call "
+        "is executed under the authenticated user's security context. If the user cannot "
+        "perform an action through the Management Portal, the agent must not perform it "
+        "either. Tools validate permissions via $System.Security.Check() before executing "
+        "mutating operations.")
+
+    doc.add_heading("10.3 Namespace Constraints", level=2)
+    doc.add_paragraph(
+        "Foundation namespaces (HSLIB, HSSYS, ENSLIB) are always read-only for the agent, "
+        "regardless of user permissions. Non-Foundation namespaces respect the authenticated "
+        "user's database-level permissions.")
+
+    doc.add_heading("10.4 Builder vs Operator Privilege Separation", level=2)
+    doc.add_paragraph(
+        "Enforced at two levels: (1) Tool availability -- the AI Hub Admin binds different "
+        "ToolSets to Builder-mode and Operator-mode agent configurations; (2) Permission "
+        "validation -- every mutating tool checks the user's IRIS roles before executing.")
+
+    doc.add_heading("10.5 Audit Log Fields", level=2)
     add_table(doc,
         ["Field", "Description"],
         [
@@ -1256,14 +1646,23 @@ def build_doc2():
             ["Kind", "registry, editor.agent, chat, namespace, etc."],
         ])
 
-    doc.add_heading("10.3 Security Policies", level=2)
+    doc.add_heading("10.6 Security Policies", level=2)
     doc.add_paragraph(
-        "ConfirmationGate: Mutating operations require explicit End User approval.",
+        "ConfirmationGate: Mutating operations require explicit End User approval. This is "
+        "the last line of defense after permission checks and namespace validation.",
         style="List Bullet")
     doc.add_paragraph(
         "ToolFilter: Strips framework waste tools from the LLM catalog, preventing access "
-        "to generic system tools.",
+        "to generic system tools that could bypass the permission model.",
         style="List Bullet")
+
+    doc.add_heading("10.7 Source Control Integration", level=2)
+    doc.add_paragraph(
+        "Agent-created artifacts (productions, DTLs, BPLs, routing rules) integrate with "
+        "Health Connect Cloud's %SourceControl hooks. The agent uses standard IRIS APIs "
+        "($System.OBJ.Compile, %Dictionary) that trigger the hooks automatically. Changes "
+        "are attributed to the authenticated user, not the agent's service account. The "
+        "CI/CD pipeline (GitLab) validates, tests, and deploys changes across environments.")
 
     # 11. Performance
     doc.add_page_break()
