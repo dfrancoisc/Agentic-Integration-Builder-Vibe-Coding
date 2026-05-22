@@ -142,6 +142,20 @@ ClassMethod GetProduction(name As %String) As %DynamicObject
 /// Start the named production. MUTATING — gated by the confirmation
 /// policy via the start_ prefix.
 ///
+/// PRECONDITIONS — do NOT call this until ALL of these are done:
+/// 1. All DTL classes created and compiled (CreateDTL)
+/// 2. All routing rule classes created and compiled (CreateRoutingRule)
+/// 3. The production exists (CreateProduction)
+/// 4. All business hosts added (AddBusinessHost)
+/// 5. All host settings configured (UpdateBusinessHostSettings for EVERY host)
+///    - Services: TargetConfigNames, MessageSchemaCategory, adapter ports/paths
+///    - Routing engines: BusinessRuleName, Validation=""
+///    - Operations: adapter settings (FilePath, IPAddress, Port, etc.)
+///    - All file-based hosts: directories must exist on disk
+///
+/// Starting before settings are configured causes silent failures:
+/// services send nowhere, routers crash, file hosts error with #5005.
+///
 /// production: fully-qualified production class name.
 ClassMethod StartProduction(production As %String) As %DynamicObject
 {
@@ -363,6 +377,13 @@ ClassMethod DeleteProduction(name As %String) As %DynamicObject
 ///             "EnsLib.HL7.Service.TCPService").
 /// settings:   { target: name: value } pairs, e.g.,
 ///             { "Adapter": { "Port": "5000" } } — optional.
+///
+/// NOTE: When adding an EnsLib.HL7.MsgRouter.RoutingEngine host,
+/// ALWAYS follow up with UpdateBusinessHostSettings to set
+/// Validation="" (Host target). Without this, the routing engine
+/// validates segment ordering against the schema and rejects
+/// real-world messages that have segments in non-standard order
+/// (e.g., GT1 after IN1) with "ErrMapSegUnrecog".
 ClassMethod AddBusinessHost(production As %String, hostName As %String, hostClass As %String, settings As %DynamicObject = "") As %DynamicObject
 {
     Set out = {}

@@ -259,19 +259,34 @@ Debugging: set `Foreground = True` on a business host to run its job in a Termin
 
 `%ETN` logging: enable to capture stack-traces on `<EXCEPTION>` errors. Useful when an operation hits an uncaught error.
 
-## BUILD SEQUENCE — follow this exact order when building a production
+## MANDATORY BUILD SEQUENCE — follow this exact order. DO NOT skip or reorder steps.
 
-Dependencies MUST be created before they are referenced. Follow this sequence:
+Dependencies MUST be created before they are referenced. NEVER start a production before all hosts are added AND all settings are configured. The sequence below is not a suggestion — it is the only order that produces a working production.
 
-1. Create DTL classes (CreateDTL + UpdateDTL) — transformations must exist and compile before routing rules reference them.
+1. Create DTL classes — call BuildDTLXml first, then CreateDTL with the generated XML. Transformations must exist and compile before routing rules reference them. DO NOT hand-write DTL XML for HL7 transforms — BuildDTLXml resolves the correct virtual document paths from the schema automatically.
 2. Create routing rule classes (CreateRoutingRule) — rules must exist and compile before routing engines reference them. The rule XML uses target= attributes that match host config names you will add in step 4.
 3. Create the production (CreateProduction) — empty shell.
-4. Add business hosts (AddBusinessHost) — add in this order within the production:
+4. Add business hosts (AddBusinessHost) — add ALL hosts before configuring settings. Add in this order:
    a. Operations first (they are targets — referenced by rules and TargetConfigNames)
    b. Routing processes next (they reference operations via rules)
    c. Services last (they reference processes/operations via TargetConfigNames)
+5. Configure ALL settings (UpdateBusinessHostSettings for every host) — this step is MANDATORY before starting. Settings include adapter ports, file paths, TargetConfigNames, BusinessRuleName, MessageSchemaCategory, Validation, etc. A production started without settings will have misconfigured hosts that silently drop messages, fail to connect, or crash with missing property errors.
+6. Start the production (StartProduction) — ONLY after ALL of steps 1-5 are complete.
 
-The reason: TargetConfigNames and routing rule send targets reference config names within the production. Although IRIS does not enforce reference integrity at save time, building bottom-up avoids confusion and ensures the agent can verify the wiring.
+NEVER call StartProduction before step 5 is finished. Starting early means:
+- Services with no TargetConfigNames send messages nowhere
+- Routing engines with no BusinessRuleName crash on every message
+- File hosts with no FilePath fail with ERROR #5005
+- HL7 services with no MessageSchemaCategory produce untyped messages that no rule matches
+- Routing engines with default Validation reject real-world HL7 feeds with out-of-order segments
+
+After starting, use PostBuildValidation to verify the production is healthy.
+
+## TOKEN EFFICIENCY — avoid unnecessary tool calls
+
+DO NOT call search_ens to look up well-known class names you already know. The common HL7 classes are documented in this skill (EnsLib.HL7.Service.FileService, EnsLib.HL7.Service.TCPService, EnsLib.HL7.MsgRouter.RoutingEngine, EnsLib.HL7.Operation.FileOperation, EnsLib.HL7.Operation.TCPOperation). Only use search_ens when the user asks for an adapter or class you do not recognize.
+
+DO NOT call GetHL7SchemaMap as a standalone exploration step — call it only as input to BuildDTLXml. BuildDTLXml needs the schema map to resolve correct virtual document paths. The sequence is: GetHL7SchemaMap (source) -> GetHL7SchemaMap (target) -> BuildDTLXml (uses the paths from the schema maps in the mappingsJson) -> CreateDTL.
 
 ## SETTINGS WIRING REFERENCE — Target levels for AddBusinessHost / UpdateBusinessHostSettings
 

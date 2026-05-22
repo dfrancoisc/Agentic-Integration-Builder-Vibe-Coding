@@ -296,8 +296,59 @@ When a rule shows in the rule log but no result:
 8. Every `<when>` block ends with `<return/>` to prevent fall-through to the next rule
 9. The routing engine host's `BusinessRuleName` setting is set to THIS rule's fully-qualified class name
 10. The inbound service's `TargetConfigNames` setting points to the routing engine host's config name
+11. ALWAYS set `Validation=""` on `EnsLib.HL7.MsgRouter.RoutingEngine` hosts via UpdateBusinessHostSettings with `{ "Host": { "Validation": "" } }`. Real-world HL7 feeds frequently send segments in non-standard order (e.g., GT1 after IN1 instead of before). Without Validation="", the routing engine rejects these messages with "ErrMapSegUnrecog: Unrecognized Segment" and they silently vanish — never reaching any output or dead-letter destination. The sample ADT^A01 test message has GT1 after IN1, which triggers this exact failure.
 
 If ANY of these are wrong, messages either crash (PROPERTY DOES NOT EXIST), silently vanish (no matching rule), or go to the wrong destination.
+
+## HL7 virtual document expression syntax in conditions — CURLY BRACES ONLY
+
+When referencing HL7 virtual document fields in `<when condition="...">`, you MUST use curly braces `{}` around the path. Parentheses `()` silently fail — the expression resolves to empty string and the condition never matches.
+
+CORRECT:   `HL7.{MSH:9.1}="ADT"`
+WRONG:     `HL7.(MSH:9.1)="ADT"` — silently returns "" and never matches
+
+More examples:
+- `HL7.{MSH:9.1}="ADT"` — check message type code
+- `HL7.{MSH:9.2}="A01"` — check trigger event
+- `HL7.{PID:3.1}` — patient identifier
+- `HL7.{PV1:2}="I"` — inpatient visit
+
+The CreateRoutingRule tool rejects rule XML containing `HL7.(` and returns an error explaining the correct syntax. But if you hand-write rule XML and pass it without the tool, the production silently fails at runtime.
+
+## Transform-on-send — transforms apply DURING send, NOT before rule evaluation
+
+CRITICAL: When a routing rule has `<send transform="MyDTL" target="MyOperation"/>`, the transform runs AFTER the rule evaluates and DURING the send to the target. The rule's `<when condition="...">` always evaluates against the INCOMING (original) message, NOT the transformed output.
+
+This means:
+- If you receive ADT^A01 and want to transform it to ORU^R01, the rule must match `HL7.{MSH:9.1}="ADT"` (the incoming type), NOT `HL7.{MSH:9.1}="ORU"` (the output type)
+- If you receive HL7 and want to transform to a different format, the constraints and conditions still check the original HL7 fields
+- Multiple `<send>` actions in the same `<when>` each get their own independent transform — they all start from the same original message
+
+Example — ADT A01 to ORU R01 transformation routing:
+```xml
+<rule name="ADTtoORU" disabled="false">
+  <constraint name="msgClass" value="EnsLib.HL7.Message"/>
+  <constraint name="docCategory" value="2.5"/>
+  <constraint name="docName" value="ADT_A01"/>
+  <when condition="HL7.{MSH:9.1}=&quot;ADT&quot;&amp;&amp;HL7.{MSH:9.2}=&quot;A01&quot;">
+    <send transform="MyApp.ADTtoORU.Transform" target="ORU.FileOut"/>
+    <return/>
+  </when>
+</rule>
+```
+
+Note: the rule matches ADT_A01 (incoming), applies the ADT-to-ORU transform during send, and the target receives an ORU_R01.
+
+## XML encoding in condition expressions
+
+Rule XML is parsed as XML. Special characters in `<when condition="...">` MUST use XML entities:
+
+- `&&` (logical AND) — write as `&amp;&amp;`   Example: `condition="HL7.{MSH:9.1}=&quot;ADT&quot;&amp;&amp;HL7.{MSH:9.2}=&quot;A01&quot;"`
+- `"` (quotes around values) — write as `&quot;`   Example: `condition="HL7.{MSH:9.1}=&quot;ADT&quot;"`
+- `<` and `>` — write as `&lt;` and `&gt;`
+- `&` (standalone) — write as `&amp;`
+
+The CreateRoutingRule tool handles this encoding when you pass it the rule XML. But if you build XML manually, forgetting `&amp;&amp;` for AND causes an XML parse error.
 
 ## Common pitfalls
 
@@ -305,12 +356,16 @@ If ANY of these are wrong, messages either crash (PROPERTY DOES NOT EXIST), sile
 - Using `EnsLib.MsgRouter.RoutingEngine` context for HL7 rules — use `EnsLib.HL7.MsgRouter.RoutingEngine` instead.
 - Forgetting `MessageSchemaCategory` on the inbound service — without it, docCategory and docName constraints never match because the message has no schema category assigned.
 - Forgetting `<return/>` in a routing rule's `<when>` — the rule set continues to the next rule and may double-route.
+- Using parentheses `HL7.(MSH:9.1)` instead of curly braces `HL7.{MSH:9.1}` in conditions — silently returns empty string, condition never matches, and messages go nowhere.
+- Writing `&&` instead of `&amp;&amp;` in condition XML — causes XML parse error or silent failure.
+- Matching the OUTPUT message type in conditions instead of the INPUT — rules evaluate the incoming message. If you receive ADT and transform to ORU, match ADT, not ORU.
 - Setting Message Class but constraints don't match → no `Document` variable available, conditions fail silently.
 - Using literal `&quot;` in the editor's GUI — the editor handles entities; type plain quotes.
 - Single rule trying to do everything — split per destination for clarity.
 - Forgetting to enable Rule Logging when triage requires `<debug>` — the `d` flag must be in `RuleLogging` setting on the routing process.
 - Constraint `source` set to a routing process name when the message actually arrived from a BS — constraint won't match.
 - `<send target="X"/>` where X doesn't match any host config name in the production — the message silently drops.
+- Leaving the default `Validation` setting on an HL7 routing engine — the engine validates segment ordering against the schema, and real-world feeds routinely send segments out of order (e.g., GT1 after IN1). The engine rejects them with "ErrMapSegUnrecog: Unrecognized Segment" and they silently vanish. ALWAYS set Validation="" on `EnsLib.HL7.MsgRouter.RoutingEngine` hosts immediately after adding them.
 }
 
 }

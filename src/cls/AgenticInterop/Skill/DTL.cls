@@ -75,18 +75,19 @@ Examples of how paths vary:
 
 The patterns are NOT predictable from the message type name. ADT messages tend to be flat; ORU, ORM, RDE, and OML messages have deep nesting. But the exact nesting differs per structure.
 
-MANDATORY WORKFLOW for building any HL7 DTL:
-1. Call GetHL7SchemaMap(category, sourceMessageStructure) to get SOURCE paths
-2. Call GetHL7SchemaMap(category, targetMessageStructure) to get TARGET paths
-3. Call BuildDTLXml with structured mapping instructions — DO NOT hand-write the XML
-4. Pass the returned dtlXml to CreateDTL — ONE call creates the complete DTL
+MANDATORY WORKFLOW for building any HL7 DTL — DO NOT SKIP ANY STEP:
+1. Call GetHL7SchemaMap(category, sourceMessageStructure) to get SOURCE paths — this returns the exact segment nesting (e.g., PID is flat in ADT_A01 but nested as PIDgrpgrp(1).PIDgrp.PID in ORU_R01). You need these paths to write the mappingsJson for BuildDTLXml.
+2. Call GetHL7SchemaMap(category, targetMessageStructure) to get TARGET paths — same reason, for the target structure.
+3. Call BuildDTLXml with structured mapping instructions using the paths from steps 1-2 — BuildDTLXml generates correct XML with validated virtual document paths. DO NOT hand-write the XML.
+4. Pass the returned dtlXml to CreateDTL — ONE call creates the complete DTL. CreateDTL validates all HL7 paths against the schema and REJECTS hand-written XML with wrong paths. If you skip BuildDTLXml and hand-write paths, CreateDTL will reject the XML with a detailed error listing every invalid path.
 5. Call DryRunDTL with a realistic test message to verify the output
 6. Verify the output contains all expected segments and fields
 
-CRITICAL: ALWAYS use BuildDTLXml to generate DTL XML. NEVER hand-write assign
-elements with virtual document paths. The nested group paths (PIDgrpgrp, ORCgrp,
-OBXgrp) are impossible to guess correctly — BuildDTLXml resolves them from the
-schema automatically.
+WHY THIS WORKFLOW EXISTS: CreateDTL has a built-in HL7 path validator that checks every source.{...} and target.{...} path in the DTL XML against the actual schema. Hand-written paths are almost always wrong because different message types have completely different segment nesting (see examples above). BuildDTLXml is the ONLY reliable way to generate correct paths because it resolves them directly from ^EnsHL7.Schema.
+
+DO NOT skip steps 1-2 and go straight to BuildDTLXml — you need the schema maps to know what segments exist and how to reference them in the mappingsJson.
+DO NOT skip step 3 and call CreateDTL with hand-written XML — the path validator will reject it.
+DO NOT call CreateDTL before BuildDTLXml — there is no valid shortcut.
 
 BuildDTLXml mapping actions:
   copy-segment:        Copy entire segment (e.g., MSH, PID)
