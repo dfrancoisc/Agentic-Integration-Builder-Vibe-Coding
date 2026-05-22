@@ -607,11 +607,12 @@ body[data-rail="closed"] .history-rail { transform: translateX(-100%); pointer-e
 .composer textarea {
     width: 100%;
     background: transparent; color: var(--text);
-    border: none; resize: none;
+    border: none; resize: vertical;
     padding: 6px 0;
     font: 14.5px ui-sans-serif, system-ui, sans-serif; line-height: 1.55;
-    min-height: 40px; max-height: 220px;
+    min-height: 40px; max-height: 60vh;
     outline: none;
+    overflow-y: auto;
 }
 .composer textarea::placeholder { color: var(--muted-2); }
 .composer-actions {

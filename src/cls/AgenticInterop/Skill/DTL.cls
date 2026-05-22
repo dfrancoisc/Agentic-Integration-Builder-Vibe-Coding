@@ -78,9 +78,42 @@ The patterns are NOT predictable from the message type name. ADT messages tend t
 MANDATORY WORKFLOW for building any HL7 DTL:
 1. Call GetHL7SchemaMap(category, sourceMessageStructure) to get SOURCE paths
 2. Call GetHL7SchemaMap(category, targetMessageStructure) to get TARGET paths
-3. Use the EXACT dtlPath values returned in your assign elements — never guess
-4. After creating/updating the DTL, call DryRunDTL with a realistic test message
-5. Verify the output contains all expected segments and fields
+3. Call BuildDTLXml with structured mapping instructions — DO NOT hand-write the XML
+4. Pass the returned dtlXml to CreateDTL — ONE call creates the complete DTL
+5. Call DryRunDTL with a realistic test message to verify the output
+6. Verify the output contains all expected segments and fields
+
+CRITICAL: ALWAYS use BuildDTLXml to generate DTL XML. NEVER hand-write assign
+elements with virtual document paths. The nested group paths (PIDgrpgrp, ORCgrp,
+OBXgrp) are impossible to guess correctly — BuildDTLXml resolves them from the
+schema automatically.
+
+BuildDTLXml mapping actions:
+  copy-segment:        Copy entire segment (e.g., MSH, PID)
+  set:                 Set a literal value on a target field
+  copy-field:          Copy one field from source to target
+  copy-all-components: Copy a complex field with all sub-components
+  concat:              Concatenate multiple source fields with a separator
+  code:                Raw ObjectScript code block (use sparingly)
+
+Example BuildDTLXml call for ADT_A01 -> ORU_R01:
+  sourceDocType: "2.5:ADT_A01"
+  targetDocType: "2.5:ORU_R01"
+  mappingsJson: [
+    { "action": "copy-segment", "sourceSegment": "MSH", "targetSegment": "MSH" },
+    { "action": "set", "targetPath": "MSH:MessageType.MessageCode", "value": "\"ORU\"" },
+    { "action": "set", "targetPath": "MSH:MessageType.TriggerEvent", "value": "\"R01\"" },
+    { "action": "copy-segment", "sourceSegment": "PID", "targetSegment": "PID" },
+    { "action": "copy-field", "sourcePath": "PID:PatientIdentifierList(1)", "targetPath": "OBR:FillerOrderNumber" },
+    { "action": "copy-all-components", "sourcePath": "PV1:AttendingDoctor", "targetPath": "OBR:OrderingProvider" },
+    { "action": "set", "targetPath": "OBR:UniversalServiceIdentifier", "value": "\"ADT-OBS^Admission Observation^L\"" },
+    { "action": "copy-field", "sourcePath": "EVN:RecordedDateTime", "targetPath": "OBR:ObservationDateTime" },
+    { "action": "set", "targetPath": "OBX:SetIDOBX", "value": "1" },
+    { "action": "set", "targetPath": "OBX:ValueType", "value": "\"ST\"" },
+    { "action": "set", "targetPath": "OBX:ObservationIdentifier", "value": "\"PATNAME^Patient Name^L\"" },
+    { "action": "concat", "targetPath": "OBX:ObservationValue", "parts": ["PID:PatientName.FamilyName.Surname", "PID:PatientName.GivenName", "PID:PatientName.SecondandFurtherGivenNamesor"], "separator": " " },
+    { "action": "set", "targetPath": "OBX:ObservationResultStatus", "value": "\"F\"" }
+  ]
 
 If you skip steps 1-2, the DTL will silently produce empty segments because IRIS
 does not error on invalid virtual document paths — it just returns empty strings.

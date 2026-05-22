@@ -386,27 +386,34 @@ ClassMethod DryRunDTL(name As %String, sourceText As %String = "", sourceJson As
             Quit
         }
         Set out.ok = 1
-        // Render result
+        ; Render result
         If $isobject(target) {
             Set targetCls = $classname(target)
             Set out.targetClass = targetCls
-            // HL7 message — render to string
-            If $method(target, "OutputToString") '= "" {
+            ; HL7 message — render to string via OutputToString
+            If target.%IsA("EnsLib.HL7.Message") {
                 Try {
                     Set scOut = $$$OK
                     Set out.output = target.OutputToString("|^~\&", .scOut)
-                } Catch  {}
+                } Catch {}
             }
-            // JSON adaptor — export
-            If $method(target, "%JSONExport") '= "" {
+            ; JSON adaptor — export (only for non-HL7 targets)
+            ElseIf target.%IsA("%JSON.Adaptor") {
                 Try {
                     Set jstream = ##class(%Stream.TmpCharacter).%New()
-                    Do target.%JSONExport(jstream)
+                    Do target.%JSONExportToStream(jstream)
                     Do jstream.Rewind()
                     Set jbody = ""
                     While 'jstream.AtEnd { Set jbody = jbody _ jstream.Read(8192) }
                     Set out.outputJson = ##class(%DynamicAbstractObject).%FromJSON(jbody)
-                } Catch  {}
+                } Catch {}
+            }
+            ; Fallback — try OutputToString for any other virtual doc
+            ElseIf ##class(%Dictionary.CompiledMethod).%ExistsId(targetCls _ "||OutputToString") {
+                Try {
+                    Set scOut = $$$OK
+                    Set out.output = target.OutputToString(, .scOut)
+                } Catch {}
             }
         }
     } Catch ex {
@@ -828,6 +835,193 @@ ClassMethod GetCustomDTLPackage() As %DynamicObject
         Set out.error = $extract(ex.DisplayString(), 1, 400)
     }
     Quit out
+}
+
+/// Generate complete, compilable DTL XML from a list of field mapping
+/// instructions. This tool resolves the correct virtual-document paths
+/// internally using the HL7 schema — the agent does NOT need to know
+/// or guess the nested group paths (PIDgrpgrp, ORCgrp, OBXgrp, etc.).
+///
+/// CALL THIS instead of manually assembling DTL XML. The agent describes
+/// WHAT to map; this tool handles HOW (correct paths, correct XML syntax).
+///
+/// After this tool returns the XML, pass it to CreateDTL as the dtlXml
+/// parameter. Do NOT call UpdateDTL multiple times for individual fields.
+///
+/// sourceDocType:  e.g. "2.5:ADT_A01"
+/// targetDocType:  e.g. "2.5:ORU_R01"
+/// mappingsJson:   JSON array of mapping objects. Each mapping is one of:
+///   { "action": "copy-segment", "sourceSegment": "MSH", "targetSegment": "MSH" }
+///     Copy all fields from a source segment to the same-type target segment.
+///   { "action": "set", "targetPath": "MSH:MessageType.MessageCode", "value": "\"ORU\"" }
+///     Set a literal value. value is an ObjectScript expression (quote strings).
+///   { "action": "copy-field", "sourcePath": "PID:PatientIdentifierList(1)", "targetPath": "OBR:FillerOrderNumber" }
+///     Copy one field from source to target.
+///   { "action": "copy-all-components", "sourcePath": "PV1:AttendingDoctor", "targetPath": "OBR:OrderingProvider" }
+///     Copy a complex field with all its sub-components.
+///   { "action": "concat", "targetPath": "OBX:ObservationValue", "parts": ["PID:PatientName.FamilyName.Surname", "PID:PatientName.GivenName", "PID:PatientName.SecondandFurtherGivenName"], "separator": " " }
+///     Concatenate multiple source fields into one target field.
+///   { "action": "code", "objectscript": " set target.{...} = ..." }
+///     Raw ObjectScript code block. Use sparingly.
+/// createMode:     "new" (default) or "copy". Use "copy" when source and
+///                 target are the same message type and you only change a few fields.
+///
+/// Returns: { ok, dtlXml, segmentPathsUsed, warnings? }
+ClassMethod BuildDTLXml(sourceDocType As %String, targetDocType As %String, mappingsJson As %String, createMode As %String = "new") As %DynamicObject
+{
+    Set out = {}
+    Set out.tool = "build_dtl_xml"
+    If $get(sourceDocType) = "" || ($get(targetDocType) = "") || ($get(mappingsJson) = "") {
+        Set out.ok = 0
+        Set out.error = "Pass sourceDocType, targetDocType, and mappingsJson."
+        Return out
+    }
+    Try {
+        ; Parse the doc types: "2.5:ADT_A01" -> category "2.5", structure "ADT_A01"
+        Set srcCat = $piece(sourceDocType, ":", 1)
+        Set srcMS  = $piece(sourceDocType, ":", 2)
+        Set tgtCat = $piece(targetDocType, ":", 1)
+        Set tgtMS  = $piece(targetDocType, ":", 2)
+        ; Build segment-type -> dtlPath maps for source and target
+        ; srcMap("PID") = "PID"                (for ADT_A01 — flat)
+        ; tgtMap("PID") = "PIDgrpgrp(1).PIDgrp.PID"  (for ORU_R01 — nested)
+        Kill srcMap, tgtMap
+        Do ..%BuildSegMap(srcCat, srcMS, .srcMap)
+        Do ..%BuildSegMap(tgtCat, tgtMS, .tgtMap)
+        ; Parse the mappings JSON
+        Set mappings = ""
+        If $isobject(mappingsJson) {
+            Set mappings = mappingsJson
+        } Else {
+            Set mappings = ##class(%DynamicAbstractObject).%FromJSON(mappingsJson)
+        }
+        If '$isobject(mappings) || ('mappings.%IsA("%DynamicArray")) {
+            Set out.ok = 0
+            Set out.error = "mappingsJson must be a JSON array."
+            Return out
+        }
+        ; Build the XML
+        Set xml = "<transform sourceClass=""EnsLib.HL7.Message"" targetClass=""EnsLib.HL7.Message"""
+        Set xml = xml _ " sourceDocType=""" _ sourceDocType _ """ targetDocType=""" _ targetDocType _ """"
+        Set xml = xml _ " create=""" _ $get(createMode, "new") _ """ language=""objectscript"">"
+        Set warnings = []
+        Set pathsUsed = []
+        ; Process each mapping
+        Set iter = mappings.%GetIterator()
+        While iter.%GetNext(.idx, .m) {
+            Set action = m.action
+            If action = "copy-segment" {
+                ; Copy entire segment: source.{srcPath:} -> target.{tgtPath:}
+                Set srcSeg = m.sourceSegment
+                Set tgtSeg = m.targetSegment
+                Set srcPath = $get(srcMap(srcSeg))
+                Set tgtPath = $get(tgtMap(tgtSeg))
+                If srcPath = "" { Do warnings.%Push("Source segment not found: " _ srcSeg) Continue }
+                If tgtPath = "" { Do warnings.%Push("Target segment not found: " _ tgtSeg) Continue }
+                Set xml = xml _ "<assign property='target.{" _ tgtPath _ "}' value='source.{" _ srcPath _ "}' action='set'/>"
+                Do pathsUsed.%Push("source.{" _ srcPath _ "} -> target.{" _ tgtPath _ "}")
+            }
+            ElseIf action = "set" {
+                ; Set literal value on target
+                Set tgtField = m.targetPath
+                Set val = m.value
+                ; Resolve the segment from the field path (e.g., "MSH:MessageType" -> segment "MSH")
+                Set tgtSeg = $piece(tgtField, ":", 1)
+                Set tgtSegPath = $get(tgtMap(tgtSeg))
+                If tgtSegPath = "" { Do warnings.%Push("Target segment not found for: " _ tgtField) Continue }
+                Set fieldPart = $piece(tgtField, ":", 2, 99)
+                Set fullTgt = tgtSegPath _ ":" _ fieldPart
+                Set xml = xml _ "<assign property='target.{" _ fullTgt _ "}' value='" _ $replace(val, "'", "&apos;") _ "' action='set'/>"
+                Do pathsUsed.%Push("target.{" _ fullTgt _ "} = " _ val)
+            }
+            ElseIf (action = "copy-field") || (action = "copy-all-components") {
+                ; Copy a field from source to target
+                Set srcField = m.sourcePath
+                Set tgtField = m.targetPath
+                Set srcSeg = $piece(srcField, ":", 1)
+                Set tgtSeg = $piece(tgtField, ":", 1)
+                Set srcSegPath = $get(srcMap(srcSeg))
+                Set tgtSegPath = $get(tgtMap(tgtSeg))
+                If srcSegPath = "" { Do warnings.%Push("Source segment not found for: " _ srcField) Continue }
+                If tgtSegPath = "" { Do warnings.%Push("Target segment not found for: " _ tgtField) Continue }
+                Set srcFieldPart = $piece(srcField, ":", 2, 99)
+                Set tgtFieldPart = $piece(tgtField, ":", 2, 99)
+                Set fullSrc = srcSegPath _ ":" _ srcFieldPart
+                Set fullTgt = tgtSegPath _ ":" _ tgtFieldPart
+                Set xml = xml _ "<assign property='target.{" _ fullTgt _ "}' value='source.{" _ fullSrc _ "}' action='set'/>"
+                Do pathsUsed.%Push("source.{" _ fullSrc _ "} -> target.{" _ fullTgt _ "}")
+            }
+            ElseIf action = "concat" {
+                ; Concatenate multiple source fields with a separator
+                Set tgtField = m.targetPath
+                Set parts = m.parts
+                Set sep = m.separator
+                If sep = "" { Set sep = " " }
+                Set tgtSeg = $piece(tgtField, ":", 1)
+                Set tgtSegPath = $get(tgtMap(tgtSeg))
+                If tgtSegPath = "" { Do warnings.%Push("Target segment not found for: " _ tgtField) Continue }
+                Set tgtFieldPart = $piece(tgtField, ":", 2, 99)
+                Set fullTgt = tgtSegPath _ ":" _ tgtFieldPart
+                ; Build concatenation expression
+                Set expr = ""
+                Set pIter = parts.%GetIterator()
+                While pIter.%GetNext(.pi, .part) {
+                    Set pSeg = $piece(part, ":", 1)
+                    Set pSegPath = $get(srcMap(pSeg))
+                    If pSegPath = "" { Do warnings.%Push("Source segment not found for concat part: " _ part) Continue }
+                    Set pFieldPart = $piece(part, ":", 2, 99)
+                    Set fullPart = pSegPath _ ":" _ pFieldPart
+                    If expr '= "" { Set expr = expr _ "_""" _ sep _ """_" }
+                    Set expr = expr _ "source.{" _ fullPart _ "}"
+                }
+                Set xml = xml _ "<assign property='target.{" _ fullTgt _ "}' value='" _ $replace(expr, "'", "&apos;") _ "' action='set'/>"
+                Do pathsUsed.%Push("concat -> target.{" _ fullTgt _ "}")
+            }
+            ElseIf action = "code" {
+                ; Raw ObjectScript code block
+                Set code = m.objectscript
+                Set xml = xml _ "<code><![CDATA[" _ code _ "]]></code>"
+                Do pathsUsed.%Push("code block")
+            }
+            Else {
+                Do warnings.%Push("Unknown action: " _ action)
+            }
+        }
+        Set xml = xml _ "</transform>"
+        Set out.ok = 1
+        Set out.dtlXml = xml
+        Set out.segmentPathsUsed = pathsUsed
+        If warnings.%Size() > 0 {
+            Set out.warnings = warnings
+        }
+        Set out.hint = "Pass the dtlXml value to CreateDTL as the dtlXml parameter. The XML has the correct virtual document paths for " _ sourceDocType _ " -> " _ targetDocType _ "."
+    } Catch ex {
+        Set out.ok = 0
+        Set out.error = $extract(ex.DisplayString(), 1, 600)
+    }
+    Return out
+}
+
+/// Internal helper: build a segment-type -> dtlPath lookup array
+/// from the HL7 schema map. Called by BuildDTLXml.
+ClassMethod %BuildSegMap(category As %String, messageStructure As %String, ByRef segMap) [ Internal ]
+{
+    Kill segMap
+    Set key = ""
+    For {
+        Set key = $order(^EnsHL7.Schema(category, "MS", messageStructure, "map", key))
+        Quit:key=""
+        If key = "leftoversegs" Continue
+        Set mapVal = $get(^EnsHL7.Schema(category, "MS", messageStructure, "map", key))
+        Set segType = $piece($piece(mapVal, "|", 2), ":", 2)
+        ; Replace () with (1) for DTL paths
+        Set dtlPath = $replace(key, "()", "(1)")
+        ; Only store the FIRST occurrence of each segment type
+        ; (the agent can specify (2), (3) explicitly if needed)
+        If '$data(segMap(segType)) {
+            Set segMap(segType) = dtlPath
+        }
+    }
 }
 
 /// Return the EXACT virtual-document segment paths for an HL7 message
