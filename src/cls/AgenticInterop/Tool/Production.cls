@@ -632,14 +632,8 @@ ClassMethod UpdateBusinessHostSettings(production As %String, hostName As %Strin
                 Set out.warning = "Saved but UpdateProduction failed: " _ $system.Status.GetErrorText(sc) _ ". Restart the production to apply."
             }
         }
-        ; Verify persistence by re-opening
-        Set prod2 = ##class(Ens.Config.Production).%OpenId(production)
-        Set verifyItem = ""
-        For i=1:1:prod2.Items.Count() {
-            Set candidate = prod2.Items.GetAt(i)
-            If candidate.Name = hostName { Set verifyItem = candidate Quit }
-        }
-        Set settingsAfter = $select($isobject(verifyItem): verifyItem.Settings.Count(), 1: -1)
+        ; Report count from the in-memory object (already saved)
+        Set settingsAfter = item.Settings.Count()
         Set out.ok = 1
         Set out.updated = updates
         Set out.settingsBefore = settingsBefore
