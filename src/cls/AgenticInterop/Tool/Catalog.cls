@@ -44,7 +44,7 @@ ClassMethod DescribeClass(className As %String) As %DynamicObject
     Try { Set $namespace = targetNs } Catch  {
         Set out.ok = 0
         Set out.error = "Cannot access namespace: " _ targetNs
-        Quit
+        Return out
     }
     Try {
         If '##class(%Dictionary.CompiledClass).%ExistsId(className) {
@@ -76,7 +76,7 @@ ClassMethod DescribeClass(className As %String) As %DynamicObject
                 Set out.ok = 0
                 Set out.exists = 0
                 Set out.error = "Class not found in namespace " _ ..TargetNs() _ " (also checked HSLIB, HSCUSTOM, %SYS): " _ className
-                Quit
+                Return out
             }
         }
         Set cls = ##class(%Dictionary.CompiledClass).%OpenId(className)
@@ -204,7 +204,7 @@ ClassMethod ExplainStatus(status As %String) As %DynamicObject
         If $get(status) = "" {
             Set out.ok = 0
             Set out.error = "Pass `status` (serialized %Status string)."
-            Quit
+            Return out
         }
         Set out.text = $extract($system.Status.GetErrorText(status), 1, 1500)
         Set out.ok = 1
@@ -234,12 +234,12 @@ ClassMethod LookupErrorCode(code As %Integer) As %DynamicObject
         If $get(code) = "" {
             Set out.ok = 0
             Set out.error = "Pass `code` (numeric)."
-            Quit
+            Return out
         }
         If '$isvalidnum(code) || (+code <= 0) {
             Set out.ok = 0
             Set out.error = "Code must be a positive integer. Got: '" _ code _ "'."
-            Quit
+            Return out
         }
         Set out.code = +code
         Set rs = ##class(%SQL.Statement).%ExecDirect(,
@@ -283,7 +283,7 @@ ClassMethod LookupGlossaryTerm(term As %String) As %DynamicObject
         If $get(term) = "" {
             Set out.ok = 0
             Set out.error = "Pass `term` (string)."
-            Quit
+            Return out
         }
         Set out.term = term
         Set norm = $zconvert($zstrip(term, "<>W"), "L")
@@ -292,7 +292,8 @@ ClassMethod LookupGlossaryTerm(term As %String) As %DynamicObject
         Set normSan = ""
         For i=1:1:$length(norm) {
             Set ch = $extract(norm, i)
-            If ((ch >= "a") && (ch <= "z")) || ((ch >= "0") && (ch <= "9")) || (ch = "$") {
+            Set a = $ascii(ch)
+            If ((a >= 97) && (a <= 122)) || ((a >= 48) && (a <= 57)) || (ch = "$") {
                 Set normSan = normSan _ ch
             }
         }
@@ -306,7 +307,7 @@ ClassMethod LookupGlossaryTerm(term As %String) As %DynamicObject
             Set out.definition = rs.%Get("Definition")
             Set out.match = "exact"
             Set out.ok = 1
-            Quit
+            Return out
         }
         Set out.related = []
         Set patt = "%" _ $zconvert(term, "L") _ "%"
@@ -355,7 +356,7 @@ ClassMethod SearchApiIndex(query As %String, k As %Integer = 5) As %DynamicObjec
         If q = "" {
             Set out.ok = 0
             Set out.error = "Pass `query` (string). Optional `k` (1-20)."
-            Quit
+            Return out
         }
         If '$isvalidnum(k) || (+k < 1) { Set k = 5 }
         If +k > 20 { Set k = 20 }

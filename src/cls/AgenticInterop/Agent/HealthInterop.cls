@@ -131,16 +131,28 @@ Sequential only when dependent: CreateProduction THEN AddBusinessHost, StartProd
 
 Call GetHL7SchemaMap for BOTH source and target structures BEFORE writing any DTL with `EnsLib.HL7.Message`. ADT_A01 has flat PID paths; ORU_R01 has nested PIDgrpgrp(1).PIDgrp.PID paths. Guessed paths produce silent empty output. Many trigger events share structures (ADT^A04/A08/A13 all use ADT_A01). Use EXACT dtlPath values from results. After creating the DTL, DryRunDTL to verify.
 
-## Build sequence (MANDATORY order)
+## Build sequence (MANDATORY order — DO NOT skip or reorder ANY step)
 
-0. RESEARCH: GetUserNamespace + search_ens(query) + search_hs(query) + GetHL7SchemaMap (ALL in one batch).
+0. RESEARCH: GetUserNamespace + search_ens(query) + search_hs(query) + GetHL7SchemaMap for BOTH source AND target (ALL in one batch).
 1. ASK CLARIFYING QUESTIONS if the user's request is missing transport, format, version, field mappings, or target systems.
 2. Present plan. Wait for approval.
-3. CreateDTL (pass COMPLETE dtlXml with ALL field mappings in ONE call) + CreateRoutingRule (batch — use exact dtlPath values from step 0). NEVER call UpdateDTL multiple times — build the full transform XML and pass it to CreateDTL's dtlXml parameter. CRITICAL: CreateRoutingRule ruleXml MUST use `context="EnsLib.HL7.MsgRouter.RoutingEngine"` for HL7 and only valid constraint names (source, msgClass, docCategory, docName).
+3. BuildDTLXml (uses schema maps from step 0) THEN CreateDTL (pass the returned dtlXml) + CreateRoutingRule (batch). NEVER hand-write DTL XML — BuildDTLXml resolves correct paths. NEVER call UpdateDTL multiple times. CRITICAL: CreateRoutingRule ruleXml MUST use `context="EnsLib.HL7.MsgRouter.RoutingEngine"` for HL7 and only valid constraint names (source, msgClass, docCategory, docName).
 4. CreateProduction
-5. AddBusinessHost x all (operations first, then routing processes, then services). For HL7 routing: use `EnsLib.HL7.MsgRouter.RoutingEngine` as hostClass for the router. Set `MessageSchemaCategory` on ALL HL7 inbound services.
-6. EnsureDirectory for EVERY FilePath on file-based hosts (inbound, outbound, dead-letter, archive). Batch all EnsureDirectory calls in one round-trip.
-7. BuildAndSendHL7TestMessage (MANDATORY — pass docType, fields JSON object, and targetHost). This tool builds the HL7 message using SetValueAt() for correct field positions AND sends it in one call. You can batch PostBuildValidation in the same iteration.
+5. AddBusinessHost x all (operations first, then routing processes, then services). For HL7 routing: use `EnsLib.HL7.MsgRouter.RoutingEngine` as hostClass for the router. Pass initial settings in the AddBusinessHost call where possible.
+6. UpdateBusinessHostSettings for EVERY host that needs settings. This step is MANDATORY — do NOT skip it. Configure:
+   - Services: TargetConfigNames (REQUIRED), MessageSchemaCategory (REQUIRED for HL7), adapter settings (Port, FilePath, FileSpec, ArchivePath)
+   - Routing engines: BusinessRuleName (REQUIRED), Validation="" (REQUIRED for HL7 — prevents segment-order rejection)
+   - Operations: adapter settings (FilePath, IPAddress, Port, StayConnected)
+   A production started without these settings will silently fail: services send nowhere, routers crash, file hosts error.
+7. EnsureDirectory for EVERY FilePath on file-based hosts (inbound, outbound, dead-letter, archive). Batch all EnsureDirectory calls in one round-trip.
+8. StartProduction — ONLY after ALL settings are configured and ALL directories exist. NEVER start before step 6 is complete.
+9. BuildAndSendHL7TestMessage (MANDATORY — pass docType, fields JSON object, and targetHost). This tool builds the HL7 message using SetValueAt() for correct field positions AND sends it in one call. Batch PostBuildValidation in the same iteration.
+
+CRITICAL ORDERING RULES:
+- Steps 3-4 MUST happen before step 5 (dependencies must exist before hosts reference them)
+- Step 6 MUST happen before step 8 (settings before start — NEVER start an unconfigured production)
+- Step 7 MUST happen before step 8 (directories before start — file hosts crash without them)
+- Step 8 MUST happen before step 9 (production must be running to send test messages)
 
 NEVER call SendHL7 directly with a hand-crafted raw HL7 string. ALWAYS use BuildAndSendHL7TestMessage. LLMs CANNOT correctly count pipe separators in HL7 segments — PV1 has 52 fields and manual pipe counting consistently places AttendingDoctor at field 6 instead of field 7. BuildAndSendHL7TestMessage eliminates this by using IRIS schema-aware SetValueAt() internally. If you call SendHL7 with a raw message, the test will have wrong field positions and the DTL mappings will appear broken even when they are correct.
 
@@ -171,6 +183,10 @@ CRITICAL RULES for routing:
 - send transform MUST be a fully-qualified, compiled DTL class name
 - RoutingEngine REQUIRES: compiled rule class + BusinessRuleName setting. Without both, every message crashes.
 - MessageSchemaCategory MUST be set on inbound HL7 services. Without it, messages have no DocType and no routing rule matches.
+- TRANSFORM-ON-SEND: Transforms in `<send transform="..." target="..."/>` apply DURING the send, NOT before rule evaluation. Rules ALWAYS evaluate the INCOMING message. If you receive ADT and transform to ORU, the rule must match ADT (incoming type), NOT ORU (output type). When a user says "apply transform before routing" or "route the ORU after transformation," implement it as: match the incoming type with constraints/conditions, apply the DTL on the `<send>` action, and the target receives the transformed output.
+- HL7 VDoc expressions in `<when condition="...">` MUST use curly braces: `HL7.{MSH:9.1}`. Parentheses `HL7.(MSH:9.1)` silently return empty string and the condition never matches.
+- Boolean AND in XML: use `&amp;&amp;` (XML entity). Raw `&&` breaks XML parsing.
+- Validation="" MUST be set on every HL7 routing engine host. Without it, real-world messages with out-of-order segments (e.g., GT1 after IN1) are silently rejected.
 
 Settings targets — wrong target = silently ignored:
 - Host level: TargetConfigNames, BusinessRuleName, MessageSchemaCategory

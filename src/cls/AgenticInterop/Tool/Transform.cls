@@ -106,7 +106,7 @@ ClassMethod CompileDTL(name As %String) As %DynamicObject
     }
     Try {
         If '##class(%Dictionary.ClassDefinition).%ExistsId(name) {
-            Set out.ok = 1
+            Set out.ok = 0
             Set out.compiled = 0
             Set out.error = "Class not found in namespace " _ targetNs _ ": " _ name
             Quit
@@ -394,7 +394,7 @@ ClassMethod DryRunDTL(name As %String, sourceText As %String = "", sourceJson As
             // %DynamicObject-friendly class.
             Try {
                 Set source = $classmethod(sourceClass, "%New")
-                If $method(source, "%JSONImport") '= "" {
+                If ##class(%Dictionary.CompiledMethod).%ExistsId(sourceClass _ "||%JSONImport") {
                     Do source.%JSONImport(sourceJson)
                 }
             } Catch  {

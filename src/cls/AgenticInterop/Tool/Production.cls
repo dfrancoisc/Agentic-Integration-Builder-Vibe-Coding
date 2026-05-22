@@ -473,6 +473,18 @@ ClassMethod AddBusinessHost(production As %String, hostName As %String, hostClas
                 Set out.error = "Saved but compile failed: " _ $system.Status.GetErrorText(sc)
                 Quit
             }
+            ; If production is running, tell the runtime about the new host
+            Set isRunning = 0
+            Try {
+                Set st = ##class(Ens.Director).GetProductionStatus(.pname, .pstate)
+                If pname = production, pstate = 1 { Set isRunning = 1 }
+            } Catch {}
+            If isRunning {
+                Set sc2 = ##class(Ens.Director).UpdateProduction()
+                If '$$$ISOK(sc2) {
+                    Set out.warning = "Host added but runtime update failed: " _ $system.Status.GetErrorText(sc2) _ ". Restart the production to pick up changes."
+                }
+            }
             Set out.ok = 1
             Set out.added = 1
             Set out.message = "Added host '" _ hostName _ "' (class " _ hostClass _ ") to production '" _ production _ "'."
@@ -535,6 +547,18 @@ ClassMethod RemoveBusinessHost(production As %String, hostName As %String) As %D
             Set out.removed = 0
             Set out.error = "Saved but compile failed: " _ $system.Status.GetErrorText(sc)
             Quit
+        }
+        ; If production is running, tell the runtime about the removed host
+        Set isRunning = 0
+        Try {
+            Set st = ##class(Ens.Director).GetProductionStatus(.pname, .pstate)
+            If pname = production, pstate = 1 { Set isRunning = 1 }
+        } Catch {}
+        If isRunning {
+            Set sc2 = ##class(Ens.Director).UpdateProduction()
+            If '$$$ISOK(sc2) {
+                Set out.warning = "Host removed but runtime update failed: " _ $system.Status.GetErrorText(sc2)
+            }
         }
         Set out.ok = 1
         Set out.removed = 1
@@ -840,22 +864,21 @@ ClassMethod PostBuildValidation(production As %String, minutesBack As %Integer =
         Set c6.hostsReached = []
         Set sql4 = "SELECT DISTINCT TargetConfigName FROM Ens.MessageHeader WHERE TimeCreated >= ? AND TargetConfigName IS NOT NULL"
         Set rs4 = ##class(%SQL.Statement).%ExecDirect(, sql4, cutoff)
-        Set reached = ""
+        Kill reachedMap
         While rs4.%Next() {
             Set tgt = rs4.%Get("TargetConfigName")
             Do c6.hostsReached.%Push(tgt)
-            Set reached = reached _ $select(reached="":"", 1:",") _ tgt
+            Set reachedMap($zconvert(tgt, "U")) = 1
         }
         ; Compare reached hosts to production hosts (case-insensitive)
         Set unreached = ""
-        Set reachedUpper = $zconvert(reached, "U")
         For i=1:1:hostCount {
             Set item = prod.Items.GetAt(i)
             Set hName = item.Name
             ; Services don't appear as TargetConfigName — skip them
             Set hClass = item.ClassName
             Set isService = (hClass [ "Service") || (hClass [ "service")
-            If 'isService, reachedUpper '[ $zconvert(hName, "U") {
+            If 'isService, '$data(reachedMap($zconvert(hName, "U"))) {
                 Set unreached = unreached _ $select(unreached="":"", 1:", ") _ hName
             }
         }
@@ -872,6 +895,65 @@ ClassMethod PostBuildValidation(production As %String, minutesBack As %Integer =
             Set allPass = 0
         }
         Do out.checks.%Push(c6)
+
+        ; --- Check 7: Critical settings populated ---
+        Set c7 = {}
+        Set c7.check = "settings_configured"
+        Set missingSettings = ""
+        ; Re-open production to get fresh item data after any changes
+        Set prod7 = ##class(Ens.Config.Production).%OpenId(production)
+        If $isobject(prod7) {
+            For i=1:1:prod7.Items.Count() {
+                Set item = prod7.Items.GetAt(i)
+                Set hName = item.Name
+                Set hClass = item.ClassName
+                ; Build a lookup of setting name -> value for this item
+                Kill sMap
+                For si=1:1:item.Settings.Count() {
+                    Set s = item.Settings.GetAt(si)
+                    Set sMap(s.Target, s.Name) = s.Value
+                }
+                ; Check services: need TargetConfigNames
+                If (hClass [ "Service") || (hClass [ "service") {
+                    If $get(sMap("Host","TargetConfigNames")) = "" {
+                        Set missingSettings = missingSettings _ $select(missingSettings="":"", 1:"; ") _ hName _ ": missing Host.TargetConfigNames"
+                    }
+                    ; HL7 services need MessageSchemaCategory
+                    If hClass [ "HL7" {
+                        If $get(sMap("Host","MessageSchemaCategory")) = "" {
+                            Set missingSettings = missingSettings _ $select(missingSettings="":"", 1:"; ") _ hName _ ": missing Host.MessageSchemaCategory (HL7 messages will have no DocType)"
+                        }
+                    }
+                }
+                ; Check routing engines: need BusinessRuleName
+                If hClass [ "RoutingEngine" {
+                    If $get(sMap("Host","BusinessRuleName")) = "" {
+                        Set missingSettings = missingSettings _ $select(missingSettings="":"", 1:"; ") _ hName _ ": missing Host.BusinessRuleName (every message will crash)"
+                    }
+                }
+                ; Check file-based operations/services: need FilePath
+                If (hClass [ "File") && (hClass '[ "RoutingEngine") {
+                    If $get(sMap("Adapter","FilePath")) = "" {
+                        Set missingSettings = missingSettings _ $select(missingSettings="":"", 1:"; ") _ hName _ ": missing Adapter.FilePath"
+                    } Else {
+                        ; Verify directory exists
+                        Set dir = $get(sMap("Adapter","FilePath"))
+                        If '##class(%File).DirectoryExists(dir) {
+                            Set missingSettings = missingSettings _ $select(missingSettings="":"", 1:"; ") _ hName _ ": directory does not exist: " _ dir
+                        }
+                    }
+                }
+            }
+        }
+        If missingSettings = "" {
+            Set c7.pass = 1
+            Set c7.detail = "All critical settings are configured."
+        } Else {
+            Set c7.pass = 0
+            Set c7.detail = missingSettings
+            Set allPass = 0
+        }
+        Do out.checks.%Push(c7)
 
         ; --- Verdict ---
         Set passed = 0
