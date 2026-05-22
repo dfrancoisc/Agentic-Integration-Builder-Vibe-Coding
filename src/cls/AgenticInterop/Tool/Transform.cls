@@ -130,10 +130,12 @@ ClassMethod CompileDTL(name As %String) As %DynamicObject
 /// Create a Data Transformation Language (DTL) class and compile it.
 /// MUTATING — gated by the create_ prefix.
 ///
-/// PREFERRED: pass dtlXml with the COMPLETE transform XML (all assign/
-/// foreach/subtransform elements) so the DTL is fully populated in ONE
-/// call. This avoids multiple update_dtl round-trips that burn tokens
-/// and risk rate limits.
+/// IMPORTANT: For HL7-to-HL7 DTLs (sourceClass and targetClass are both
+/// EnsLib.HL7.Message), you MUST call BuildDTLXml FIRST to generate the
+/// dtlXml. DO NOT hand-write the XML — the virtual document paths are
+/// complex nested group paths that differ per message structure and are
+/// impossible to guess correctly. BuildDTLXml resolves them from the
+/// schema automatically. Pass its returned dtlXml here.
 ///
 /// name:        fully-qualified DTL class name (e.g.,
 ///              "Demo.Transform.ADT_to_SDA").
@@ -143,8 +145,8 @@ ClassMethod CompileDTL(name As %String) As %DynamicObject
 /// sourceDocType: optional HL7 DocType for the source side
 ///              (e.g., "2.5:ADT_A01").
 /// targetDocType: optional HL7 DocType for the target side.
-/// dtlXml:      optional COMPLETE transform XML body. If provided, this
-///              replaces the default empty skeleton. Pass the full
+/// dtlXml:      COMPLETE transform XML body. For HL7 DTLs, this MUST
+///              come from BuildDTLXml. Pass the full
 ///              "<transform ...>...</transform>" XML with ALL field
 ///              mappings. Build ALL mappings in ONE call — do NOT call
 ///              update_dtl multiple times for individual fields.
@@ -181,7 +183,16 @@ ClassMethod CreateDTL(name As %String, sourceClass As %String, targetClass As %S
         Set xdata.Name = "DTL"
         Set xdata.XMLNamespace = "http://www.intersystems.com/dtl"
         If dtlXml '= "" {
-            ; Full DTL body provided — use it directly (one-shot creation)
+            ; Full DTL body provided — validate HL7 paths before writing
+            If (sourceClass [ "HL7") || (targetClass [ "HL7") {
+                Set valResult = ..%ValidateHL7Paths(dtlXml, sourceDocType, targetDocType)
+                If 'valResult.ok {
+                    Set out.ok = 0
+                    Set out.created = 0
+                    Set out.error = valResult.error
+                    Quit
+                }
+            }
             Do xdata.Data.Write(dtlXml)
         } Else {
             ; No body — build a minimal skeleton
@@ -223,10 +234,12 @@ ClassMethod CreateDTL(name As %String, sourceClass As %String, targetClass As %S
 }
 
 /// Replace the body of a DTL class's <transform> XData and recompile.
-/// MUTATING — gated by the update_ prefix. The body is the inner XML
-/// of the <transform> element (the <assign>, <foreach>, <code>,
-/// <subtransform> children); pass the entire <transform> wrapper to
-/// also change source/target attributes.
+/// MUTATING — gated by the update_ prefix.
+///
+/// IMPORTANT: For HL7-to-HL7 DTLs, DO NOT hand-write the dtlXml.
+/// Call BuildDTLXml first to generate correct XML with validated
+/// virtual document paths. Hand-written paths will be rejected by
+/// the path validator if they do not match the HL7 schema.
 ///
 /// name:    fully-qualified DTL class name.
 /// dtlXml:  full XML body of XData DTL — typically starts with
@@ -267,6 +280,23 @@ ClassMethod UpdateDTL(name As %String, dtlXml As %String) As %DynamicObject
             Set xdata.Name = "DTL"
             Set xdata.XMLNamespace = "http://www.intersystems.com/dtl"
             Do cdef.XDatas.Insert(xdata)
+        }
+        ; Validate HL7 paths if the DTL involves HL7 messages
+        Set srcDocType = ""
+        Set tgtDocType = ""
+        If dtlXml [ "sourceDocType" {
+            ; Extract docTypes from the XML attributes
+            Set srcDocType = ..%ExtractAttr(dtlXml, "sourceDocType")
+            Set tgtDocType = ..%ExtractAttr(dtlXml, "targetDocType")
+        }
+        If dtlXml [ "EnsLib.HL7.Message" {
+            Set valResult = ..%ValidateHL7Paths(dtlXml, srcDocType, tgtDocType)
+            If 'valResult.ok {
+                Set out.ok = 0
+                Set out.updated = 0
+                Set out.error = valResult.error
+                Quit
+            }
         }
         Do xdata.Data.Clear()
         Do xdata.Data.Write(dtlXml)
@@ -1022,6 +1052,151 @@ ClassMethod %BuildSegMap(category As %String, messageStructure As %String, ByRef
             Set segMap(segType) = dtlPath
         }
     }
+}
+
+/// Internal helper: extract an XML attribute value from a string.
+/// Returns "" if not found.
+ClassMethod %ExtractAttr(xml As %String, attr As %String) As %String [ Internal ]
+{
+    Set pos = $find(xml, attr _ "=""")
+    If pos = 0 Return ""
+    Set endPos = $find(xml, """", pos)
+    If endPos = 0 Return ""
+    Return $extract(xml, pos, endPos - 2)
+}
+
+/// Internal helper: validate that all HL7 virtual document paths in a
+/// DTL XML are correct for the given source/target doc types. This
+/// catches the common agent error of using flat paths like "OBR:field"
+/// when the target structure requires nested paths like
+/// "PIDgrpgrp(1).ORCgrp(1).OBR:field".
+///
+/// Returns: { ok:1 } on success, { ok:0, error:"..." } on failure.
+ClassMethod %ValidateHL7Paths(dtlXml As %String, sourceDocType As %String, targetDocType As %String) As %DynamicObject [ Internal ]
+{
+    Set result = {}
+    ; If we cannot determine the doc types, skip validation
+    ; (better to let it compile and fail naturally)
+    If sourceDocType = "" { Set sourceDocType = ..%ExtractAttr(dtlXml, "sourceDocType") }
+    If targetDocType = "" { Set targetDocType = ..%ExtractAttr(dtlXml, "targetDocType") }
+    If (sourceDocType = "") || (targetDocType = "") {
+        Set result.ok = 1
+        Return result
+    }
+    ; Build valid segment paths for source and target
+    Set srcCat = $piece(sourceDocType, ":", 1)
+    Set srcMS  = $piece(sourceDocType, ":", 2)
+    Set tgtCat = $piece(targetDocType, ":", 1)
+    Set tgtMS  = $piece(targetDocType, ":", 2)
+    ; Verify the message structures exist
+    If $get(^EnsHL7.Schema(srcCat, "MS", srcMS)) = "" {
+        Set result.ok = 1
+        Return result
+    }
+    If $get(^EnsHL7.Schema(tgtCat, "MS", tgtMS)) = "" {
+        Set result.ok = 1
+        Return result
+    }
+    ; Build segment -> validPath maps
+    Kill srcMap, tgtMap
+    Do ..%BuildSegMap(srcCat, srcMS, .srcMap)
+    Do ..%BuildSegMap(tgtCat, tgtMS, .tgtMap)
+    ; Build full valid path sets (segment-level, like "MSH", "PIDgrpgrp(1).PIDgrp.PID")
+    Kill srcValid, tgtValid
+    Set seg = "" For { Set seg = $order(srcMap(seg)) Quit:seg=""  Set srcValid(srcMap(seg)) = 1 }
+    Set seg = "" For { Set seg = $order(tgtMap(seg)) Quit:seg=""  Set tgtValid(tgtMap(seg)) = 1 }
+    ; Only add bare segment names for TOP-LEVEL segments (where seg = fullPath)
+    ; Nested segments like OBR in ORU_R01 must NOT be accepted bare
+    Set seg = "" For { Set seg = $order(srcMap(seg)) Quit:seg=""  If srcMap(seg) = seg Set srcValid(seg) = 1 }
+    Set seg = "" For { Set seg = $order(tgtMap(seg)) Quit:seg=""  If tgtMap(seg) = seg Set tgtValid(seg) = 1 }
+    ; Scan the XML for assign elements and extract property paths
+    ; Pattern: property='target.{PATH:field}' or value='source.{PATH:field}'
+    Set badPaths = []
+    Set corrections = []
+    ; Check target paths (property='target.{...}')
+    Set searchStr = "target.{"
+    Set pos = 0
+    For {
+        Set pos = $find(dtlXml, searchStr, pos)
+        Quit:pos=0
+        Set endBrace = $find(dtlXml, "}", pos)
+        If endBrace = 0 Continue
+        Set fullPath = $extract(dtlXml, pos, endBrace - 2)
+        ; Extract segment part (before the colon)
+        Set segPath = $piece(fullPath, ":", 1)
+        If segPath = "" Continue
+        ; Skip whole-message assignments (target = source, target.{MSH} = source.{MSH})
+        ; Check if segPath is a valid target path
+        If '$data(tgtValid(segPath)) {
+            ; This path is NOT valid for the target structure
+            ; Find what the correct path should be
+            Set segType = segPath
+            ; If segPath has dots (like "PIDgrpgrp(1).PIDgrp.PID"), extract last part
+            If segPath [ "." { Set segType = $piece(segPath, ".", *) }
+            ; Remove index suffix like "(1)"
+            Set segType = $piece(segType, "(", 1)
+            Set correctPath = $get(tgtMap(segType))
+            If correctPath '= "" {
+                Set fix = {}
+                Set fix.wrong = "target.{" _ fullPath _ "}"
+                Set fix.correct = "target.{" _ correctPath _ ":" _ $piece(fullPath, ":", 2, 99) _ "}"
+                Set fix.segment = segType
+                Do corrections.%Push(fix)
+            }
+            Do badPaths.%Push("target.{" _ fullPath _ "}")
+        }
+    }
+    ; Check source paths (source.{...})
+    Set searchStr = "source.{"
+    Set pos = 0
+    For {
+        Set pos = $find(dtlXml, searchStr, pos)
+        Quit:pos=0
+        Set endBrace = $find(dtlXml, "}", pos)
+        If endBrace = 0 Continue
+        Set fullPath = $extract(dtlXml, pos, endBrace - 2)
+        Set segPath = $piece(fullPath, ":", 1)
+        If segPath = "" Continue
+        If '$data(srcValid(segPath)) {
+            Set segType = segPath
+            If segPath [ "." { Set segType = $piece(segPath, ".", *) }
+            Set segType = $piece(segType, "(", 1)
+            Set correctPath = $get(srcMap(segType))
+            If correctPath '= "" {
+                Set fix = {}
+                Set fix.wrong = "source.{" _ fullPath _ "}"
+                Set fix.correct = "source.{" _ correctPath _ ":" _ $piece(fullPath, ":", 2, 99) _ "}"
+                Set fix.segment = segType
+                Do corrections.%Push(fix)
+            }
+            Do badPaths.%Push("source.{" _ fullPath _ "}")
+        }
+    }
+    If badPaths.%Size() = 0 {
+        Set result.ok = 1
+        Return result
+    }
+    ; Build detailed error message
+    Set errMsg = "INVALID HL7 PATHS — the DTL XML contains " _ badPaths.%Size() _ " incorrect virtual document path(s). "
+    Set errMsg = errMsg _ "You MUST call BuildDTLXml to generate correct paths. DO NOT hand-write assign elements for HL7 DTLs. "
+    Set errMsg = errMsg _ "Wrong paths found: "
+    Set iter = badPaths.%GetIterator()
+    While iter.%GetNext(.i, .p) {
+        Set errMsg = errMsg _ p
+        If i < (badPaths.%Size() - 1) Set errMsg = errMsg _ ", "
+    }
+    If corrections.%Size() > 0 {
+        Set errMsg = errMsg _ ". Corrections: "
+        Set citer = corrections.%GetIterator()
+        While citer.%GetNext(.i, .c) {
+            Set errMsg = errMsg _ c.wrong _ " should be " _ c.correct
+            If i < (corrections.%Size() - 1) Set errMsg = errMsg _ "; "
+        }
+    }
+    Set errMsg = errMsg _ ". Call BuildDTLXml(""" _ sourceDocType _ """, """ _ targetDocType _ """, mappingsJson) to generate valid XML."
+    Set result.ok = 0
+    Set result.error = errMsg
+    Return result
 }
 
 /// Return the EXACT virtual-document segment paths for an HL7 message
