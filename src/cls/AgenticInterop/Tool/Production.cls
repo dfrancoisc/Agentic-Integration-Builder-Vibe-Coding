@@ -529,9 +529,16 @@ ClassMethod RemoveBusinessHost(production As %String, hostName As %String) As %D
 /// settings whose (target, name) match, inserts new ones, leaves
 /// others untouched. MUTATING — gated by the update_ prefix.
 ///
+/// If the production is running, changes are applied immediately
+/// via Ens.Director.UpdateProduction().
+///
 /// production: fully-qualified production class name.
 /// hostName:   the host whose settings to update.
-/// settings:   { target: { name: value } } map of settings to write.
+/// settings:   { "Host": { "name": "value" }, "Adapter": { "name": "value" } }.
+///     The top-level keys are the setting target: "Host", "Adapter", or "Item".
+///     Nested keys are setting names, values are setting values.
+///     Example: { "Host": { "TargetConfigNames": "MyRouter", "MessageSchemaCategory": "2.5" },
+///                "Adapter": { "FilePath": "/tmp/in/", "FileSpec": "*.hl7" } }
 ClassMethod UpdateBusinessHostSettings(production As %String, hostName As %String, settings As %DynamicObject) As %DynamicObject
 {
     Set out = {}
@@ -549,7 +556,7 @@ ClassMethod UpdateBusinessHostSettings(production As %String, hostName As %Strin
     Try {
         If '$isobject(settings) {
             Set out.ok = 0
-            Set out.error = "Pass a settings object: { target: { name: value } }."
+            Set out.error = "Pass a settings object: { ""Host"": { ""name"": ""value"" }, ""Adapter"": { ""name"": ""value"" } }."
             Quit
         }
         If '##class(Ens.Config.Production).%ExistsId(production) {
@@ -568,6 +575,7 @@ ClassMethod UpdateBusinessHostSettings(production As %String, hostName As %Strin
             Set out.error = "Host '" _ hostName _ "' not found in production."
             Quit
         }
+        Set settingsBefore = item.Settings.Count()
         Set updates = []
         Set tIter = settings.%GetIterator()
         While tIter.%GetNext(.target, .nameMap) {
@@ -597,10 +605,11 @@ ClassMethod UpdateBusinessHostSettings(production As %String, hostName As %Strin
                 Do updates.%Push(u)
             }
         }
+        ; Persist to the production class XData
         Set sc = prod.SaveToClass()
         If 'sc {
             Set out.ok = 0
-            Set out.error = $system.Status.GetErrorText(sc)
+            Set out.error = "SaveToClass failed: " _ $system.Status.GetErrorText(sc)
             Quit
         }
         Set sc = $SYSTEM.OBJ.Compile(production, "ck-d")
@@ -609,9 +618,33 @@ ClassMethod UpdateBusinessHostSettings(production As %String, hostName As %Strin
             Set out.error = "Saved but compile failed: " _ $system.Status.GetErrorText(sc)
             Quit
         }
+        ; If production is running, apply changes to the live runtime
+        Set isRunning = 0
+        Try {
+            Set st = ##class(Ens.Director).GetProductionStatus(.pname, .pstate)
+            If pname = production, pstate = 1 { Set isRunning = 1 }
+        } Catch {}
+        If isRunning {
+            Set sc = ##class(Ens.Director).UpdateProduction()
+            If 'sc {
+                Set out.ok = 1
+                Set out.updated = updates
+                Set out.warning = "Saved but UpdateProduction failed: " _ $system.Status.GetErrorText(sc) _ ". Restart the production to apply."
+            }
+        }
+        ; Verify persistence by re-opening
+        Set prod2 = ##class(Ens.Config.Production).%OpenId(production)
+        Set verifyItem = ""
+        For i=1:1:prod2.Items.Count() {
+            Set candidate = prod2.Items.GetAt(i)
+            If candidate.Name = hostName { Set verifyItem = candidate Quit }
+        }
+        Set settingsAfter = $select($isobject(verifyItem): verifyItem.Settings.Count(), 1: -1)
         Set out.ok = 1
         Set out.updated = updates
-        Set out.message = "Updated " _ updates.%Size() _ " setting(s) on host '" _ hostName _ "'."
+        Set out.settingsBefore = settingsBefore
+        Set out.settingsAfter = settingsAfter
+        Set out.message = "Updated " _ updates.%Size() _ " setting(s) on host '" _ hostName _ "'. Settings count: " _ settingsBefore _ " -> " _ settingsAfter _ "."
     } Catch ex {
         Set out.ok = 0
         Set out.error = $extract(ex.DisplayString(), 1, 400)
@@ -890,24 +923,48 @@ ClassMethod ListBusinessRules() As %DynamicObject
     Quit out
 }
 
-/// Create a routing rule class (Ens.Rule.Definition) with the supplied
-/// RuleDefinition XML. Routing rules drive EnsLib.MsgRouter.RoutingEngine
-/// hosts — the engine's BusinessRuleName setting points to the rule class,
-/// and the rule's <send transform="..." target="..."/> actions decide where
-/// each message goes and how it gets transformed.
+/// Create or update a routing rule class (Ens.Rule.Definition) with
+/// the supplied RuleDefinition XML. Idempotent: if the class already
+/// exists, its XData is replaced and recompiled.
+///
+/// Routing rules drive EnsLib.MsgRouter.RoutingEngine hosts — the
+/// engine's BusinessRuleName setting points to the rule class, and
+/// the rule's <send transform="..." target="..."/> actions decide
+/// where each message goes and how it gets transformed.
+///
+/// IMPORTANT - Transform placement: In IRIS, the transform is applied
+/// during the <send> action, NOT before rules evaluate. The rule
+/// conditions evaluate the INCOMING message. To transform ADT->ORU
+/// before sending to an operation, put the transform on the <send>:
+///   <send transform="My.Transform" target="My.Operation"/>
+///
+/// IMPORTANT - HL7 VDoc path syntax: Use CURLY BRACES for HL7 virtual
+/// document property access in conditions: HL7.{MSH:9.1} — NOT
+/// HL7.(MSH:9.1). Parentheses silently fail to resolve and the
+/// condition always evaluates false.
+///
+/// IMPORTANT - Boolean AND: Use &amp;&amp; (double ampersand) for AND,
+/// not the word AND. In XML attributes, escape as &amp;amp;&amp;amp;
 ///
 /// MUTATING — gated by the create_ prefix.
 ///
 /// name:    fully-qualified class name (e.g., "USER.Rule.ADTRouting").
 /// ruleXml: full <ruleDefinition>...</ruleDefinition> XML body.
 ///          See the routing-rules skill for the exact XML grammar.
-///          Example for a simple send-all rule:
-///          <ruleDefinition alias="" context="EnsLib.MsgRouter.RoutingEngine">
+///          Example — route ADT^A01 to an operation with transformation:
+///          <ruleDefinition alias="" context="EnsLib.HL7.MsgRouter.RoutingEngine">
 ///            <ruleSet name="">
-///              <rule name="SendAll">
+///              <rule name="RouteADT">
+///                <constraint name="msgClass" value="EnsLib.HL7.Message"/>
+///                <when condition="HL7.{MSH:9.1}=&quot;ADT&quot;&amp;&amp;HL7.{MSH:9.2}=&quot;A01&quot;">
+///                  <send transform="My.DTL" target="My.Operation"/>
+///                  <return/>
+///                </when>
+///              </rule>
+///              <rule name="DeadLetter">
 ///                <constraint name="msgClass" value="EnsLib.HL7.Message"/>
 ///                <when condition="1">
-///                  <send transform="My.DTL" target="My.Operation"/>
+///                  <send transform="" target="My.DeadLetter"/>
 ///                  <return/>
 ///                </when>
 ///              </rule>
@@ -932,12 +989,6 @@ ClassMethod CreateRoutingRule(name As %String, ruleXml As %String) As %DynamicOb
         Quit
     }
     Try {
-        If ##class(%Dictionary.ClassDefinition).%ExistsId(name) {
-            Set out.ok = 1
-            Set out.created = 0
-            Set out.error = "Class already exists: " _ name
-            Quit
-        }
         ; ---- Validate constraint names in the ruleXml ----
         ; Only source, msgClass, docCategory, docName are valid for VDocRuleAssist.
         ; Any other name causes <PROPERTY DOES NOT EXIST>RuntimeConstraintCheck
@@ -973,15 +1024,38 @@ ClassMethod CreateRoutingRule(name As %String, ruleXml As %String) As %DynamicOb
             Set out.error = "HL7 routing rules MUST use context=""EnsLib.HL7.MsgRouter.RoutingEngine"" (not the base EnsLib.MsgRouter.RoutingEngine). The base engine cannot evaluate HL7 virtual document properties."
             Quit
         }
-        Set cdef = ##class(%Dictionary.ClassDefinition).%New(name)
-        Set cdef.Super = "Ens.Rule.Definition"
-        Set cdef.ProcedureBlock = 1
-        ; RuleAssistClass tells the editor which helper to use for this
-        ; rule type.  VDocRoutingEngine rules need the VDoc assist.
-        Set param = ##class(%Dictionary.ParameterDefinition).%New()
-        Set param.Name = "RuleAssistClass"
-        Set param.Default = "EnsLib.MsgRouter.VDocRuleAssist"
-        Do cdef.Parameters.Insert(param)
+        ; ---- Validate HL7 VDoc expression syntax ----
+        ; HL7 virtual document paths in conditions MUST use curly braces:
+        ; HL7.{MSH:9.1} not HL7.(MSH:9.1). Parentheses silently fail to
+        ; resolve and the condition always evaluates false.
+        If ruleXml [ "HL7.(" {
+            Set out.ok = 0
+            Set out.created = 0
+            Set out.error = "HL7 virtual document paths must use curly braces, not parentheses. Use HL7.{MSH:9.1} instead of HL7.(MSH:9.1). Parentheses silently fail to resolve."
+            Quit
+        }
+        ; ---- Create or update the class ----
+        Set isUpdate = ##class(%Dictionary.ClassDefinition).%ExistsId(name)
+        If isUpdate {
+            ; Upsert: open existing class and replace its XData
+            Set cdef = ##class(%Dictionary.ClassDefinition).%OpenId(name)
+            ; Find and remove existing RuleDefinition XData
+            Set removeIdx = 0
+            For i=1:1:cdef.XDatas.Count() {
+                If cdef.XDatas.GetAt(i).Name = "RuleDefinition" { Set removeIdx = i Quit }
+            }
+            If removeIdx > 0 { Do cdef.XDatas.RemoveAt(removeIdx) }
+        } Else {
+            Set cdef = ##class(%Dictionary.ClassDefinition).%New(name)
+            Set cdef.Super = "Ens.Rule.Definition"
+            Set cdef.ProcedureBlock = 1
+            ; RuleAssistClass tells the editor which helper to use for this
+            ; rule type.  VDocRoutingEngine rules need the VDoc assist.
+            Set param = ##class(%Dictionary.ParameterDefinition).%New()
+            Set param.Name = "RuleAssistClass"
+            Set param.Default = "EnsLib.MsgRouter.VDocRuleAssist"
+            Do cdef.Parameters.Insert(param)
+        }
         Set xdata = ##class(%Dictionary.XDataDefinition).%New()
         Set xdata.Name = "RuleDefinition"
         Set xdata.XMLNamespace = "http://www.intersystems.com/rule"
@@ -1002,8 +1076,12 @@ ClassMethod CreateRoutingRule(name As %String, ruleXml As %String) As %DynamicOb
             Quit
         }
         Set out.ok = 1
-        Set out.created = 1
-        Set out.message = "Routing rule '" _ name _ "' created. Point a routing engine's BusinessRuleName to this class."
+        Set out.created = $select(isUpdate: 0, 1: 1)
+        If isUpdate {
+            Set out.message = "Routing rule '" _ name _ "' updated. XData replaced and recompiled."
+        } Else {
+            Set out.message = "Routing rule '" _ name _ "' created. Point a routing engine's BusinessRuleName to this class."
+        }
     } Catch ex {
         Set out.ok = 0
         Set out.error = $extract(ex.DisplayString(), 1, 400)
