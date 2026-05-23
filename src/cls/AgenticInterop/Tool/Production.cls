@@ -871,7 +871,11 @@ ClassMethod PostBuildValidation(production As %String, minutesBack As %Integer =
             Set reachedMap($zconvert(tgt, "U")) = 1
         }
         ; Compare reached hosts to production hosts (case-insensitive)
+        ; Dead-letter / fallback hosts are optional — their purpose is to
+        ; catch failures, so they may legitimately receive zero messages
+        ; during a clean test run. Mark them as info, not failures.
         Set unreached = ""
+        Set unreachedOptional = ""
         For i=1:1:hostCount {
             Set item = prod.Items.GetAt(i)
             Set hName = item.Name
@@ -879,12 +883,23 @@ ClassMethod PostBuildValidation(production As %String, minutesBack As %Integer =
             Set hClass = item.ClassName
             Set isService = (hClass [ "Service") || (hClass [ "service")
             If 'isService, '$data(reachedMap($zconvert(hName, "U"))) {
-                Set unreached = unreached _ $select(unreached="":"", 1:", ") _ hName
+                ; Check if this is a dead-letter/fallback host (optional in clean runs)
+                Set hNameUp = $zconvert(hName, "U")
+                Set isFallback = (hNameUp [ "DEADLETTER") || (hNameUp [ "DEAD-LETTER") || (hNameUp [ "DEAD_LETTER") || (hNameUp [ "DLQ") || (hNameUp [ "FALLBACK") || (hNameUp [ "ERROR")
+                If isFallback {
+                    Set unreachedOptional = unreachedOptional _ $select(unreachedOptional="":"", 1:", ") _ hName
+                } Else {
+                    Set unreached = unreached _ $select(unreached="":"", 1:", ") _ hName
+                }
             }
         }
         If unreached = "" {
             Set c6.pass = 1
-            Set c6.detail = "Messages reached all non-service hosts."
+            If unreachedOptional '= "" {
+                Set c6.detail = "Messages reached all required hosts. Optional (dead-letter/fallback) hosts with no traffic: " _ unreachedOptional _ " (expected in clean test runs)."
+            } Else {
+                Set c6.detail = "Messages reached all non-service hosts."
+            }
         } ElseIf totalMsgs = 0 {
             Set c6.pass = 0
             Set c6.detail = "No messages — cannot verify pipeline coverage."
@@ -892,6 +907,9 @@ ClassMethod PostBuildValidation(production As %String, minutesBack As %Integer =
         } Else {
             Set c6.pass = 0
             Set c6.detail = "These hosts received no messages: " _ unreached
+            If unreachedOptional '= "" {
+                Set c6.detail = c6.detail _ ". Optional (dead-letter/fallback) hosts also empty: " _ unreachedOptional
+            }
             Set allPass = 0
         }
         Do out.checks.%Push(c6)

@@ -944,8 +944,8 @@ ClassMethod BuildDTLXml(sourceDocType As %String, targetDocType As %String, mapp
                 ; Copy entire segment: source.{srcPath:} -> target.{tgtPath:}
                 Set srcSeg = m.sourceSegment
                 Set tgtSeg = m.targetSegment
-                Set srcPath = $get(srcMap(srcSeg))
-                Set tgtPath = $get(tgtMap(tgtSeg))
+                Set srcPath = ..%ResolveSegPath(srcSeg, .srcMap)
+                Set tgtPath = ..%ResolveSegPath(tgtSeg, .tgtMap)
                 If srcPath = "" { Do warnings.%Push("Source segment not found: " _ srcSeg) Continue }
                 If tgtPath = "" { Do warnings.%Push("Target segment not found: " _ tgtSeg) Continue }
                 Set xml = xml _ "<assign property='target.{" _ tgtPath _ "}' value='source.{" _ srcPath _ "}' action='set'/>"
@@ -956,8 +956,9 @@ ClassMethod BuildDTLXml(sourceDocType As %String, targetDocType As %String, mapp
                 Set tgtField = m.targetPath
                 Set val = m.value
                 ; Resolve the segment from the field path (e.g., "MSH:MessageType" -> segment "MSH")
+                ; Handles repetition indices: "OBX(1):SetIDOBX" -> seg "OBX(1)" -> bare "OBX"
                 Set tgtSeg = $piece(tgtField, ":", 1)
-                Set tgtSegPath = $get(tgtMap(tgtSeg))
+                Set tgtSegPath = ..%ResolveSegPath(tgtSeg, .tgtMap)
                 If tgtSegPath = "" { Do warnings.%Push("Target segment not found for: " _ tgtField) Continue }
                 Set fieldPart = $piece(tgtField, ":", 2, 99)
                 Set fullTgt = tgtSegPath _ ":" _ fieldPart
@@ -970,8 +971,8 @@ ClassMethod BuildDTLXml(sourceDocType As %String, targetDocType As %String, mapp
                 Set tgtField = m.targetPath
                 Set srcSeg = $piece(srcField, ":", 1)
                 Set tgtSeg = $piece(tgtField, ":", 1)
-                Set srcSegPath = $get(srcMap(srcSeg))
-                Set tgtSegPath = $get(tgtMap(tgtSeg))
+                Set srcSegPath = ..%ResolveSegPath(srcSeg, .srcMap)
+                Set tgtSegPath = ..%ResolveSegPath(tgtSeg, .tgtMap)
                 If srcSegPath = "" { Do warnings.%Push("Source segment not found for: " _ srcField) Continue }
                 If tgtSegPath = "" { Do warnings.%Push("Target segment not found for: " _ tgtField) Continue }
                 Set srcFieldPart = $piece(srcField, ":", 2, 99)
@@ -988,7 +989,7 @@ ClassMethod BuildDTLXml(sourceDocType As %String, targetDocType As %String, mapp
                 Set sep = m.separator
                 If sep = "" { Set sep = " " }
                 Set tgtSeg = $piece(tgtField, ":", 1)
-                Set tgtSegPath = $get(tgtMap(tgtSeg))
+                Set tgtSegPath = ..%ResolveSegPath(tgtSeg, .tgtMap)
                 If tgtSegPath = "" { Do warnings.%Push("Target segment not found for: " _ tgtField) Continue }
                 Set tgtFieldPart = $piece(tgtField, ":", 2, 99)
                 Set fullTgt = tgtSegPath _ ":" _ tgtFieldPart
@@ -997,7 +998,7 @@ ClassMethod BuildDTLXml(sourceDocType As %String, targetDocType As %String, mapp
                 Set pIter = parts.%GetIterator()
                 While pIter.%GetNext(.pi, .part) {
                     Set pSeg = $piece(part, ":", 1)
-                    Set pSegPath = $get(srcMap(pSeg))
+                    Set pSegPath = ..%ResolveSegPath(pSeg, .srcMap)
                     If pSegPath = "" { Do warnings.%Push("Source segment not found for concat part: " _ part) Continue }
                     Set pFieldPart = $piece(part, ":", 2, 99)
                     Set fullPart = pSegPath _ ":" _ pFieldPart
@@ -1052,6 +1053,53 @@ ClassMethod %BuildSegMap(category As %String, messageStructure As %String, ByRef
             Set segMap(segType) = dtlPath
         }
     }
+}
+
+/// Internal helper: resolve a segment name (possibly with a repetition
+/// index like "OBX(1)") against a segMap built by %BuildSegMap.
+///
+/// HL7 VDoc path rules:
+///   - Repetition indices go on the GROUP, not the segment.
+///   - "OBX(1)" means "the first OBXgrp's OBX segment" — the (1) is
+///     on OBXgrp, not on OBX itself.
+///   - segMap already stores the default path with (1) on all groups:
+///     segMap("OBX") = "PIDgrpgrp(1).ORCgrp(1).OBXgrp(1).OBX"
+///
+/// When the agent writes OBX(N) with N > 1, we adjust the parent group
+/// index (OBXgrp(1) -> OBXgrp(N)). For OBX(1) or bare OBX, we return
+/// the segMap path as-is (which already has (1) on the group).
+ClassMethod %ResolveSegPath(segName As %String, ByRef segMap) As %String [ Internal ]
+{
+    ; Direct lookup first (no repetition index)
+    If $data(segMap(segName)) Return segMap(segName)
+    ; Strip repetition index: "OBX(1)" -> bare="OBX", repIdx=1
+    Set bare = $piece(segName, "(", 1)
+    If bare = "" Return ""
+    If '$data(segMap(bare)) Return ""
+    Set fullPath = segMap(bare)
+    ; Extract the agent's repetition index (if any)
+    Set repIdx = 0
+    If segName [ "(" {
+        Set repStr = $piece($piece(segName, "(", 2), ")")
+        If $isvalidnum(repStr) Set repIdx = +repStr
+    }
+    ; If agent specified a non-default repetition (2+), adjust the
+    ; parent group's index. E.g., "OBX(2)" -> change OBXgrp(1) to
+    ; OBXgrp(2) in the full path. The parent group is the piece
+    ; immediately before the segment name in the dotted path.
+    If repIdx > 1 {
+        Set numParts = $length(fullPath, ".")
+        If numParts >= 2 {
+            ; Find the parent group part (one before the last segment)
+            Set parentIdx = numParts - 1
+            Set parentPart = $piece(fullPath, ".", parentIdx)
+            Set parentBare = $piece(parentPart, "(", 1)
+            ; Replace the parent group index
+            Set newParent = parentBare _ "(" _ repIdx _ ")"
+            Set $piece(fullPath, ".", parentIdx) = newParent
+        }
+    }
+    Return fullPath
 }
 
 /// Internal helper: extract an XML attribute value from a string.
