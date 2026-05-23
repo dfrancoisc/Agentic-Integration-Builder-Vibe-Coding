@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agentic Health Interop — Architecture</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+  :root {
+    --bg: #0C0B26;
+    --surface: #131237;
+    --surface-2: #1a1950;
+    --surface-3: #222068;
+    --teal: #00B2A9;
+    --teal-dim: #00867f;
+    --teal-glow: rgba(0,178,169,0.15);
+    --purple: #C5B4E2;
+    --purple-dim: #8b7aad;
+    --blue: #92C0E9;
+    --deep-blue: #2F2A95;
+    --coral: #FFA489;
+    --cyan: #54C8E8;
+    --white: #FFFFFF;
+    --text: #e0dff8;
+    --text-dim: #8887a8;
+    --text-muted: #5a5980;
+    --border: #2a2960;
+    --border-bright: #3a3980;
+    --glow-teal: 0 0 20px rgba(0,178,169,0.3);
+    --glow-purple: 0 0 20px rgba(197,180,226,0.2);
+    --glow-coral: 0 0 20px rgba(255,164,137,0.2);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    padding: 40px;
+    overflow-x: hidden;
+  }
+
+  /* ── Header ── */
+  .header {
+    text-align: center;
+    margin-bottom: 48px;
+  }
+  .header h1 {
+    font-size: 36px;
+    font-weight: 800;
+    color: var(--white);
+    letter-spacing: -0.5px;
+    margin-bottom: 8px;
+  }
+  .header h1 span { color: var(--teal); }
+  .header .subtitle {
+    font-size: 16px;
+    color: var(--text-dim);
+    font-weight: 400;
+  }
+  .header .subtitle em {
+    color: var(--teal);
+    font-style: normal;
+    font-weight: 500;
+  }
+
+  /* ── Main container ── */
+  .diagram {
+    max-width: 1200px;
+    margin: 0 auto;
+    position: relative;
+  }
+
+  /* ── Layer ── */
+  .layer {
+    margin-bottom: 2px;
+    position: relative;
+  }
+  .layer-label {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 12px;
+    padding-left: 4px;
+  }
+  .layer-label .number {
+    display: inline-block;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    text-align: center;
+    line-height: 18px;
+    font-size: 10px;
+    margin-right: 8px;
+    font-weight: 600;
+  }
+
+  /* ── Flow arrows between layers ── */
+  .flow-arrow {
+    text-align: center;
+    padding: 6px 0;
+    color: var(--border-bright);
+    font-size: 20px;
+    opacity: 0.5;
+    letter-spacing: 40px;
+  }
+
+  /* ── Cards grid ── */
+  .cards {
+    display: grid;
+    gap: 12px;
+    margin-bottom: 8px;
+  }
+  .cards-4 { grid-template-columns: repeat(4, 1fr); }
+  .cards-3 { grid-template-columns: repeat(3, 1fr); }
+  .cards-2 { grid-template-columns: 2fr 1fr; }
+  .cards-2-equal { grid-template-columns: 1fr 1fr; }
+  .cards-1 { grid-template-columns: 1fr; }
+
+  /* ── Card ── */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    transition: all 0.25s ease;
+    position: relative;
+    overflow: hidden;
+  }
+  .card:hover {
+    border-color: var(--border-bright);
+    transform: translateY(-1px);
+  }
+
+  /* card accent stripe */
+  .card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    border-radius: 12px 12px 0 0;
+  }
+  .card.accent-teal::before { background: var(--teal); }
+  .card.accent-purple::before { background: var(--purple); }
+  .card.accent-blue::before { background: var(--blue); }
+  .card.accent-coral::before { background: var(--coral); }
+  .card.accent-cyan::before { background: var(--cyan); }
+
+  /* primary card — full teal border */
+  .card.primary {
+    border-color: var(--teal);
+    box-shadow: var(--glow-teal);
+  }
+  .card.primary::before { background: var(--teal); height: 3px; }
+
+  .card .tag {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  .card .tag.teal { color: var(--teal); }
+  .card .tag.purple { color: var(--purple); }
+  .card .tag.blue { color: var(--blue); }
+  .card .tag.coral { color: var(--coral); }
+  .card .tag.cyan { color: var(--cyan); }
+
+  .card .title {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--white);
+    margin-bottom: 4px;
+    line-height: 1.2;
+  }
+  .card .title.mono {
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+    font-size: 16px;
+    font-weight: 600;
+  }
+
+  .card .desc {
+    font-size: 13px;
+    color: var(--text-dim);
+    line-height: 1.5;
+    margin-bottom: 0;
+  }
+  .card .desc strong {
+    color: var(--text);
+    font-weight: 600;
+  }
+
+  .card .stat {
+    font-size: 28px;
+    font-weight: 800;
+    color: var(--white);
+    line-height: 1;
+    margin-bottom: 2px;
+  }
+  .card .stat-label {
+    font-size: 12px;
+    color: var(--text-dim);
+    font-weight: 500;
+  }
+
+  .card .detail-list {
+    list-style: none;
+    margin-top: 8px;
+  }
+  .card .detail-list li {
+    font-size: 12px;
+    color: var(--text-dim);
+    padding: 2px 0;
+    border-bottom: 1px solid rgba(42,41,96,0.5);
+  }
+  .card .detail-list li:last-child { border: none; }
+  .card .detail-list li .k {
+    color: var(--text);
+    font-weight: 500;
+  }
+
+  .card .pill-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 8px;
+  }
+  .pill {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 3px 8px;
+    border-radius: 4px;
+    background: var(--surface-2);
+    color: var(--text-dim);
+    border: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  .pill.teal { color: var(--teal); border-color: var(--teal-dim); background: rgba(0,178,169,0.08); }
+  .pill.purple { color: var(--purple); border-color: var(--purple-dim); background: rgba(197,180,226,0.08); }
+  .pill.coral { color: var(--coral); border-color: rgba(255,164,137,0.3); background: rgba(255,164,137,0.06); }
+
+  /* ── Connector dots ── */
+  .connectors {
+    display: flex;
+    justify-content: center;
+    gap: 6px;
+    padding: 10px 0 14px;
+  }
+  .conn-dot {
+    width: 4px; height: 4px;
+    border-radius: 50%;
+    background: var(--border-bright);
+  }
+  .conn-line {
+    width: 2px;
+    height: 24px;
+    background: linear-gradient(to bottom, var(--border-bright), transparent);
+    margin: 0 auto;
+  }
+
+  /* ── Runtime bar ── */
+  .runtime-bar {
+    background: linear-gradient(135deg, var(--teal) 0%, #00867f 100%);
+    border-radius: 14px;
+    padding: 28px 32px;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+    margin-top: 4px;
+  }
+  .runtime-bar::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: repeating-linear-gradient(
+      90deg,
+      transparent, transparent 60px,
+      rgba(255,255,255,0.03) 60px, rgba(255,255,255,0.03) 61px
+    );
+  }
+  .runtime-bar .title {
+    font-size: 22px;
+    font-weight: 800;
+    color: var(--bg);
+    letter-spacing: 1px;
+    margin-bottom: 8px;
+    position: relative;
+  }
+  .runtime-bar .desc {
+    font-size: 13px;
+    color: rgba(12,11,38,0.7);
+    font-weight: 500;
+    line-height: 1.7;
+    position: relative;
+  }
+  .runtime-bar .ipm-badge {
+    display: inline-block;
+    margin-top: 12px;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--bg);
+    background: rgba(12,11,38,0.15);
+    padding: 4px 14px;
+    border-radius: 20px;
+    letter-spacing: 0.5px;
+    position: relative;
+  }
+
+  /* ── Policy dots ── */
+  .policy-grid {
+    display: grid;
+    gap: 10px;
+    margin-top: 10px;
+  }
+  .policy-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  .policy-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    margin-top: 5px;
+    flex-shrink: 0;
+  }
+  .policy-dot.green { background: #3fb950; box-shadow: 0 0 6px rgba(63,185,80,0.4); }
+  .policy-dot.amber { background: #d29922; box-shadow: 0 0 6px rgba(210,153,34,0.4); }
+  .policy-dot.red { background: #f85149; box-shadow: 0 0 6px rgba(248,81,73,0.4); }
+  .policy-item .label {
+    font-size: 13px;
+    color: var(--white);
+    font-weight: 600;
+    line-height: 1.2;
+  }
+  .policy-item .meta {
+    font-size: 11px;
+    color: var(--text-dim);
+    font-weight: 400;
+  }
+
+  /* ── Responsive ── */
+  @media (max-width: 900px) {
+    .cards-4, .cards-3, .cards-2 { grid-template-columns: 1fr 1fr; }
+    body { padding: 20px; }
+  }
+  @media (max-width: 600px) {
+    .cards-4, .cards-3, .cards-2, .cards-2-equal { grid-template-columns: 1fr; }
+    .header h1 { font-size: 24px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="diagram">
+
+  <!-- ────────────────────────────────────────────── HEADER -->
+  <div class="header">
+    <h1>Agentic Health <span>Interop</span> Framework</h1>
+    <div class="subtitle">Five layers. Every block is shipping code.  <em>IRIS for Health 2026.2</em></div>
+  </div>
+
+  <!-- ════════════════════════════════════════════ LAYER 1 — USERS -->
+  <div class="layer">
+    <div class="layer-label"><span class="number">1</span> Who uses it</div>
+    <div class="cards cards-4">
+
+      <div class="card primary accent-teal">
+        <div class="tag teal">Primary persona</div>
+        <div class="title">Interface Engineer</div>
+        <div class="desc">Builds complete productions through natural conversation. No ObjectScript required.</div>
+      </div>
+
+      <div class="card accent-purple">
+        <div class="tag purple">Ops</div>
+        <div class="title">Operator</div>
+        <div class="desc">Monitors event logs, triages errors, reviews message traces.</div>
+      </div>
+
+      <div class="card accent-blue">
+        <div class="tag blue">Config</div>
+        <div class="title">AI Hub Admin</div>
+        <div class="desc">Configures agents, MCPs, policies, and LLM connections.</div>
+      </div>
+
+      <div class="card accent-coral">
+        <div class="tag coral">Extend</div>
+        <div class="title">Developer</div>
+        <div class="desc">Authors new tools, skills, catalogs, and agent classes.</div>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="connectors"><div class="conn-dot"></div><div class="conn-dot"></div><div class="conn-dot"></div></div>
+
+  <!-- ════════════════════════════════════════════ LAYER 2 — INTERFACE -->
+  <div class="layer">
+    <div class="layer-label"><span class="number">2</span> Interface</div>
+    <div class="cards cards-2">
+
+      <div class="card primary accent-teal">
+        <div class="tag teal">Chat UI &middot; embedded in Management Portal</div>
+        <div class="title">Conversational Copilot</div>
+        <div class="desc">
+          Streaming SSE responses &middot; tool-call approval cards &middot; starter prompts &middot; session history sidebar &middot; split-view with Interop Editor
+        </div>
+        <div class="pill-row">
+          <span class="pill teal">SSE streaming</span>
+          <span class="pill teal">approval gate</span>
+          <span class="pill teal">Observer</span>
+          <span class="pill">React 18</span>
+        </div>
+      </div>
+
+      <div class="card accent-purple">
+        <div class="tag purple">Admin UI</div>
+        <div class="title">Configuration Editor</div>
+        <div class="desc">
+          CRUD for every entity: Agents, MCPs, ToolSets, Tools, Skills, Connections.
+        </div>
+        <div class="pill-row">
+          <span class="pill purple">overlay editor</span>
+          <span class="pill purple">dry-run</span>
+          <span class="pill">source viewer</span>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="connectors"><div class="conn-dot"></div><div class="conn-dot"></div><div class="conn-dot"></div></div>
+
+  <!-- ════════════════════════════════════════════ LAYER 3 — AGENT BRAIN -->
+  <div class="layer">
+    <div class="layer-label"><span class="number">3</span> Agent brain &middot; %AI Framework</div>
+    <div class="cards cards-3">
+
+      <div class="card primary accent-teal">
+        <div class="tag teal">Planner agent</div>
+        <div class="title mono">Agent.HealthInterop</div>
+        <div class="desc">
+          Plans &rarr; researches &rarr; builds &rarr; validates.<br>
+          Calls <strong>real IRIS APIs</strong>, not string templates.<br>
+          Multi-iteration loop with fabrication guard.
+        </div>
+        <ul class="detail-list">
+          <li><span class="k">Max iterations</span> &mdash; 25</li>
+          <li><span class="k">Deadline</span> &mdash; 300s wall-clock</li>
+          <li><span class="k">Token budget</span> &mdash; 100K per turn</li>
+        </ul>
+      </div>
+
+      <div class="card accent-coral">
+        <div class="tag coral">Policies &middot; safe by design</div>
+        <div class="title">Guardrails</div>
+        <div class="policy-grid">
+          <div class="policy-item">
+            <div class="policy-dot green"></div>
+            <div><div class="label">ConfirmationGate</div><div class="meta">Pauses every mutation for user approval</div></div>
+          </div>
+          <div class="policy-item">
+            <div class="policy-dot amber"></div>
+            <div><div class="label">ToolFilter</div><div class="meta">Strips FileSystem, SQL, Shell from LLM catalog</div></div>
+          </div>
+          <div class="policy-item">
+            <div class="policy-dot red"></div>
+            <div><div class="label">Monitor</div><div class="meta">60s deadline, 50K token budget, rate-limit retry</div></div>
+          </div>
+          <div class="policy-item">
+            <div class="policy-dot green"></div>
+            <div><div class="label">Fabrication Guard</div><div class="meta">Detects claims without tool calls, forces retry</div></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card accent-blue">
+        <div class="tag blue">LLM Connection Manager</div>
+        <div class="title">Multi-Provider</div>
+        <div class="desc">
+          Hot-swap between providers.<br>
+          Semaphore health check on every connection.
+        </div>
+        <div class="pill-row">
+          <span class="pill">Anthropic</span>
+          <span class="pill">AWS Bedrock</span>
+          <span class="pill">OpenAI</span>
+          <span class="pill">Azure</span>
+          <span class="pill">NIM</span>
+        </div>
+        <ul class="detail-list" style="margin-top:12px">
+          <li><span class="k">Secrets</span> &mdash; IRIS Secured Wallet</li>
+          <li><span class="k">Keys</span> &mdash; never returned by REST</li>
+        </ul>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="connectors"><div class="conn-dot"></div><div class="conn-dot"></div><div class="conn-dot"></div></div>
+
+  <!-- ════════════════════════════════════════════ LAYER 4 — GROUNDING -->
+  <div class="layer">
+    <div class="layer-label"><span class="number">4</span> Grounding &middot; how the agent knows things</div>
+    <div class="cards cards-3">
+
+      <div class="card accent-teal">
+        <div class="tag teal">Data catalogs &middot; RAG</div>
+        <div class="stat">222</div>
+        <div class="stat-label">indexed IRIS classes</div>
+        <ul class="detail-list">
+          <li><span class="k">search_ens</span> &mdash; 164 Ens.* hosts &amp; adapters</li>
+          <li><span class="k">search_hs</span> &mdash; 58 HS.* transforms &amp; mappers</li>
+          <li><span class="k">Embeddings</span> &mdash; FastEmbed 384-d, HNSW index</li>
+        </ul>
+      </div>
+
+      <div class="card accent-purple">
+        <div class="tag purple">Domain skills &middot; on-demand</div>
+        <div class="stat">12</div>
+        <div class="stat-label">specialist skills</div>
+        <div class="pill-row">
+          <span class="pill purple">Productions</span>
+          <span class="pill purple">DTL</span>
+          <span class="pill purple">BPL</span>
+          <span class="pill purple">RoutingRules</span>
+          <span class="pill purple">HL7v2</span>
+          <span class="pill purple">FHIR R4</span>
+          <span class="pill purple">SDA</span>
+          <span class="pill purple">X12</span>
+          <span class="pill purple">CDA</span>
+          <span class="pill purple">Adapters</span>
+          <span class="pill purple">ESB</span>
+          <span class="pill purple">REST</span>
+        </div>
+        <div class="desc" style="margin-top:10px">Loaded only when the agent needs the domain.</div>
+      </div>
+
+      <div class="card accent-coral">
+        <div class="tag coral">Tools &middot; 4 MCP servers</div>
+        <div class="stat">42</div>
+        <div class="stat-label">tool methods</div>
+        <ul class="detail-list">
+          <li><span class="k">Production</span> &mdash; CRUD hosts, settings, rules</li>
+          <li><span class="k">Transform</span> &mdash; DTL/BPL create, compile, dry-run</li>
+          <li><span class="k">Testing</span> &mdash; HL7/FHIR send, validate, compare</li>
+          <li><span class="k">Catalog</span> &mdash; class describe, namespace, glossary</li>
+        </ul>
+        <div class="desc" style="margin-top:8px">
+          <strong>+ 1,538</strong> pre-computed field mappings
+        </div>
+        <div class="pill-row">
+          <span class="pill coral">real IRIS APIs</span>
+          <span class="pill coral">in-process</span>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="connectors"><div class="conn-dot"></div><div class="conn-dot"></div><div class="conn-dot"></div></div>
+
+  <!-- ════════════════════════════════════════════ LAYER 5 — RUNTIME -->
+  <div class="layer">
+    <div class="layer-label"><span class="number">5</span> Runtime</div>
+    <div class="runtime-bar">
+      <div class="title">IRIS for Health 2026.2 &middot; Native</div>
+      <div class="desc">
+        Productions engine &middot; DTL / BPL &middot; HL7 / FHIR schemas &middot; %Dictionary &middot; event log &middot; message trace<br>
+        FastEmbed &middot; HNSW vector index &middot; Secured Wallet &middot; roles &middot; audit &middot; CSP gateway
+      </div>
+      <div class="ipm-badge">One IPM package &middot; installs into any IRIS for Health 2026.2 namespace</div>
+    </div>
+  </div>
+
+</div>
+
+</body>
+</html>
