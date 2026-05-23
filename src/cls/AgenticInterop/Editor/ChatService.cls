@@ -280,40 +280,50 @@ ClassMethod ChatStream(pResponse As %CSP.Response, pBodyStream) As %Status
     Set start = $zhorolog
     Set stage = "connection"
     Try {
+        ; ── Observer: resolving LLM connection ──
+        Do ..WriteLiveFeed("trace", {"msg":"Resolving LLM connection..."})
         Set provider = ##class(AgenticInterop.Connections).GetProvider(connectionName)
         Set effectiveName = $S(connectionName="":..ResolvedDefaultName(),1:connectionName)
         Set connObj = ##class(AgenticInterop.Connections).Get(effectiveName)
+        Set connModel = ""
+        If $isobject(connObj) && (connObj.model '= "") Set connModel = connObj.model
+        Set connEv = {}
+        Set connEv.msg = "LLM Provider resolved"
+        Set connEv.connection = effectiveName
+        Set connEv.model = connModel
+        Set connEv.provider = $S($isobject(connObj):connObj.provider, 1:"unknown")
+        Do ..WriteLiveFeed("provider", connEv)
+
+        ; ── Observer: building agent ──
         Set stage = "build"
+        Do ..WriteLiveFeed("trace", {"msg":("Building agent: "_agentClass)})
         Set tSC = ##class(AgenticInterop.Agent.Manager).Build(provider, .agent, agentClass)
         If 'tSC {
             Do ..SSEEvent("error", {"error":($system.Status.GetErrorText(tSC)),"stage":(stage)})
             Quit
         }
-        If $isobject(connObj) && (connObj.model '= "") {
-            Set agent.Model = connObj.model
+        If connModel '= "" {
+            Set agent.Model = connModel
         }
+
+        ; ── Observer: creating session ──
         Set stage = "session"
+        Do ..WriteLiveFeed("trace", {"msg":"Creating LLM session (max_tokens=8192)..."})
         Set sessionConfig = {}
         Do sessionConfig.%Set("max_tokens", 8192, "number")
         Set session = agent.CreateSession(sessionConfig)
         Set turnsReplayed = ..ReplayHistory(session, history)
+        Set readyEv = {}
+        Set readyEv.msg = "Session ready"
+        Set readyEv.turnsReplayed = turnsReplayed
+        Do ..WriteLiveFeed("trace", readyEv)
         Do ..SSEEvent("status", {"phase":"ready","turnsReplayed":(turnsReplayed)})
         Set stage = "run"
-        // Custom run loop — mirrors %AI.Agent.Run() but passes
-        // "Continue." instead of "" on iteration 2+. The framework's
-        // Run() uses $SELECT(iteration=1:goal, 1:"") which causes
-        // Bedrock to reject the empty text content block. This custom
-        // loop is otherwise identical: calls Chat() per iteration,
-        // fires Monitor callbacks, checks HasToolCalls() to continue.
-        //
-        // The Monitor emits SSE keepalive comments on every iteration
-        // (prevents CSP gateway timeout during tool execution) plus
-        // real-time tool_start/tool_result events so tool cards appear
-        // progressively in the UI.
         Set maxIter = +agent.MaxIterations
         If maxIter < 1 { Set maxIter = 25 }
         Set monitor = ##class(AgenticInterop.Agent.Monitor).%New(300, 100000)
         Set monitor.SSEEnabled = 1
+        Do ..WriteLiveFeed("trace", {"msg":("Starting run loop (max "_maxIter_" iterations, deadline 300s, budget 100k tokens)")})
         Set response = ""
         Set iteration = 0
         Set fabricationRetried = 0
@@ -321,23 +331,42 @@ ClassMethod ChatStream(pResponse As %CSP.Response, pBodyStream) As %Status
             Set iteration = iteration + 1
             Do monitor.OnIterationStart(iteration, maxIter, session)
             Set input = $select(iteration=1:message, 1:"Continue. Call more tools if needed, or write your completion report if all work is done.")
+            ; ── Observer: calling LLM ──
+            Set iterEv = {}
+            Set iterEv.msg = "Calling Bedrock..."
+            Set iterEv.iteration = iteration
+            Set iterEv.maxIterations = maxIter
+            Set iterEv.model = agent.Model
+            Do ..WriteLiveFeed("llm_call", iterEv)
+            Set chatStart = $zhorolog
             Set response = ..ChatWithRetry(agent, session, input, monitor)
+            Set chatMs = $fnumber(($zhorolog - chatStart) * 1000, "", 0)
+            ; ── Observer: LLM response received ──
+            Set respEv = {}
+            Set respEv.msg = "Bedrock response received"
+            Set respEv.latencyMs = chatMs
+            Set respEv.iteration = iteration
+            Try {
+                Set u = response.Usage
+                If $isobject(u) {
+                    Set respEv.inputTokens = +u."input_tokens"
+                    Set respEv.outputTokens = +u."output_tokens"
+                }
+            } Catch {}
+            Try { Set respEv.hasToolCalls = response.HasToolCalls() } Catch { Set respEv.hasToolCalls = 0 }
+            Do ..WriteLiveFeed("llm_response", respEv)
             Do monitor.OnIterationComplete(iteration, response, session)
             If '$isobject(response) Quit
             Try { Set hasCalls = response.HasToolCalls() } Catch { Set hasCalls = 0 }
             If 'hasCalls {
-                ; FABRICATION GUARD: if the model returned text-only on the
-                ; FIRST iteration AND the text contains build/create claims
-                ; but NO tools were called, this is fabrication. Force the
-                ; model to try again with an explicit instruction to use tools.
-                ; Only retry once to avoid infinite loops.
                 If iteration = 1, 'fabricationRetried {
                     Set checkText = ..ExtractText(response)
                     If ..LooksLikeFabrication(checkText, monitor.ToolCallTrace) {
+                        Do ..WriteLiveFeed("trace", {"msg":"FABRICATION GUARD: model claimed results without calling tools, forcing retry"})
                         Set fabricationRetried = 1
-                        ; Don't break out of loop — continue with a corrective message
                         Set iteration = iteration + 1
                         Do monitor.OnIterationStart(iteration, maxIter, session)
+                        Do ..WriteLiveFeed("llm_call", {"msg":"Calling Bedrock (fabrication retry)...","iteration":(iteration)})
                         Set response = ..ChatWithRetry(agent, session, "STOP. You just wrote text claiming you built something, but you did NOT call any tools. Text is not action. You MUST call CreateProduction, AddBusinessHost, and the other tools to actually build the production. Do it now — call the tools.", monitor)
                         Do monitor.OnIterationComplete(iteration, response, session)
                         If '$isobject(response) Quit
@@ -346,21 +375,14 @@ ClassMethod ChatStream(pResponse As %CSP.Response, pBodyStream) As %Status
                         Continue
                     }
                 }
+                Do ..WriteLiveFeed("trace", {"msg":("No more tool calls after iteration "_iteration_" — model is done")})
                 Quit
             }
-            ; Rate-limit cooldown: pause between iterations to avoid
-            ; provider TPM (tokens-per-minute) throttling. Each Chat()
-            ; sends full system prompt + skills + tools + history
-            ; (~40k+ tokens). 10 calls in 50s exceeds Bedrock's TPM
-            ; quota. Cooldown scales with depth: later iterations carry
-            ; heavier history. Skip iteration 1 (user just typed —
-            ; don't add latency to the first response).
             If iteration > 1 {
                 Set cooldownSecs = $select(iteration > 5: 5, 1: 3)
+                Do ..WriteLiveFeed("trace", {"msg":("Rate-limit cooldown "_cooldownSecs_"s before next iteration...")})
                 If monitor.SSEEnabled {
-                    Set ev = {}
-                    Set ev.message = "Working... (pacing to stay within provider rate limits)"
-                    Do ..SSEEvent("status", ev)
+                    Do ..SSEEvent("status", {"message":"Working... (pacing to stay within provider rate limits)"})
                 }
                 Hang cooldownSecs
             }

@@ -22,119 +22,122 @@ ClassMethod Build(pProvider As %AI.Provider, Output pAgent As %AI.Agent, pAgentC
     Set tSC = $$$OK
     Try {
         // 1. Instantiate the declarative agent class.
+        Do ..Trace("Instantiating agent class: " _ pAgentClass)
         Set pAgent = $classmethod(pAgentClass, "%New", pProvider)
         Set tSC = pAgent.%Init()
         If 'tSC { Quit }
+        Do ..Trace("Agent initialized — auto-discovered all %AI.Tool subclasses")
 
         // 1b. Strip framework waste tools from the LLM catalog.
-        //     %Init() auto-discovers EVERY non-abstract %AI.Tool subclass
-        //     in the namespace, including %AI.Tools.FileSystem, SQL, and
-        //     ShellTools (~2,100 tokens) plus the Skill.Base abstract
-        //     base class. ToolFilter.%Resolve removes them before each
-        //     LLM request so the model never sees them.
         Set filter = ##class(AgenticInterop.Policy.ToolFilter).%New()
         Do pAgent.ToolManager.SetDiscoveryPolicy(filter)
+        Do ..Trace("Tool filter applied — stripped framework built-in tools (FileSystem, SQL, Shell)")
 
-        // 1c. Apply Agent overlay overrides for runtime fields the
-        //     framework consumes via OREF properties (system prompt,
-        //     temperature). MCPS / SKILLS use Overlay accessors below.
-        //     If no override row exists, the helpers fall through to
-        //     the compiled class defaults.
+        // 1c. Apply Agent overlay overrides.
         Set effSysPrompt = ##class(AgenticInterop.Editor.Overlay).GetEffectiveSystemPrompt(pAgentClass)
         If effSysPrompt '= "" { Set pAgent.SystemPrompt = effSysPrompt }
         Set effTemp = ##class(AgenticInterop.Editor.Overlay).GetEffectiveTemperature(pAgentClass)
         If effTemp '= "" {
             Try { Set pAgent.Temperature = +effTemp } Catch  {}
         }
-        // MaxIterations: the %AI.Agent base class has a PROPERTY
-        // MaxIterations (InitialExpression=10) that StreamChat uses
-        // internally. The class PARAMETER MAXITERATIONS is separate
-        // and not wired to the property. We must explicitly push the
-        // effective value onto the OREF so StreamChat respects it.
         Set effMaxIter = ##class(AgenticInterop.Editor.Overlay).GetEffectiveMaxIterations(pAgentClass)
         If effMaxIter '= "" {
             Try { Set pAgent.MaxIterations = +effMaxIter } Catch  {}
         }
 
-        // 2. Register tools for EXECUTION — two modes controlled by the
-        //    TOOLBINDING parameter (UI-editable via the Agent overlay).
-        //
-        //    "mcp"    (default) — Agent -> MCP Servers -> ToolSets -> Tools.
-        //             Reads the MCPS parameter, calls RegisterToAgent on each
-        //             MCP class, which reads its own TOOLSETS parameter and
-        //             calls UseToolSet on each ToolSet wrapper class. The
-        //             ToolSet wrapper includes the underlying Tool class via
-        //             XData <Include>. This is the architecturally correct
-        //             chain: tool discovery flows through the MCP layer.
-        //
-        //    "bypass" — Agent -> Tools (direct, no MCP indirection).
-        //             Calls UseToolSet directly on each Tool class. Faster
-        //             (skips two levels of indirection) but bypasses the MCP
-        //             and ToolSet metadata layers entirely. Use only when
-        //             debugging or when MCP routing causes issues.
-        //
-        //    In both modes, %Init() (step 1) has already auto-discovered
-        //    every %AI.Tool subclass for the LLM catalog. UseToolSet
-        //    registers the methods in the executor (making them callable).
-        //    The DiscoveryPolicy (step 1b) deduplicates the catalog so the
-        //    LLM sees each tool exactly once regardless of binding mode.
+        // 2. Register tools via MCP chain or bypass.
         Set bindingMode = ##class(AgenticInterop.Editor.Overlay).GetEffectiveToolBinding(pAgentClass)
         If bindingMode = "" { Set bindingMode = "mcp" }
 
         If bindingMode = "mcp" {
-            ; ── Agent -> MCP Servers -> ToolSets -> Tools ──
             Set mcps = ##class(AgenticInterop.Editor.Overlay).GetEffectiveMCPS(pAgentClass)
+            Do ..Trace("Registering MCP servers: " _ mcps)
             For i=1:1:$LENGTH(mcps, ",") {
                 Set mcpClass = $ZSTRIP($PIECE(mcps, ",", i), "<>W")
                 If mcpClass = "" { Continue }
+                ; ── Observer: each MCP server ──
+                Set mcpEv = {}
+                Set mcpEv.msg = "Registering MCP: " _ mcpClass
+                Set mcpEv.mcp = mcpClass
+                ; Get the ToolSets this MCP exposes
+                Try {
+                    Set mcpToolsets = $parameter(mcpClass, "TOOLSETS")
+                    Set mcpEv.toolsets = mcpToolsets
+                } Catch {}
+                Do ..LiveFeedEvent("mcp", mcpEv)
                 Set tSC = $classmethod(mcpClass, "RegisterToAgent", pAgent)
                 If 'tSC { Quit }
             }
         } Else {
-            ; ── Bypass: Agent -> Tools (direct) ──
+            Do ..Trace("Bypass mode — registering tools directly (no MCP)")
             Set tools = "AgenticInterop.Tool.Production,AgenticInterop.Tool.Transform,AgenticInterop.Tool.Testing,AgenticInterop.Tool.Catalog,AgenticInterop.Tool.Monitoring"
             For i=1:1:$LENGTH(tools, ",") {
                 Set cls = $PIECE(tools, ",", i)
+                Do ..Trace("Registering ToolSet: " _ cls)
                 Set tSC = pAgent.UseToolSet(cls)
                 If 'tSC { Quit }
             }
         }
         If 'tSC { Quit }
 
-        // 3. Register Skills (overlay-aware).
-        Set tSC = ##class(AgenticInterop.Agent.SkillLoader).LoadSkills(pAgent, ##class(AgenticInterop.Editor.Overlay).GetEffectiveSKILLS(pAgentClass))
+        // 3. Register Skills.
+        Set skillsCSV = ##class(AgenticInterop.Editor.Overlay).GetEffectiveSKILLS(pAgentClass)
+        Do ..Trace("Loading skills...")
+        Set skillCount = 0
+        For si=1:1:$length(skillsCSV, ",") {
+            Set sName = $zstrip($piece(skillsCSV, ",", si), "<>W")
+            If sName = "" Continue
+            Set skillCount = skillCount + 1
+            ; short name: last piece of class name
+            Set shortName = $piece(sName, ".", $length(sName, "."))
+            Set skillEv = {}
+            Set skillEv.msg = "Loading skill: " _ shortName
+            Set skillEv.class = sName
+            Do ..LiveFeedEvent("skill", skillEv)
+        }
+        Set tSC = ##class(AgenticInterop.Agent.SkillLoader).LoadSkills(pAgent, skillsCSV)
         If 'tSC { Quit }
+        Do ..Trace(skillCount _ " skills loaded into agent system prompt")
 
-        // 4. Phase 4 confirmation gate. Every tool call funnels through
-        //    %CanExecute on this policy; mutating tools (start_*,
-        //    delete_*, etc., or definitions with requires_confirmation:
-        //    true) are denied with a structured error the chat surface
-        //    can render as an Approve / Reject prompt. Pre-approved
-        //    tokens (set by ChatService when the user has already
-        //    approved a specific call this turn) bypass the gate.
-        //
-        //    IMPORTANT: use SetAuthPolicy() — the explicit method —
-        //    NOT direct property assignment. The auto-generated
-        //    AuthPolicySet only stores the OREF on the ObjectScript
-        //    side; SetAuthPolicy also registers the policy with the
-        //    Rust-side ToolMgr via %token, which is what actually
-        //    causes %CanExecute to fire on each call. The reference
-        //    repo's comment ("framework bypasses it") was about a
-        //    different orchestrator pattern, not this method.
+        // 4. Confirmation gate.
         Set policy = ##class(AgenticInterop.Policy.ConfirmationGate).%New()
         Set policy.ApprovedTokens = $get(%agenticApprovedTokens, "")
         Do pAgent.ToolManager.SetAuthPolicy(policy)
+        Do ..Trace("Confirmation gate attached")
 
-        // 5. Phase 5 catalog search. Attaches search_ens / search_hs
-        //    KnowledgeBase tools when their underlying tables are
-        //    populated. If the user hasn't built the catalogs yet, no
-        //    tool fires and chat continues without that input.
+        // 5. Catalog search (RAG knowledge bases).
         Do ##class(AgenticInterop.Catalog.Attach).ToAgent(pAgent)
+        Do ..Trace("RAG catalogs attached (search_ens, search_hs)")
+
+        Do ..Trace("Agent build complete")
     } Catch ex {
         Set tSC = ex.AsStatus()
         Set pAgent = $$$NULLOREF
     }
     Quit tSC
+}
+
+/// Write a trace event to the LiveFeed global (observer terminal).
+/// Safe to call from any context — silently no-ops if no session is active.
+ClassMethod Trace(pMsg As %String) [ Internal ]
+{
+    Do ..LiveFeedEvent("trace", {"msg":(pMsg)})
+}
+
+/// Write a typed event to the LiveFeed global. Shared helper for
+/// Manager.Build and other non-ChatService code paths.
+ClassMethod LiveFeedEvent(pType As %String, pData As %DynamicObject) [ Internal ]
+{
+    Set sid = $get(%agenticChatSessionId)
+    If sid = "" Quit
+    Set entry = {}
+    Set entry.type = pType
+    Set entry.data = pData
+    Set entry.ts = $zdatetime($horolog, 3, 1)
+    Set entry.elapsed = $fnumber($zhorolog - $get(%agenticChatStart, $zhorolog), "", 1)
+    Set seq = $increment(^AgInt.LiveFeed(sid))
+    Set ^AgInt.LiveFeed(sid, seq) = entry.%ToJSON()
+    Set ^AgInt.LiveFeed("active", sid) = $horolog
 }
 
 }

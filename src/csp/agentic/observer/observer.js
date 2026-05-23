@@ -1,24 +1,14 @@
 /* ============================================================
-   Observer — Behind the Scenes live feed
+   Observer — Terminal-style behind-the-scenes view
 
-   Demo flow:
-   1. Open this page -> "Waiting for session..."
-   2. Open chatbot in another tab, send a message
-   3. Observer lights up with real-time steps as the agent works
-   4. Session ends -> completion banner
-   5. Click "Clear" -> resets, waits for the next session
-
-   Connection model:
-   - Poll /observer/sessions every 2s looking for an ACTIVE session
-   - When found, stream /observer/stream?session=<id>
-   - When stream ends (session_end), show completion, stop polling
-   - "Clear" button: purge server data, reset UI, resume polling
+   Shows every internal step: provider resolution, MCP registration,
+   skill loading, LLM calls to Bedrock, tool dispatch, results,
+   cooldowns, fabrication guards — all as a scrolling terminal log.
    ============================================================ */
 
 (function () {
   'use strict';
 
-  // --- DOM refs ---
   var flow       = document.getElementById('flow');
   var emptyState = document.getElementById('empty-state');
   var statusPill = document.getElementById('status-pill');
@@ -28,20 +18,14 @@
   var tokensCount= document.getElementById('tokens-count');
   var clearBtn   = document.getElementById('btn-clear');
 
-  // --- State ---
-  var stepNum       = 0;
   var toolCount     = 0;
-  var tokenCount    = 0;
+  var tokenTotal    = 0;
   var startTime     = null;
   var timerHandle   = null;
-  var currentPhase  = null;
-  var phaseEl       = null;
-  var listEl        = null;
   var sessionEnded  = false;
   var pollHandle    = null;
-  var abortCtrl     = null;    // AbortController for the current stream fetch
-  var connectedSid  = null;    // session id we are currently streaming
-  var seenSessions  = {};      // sessions we already showed (skip on next poll)
+  var abortCtrl     = null;
+  var seenSessions  = {};
   var auth          = null;
 
   // --- Auth ---
@@ -59,33 +43,307 @@
     return auth;
   }
 
-  // --- Timer ---
   function startTimer() {
     if (timerHandle) return;
     startTime = Date.now();
     timerHandle = setInterval(function () {
-      var elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-      timerVal.textContent = elapsed + 's';
+      timerVal.textContent = ((Date.now() - startTime) / 1000).toFixed(1) + 's';
     }, 100);
   }
-
   function stopTimer() {
     if (timerHandle) { clearInterval(timerHandle); timerHandle = null; }
   }
 
   // ============================================================
-  //  RESET / CLEAR
+  //  TERMINAL OUTPUT
   // ============================================================
+
+  function log(type, msg, detail) {
+    if (emptyState) emptyState.style.display = 'none';
+    if (!startTime) startTimer();
+
+    var elapsed = startTime ? ((Date.now() - startTime) / 1000).toFixed(1) : '0.0';
+
+    var line = document.createElement('div');
+    line.className = 'log-line';
+
+    var ts = document.createElement('span');
+    ts.className = 'log-ts';
+    ts.textContent = '+' + padLeft(elapsed, 6) + 's';
+
+    var badge = document.createElement('span');
+    badge.className = 'log-badge ' + type;
+    badge.textContent = badgeText(type);
+
+    var msgEl = document.createElement('span');
+    msgEl.className = 'log-msg';
+    msgEl.innerHTML = msg;
+
+    line.appendChild(ts);
+    line.appendChild(badge);
+    line.appendChild(msgEl);
+    flow.appendChild(line);
+
+    if (detail) {
+      var detEl = document.createElement('div');
+      detEl.className = 'log-detail';
+      var truncated = detail.length > 500 ? detail.substring(0, 500) + '...' : detail;
+      detEl.textContent = truncated;
+      if (detail.length > 500) {
+        detEl.addEventListener('click', function () {
+          if (detEl.classList.contains('expanded')) {
+            detEl.textContent = truncated;
+            detEl.classList.remove('expanded');
+          } else {
+            detEl.textContent = detail;
+            detEl.classList.add('expanded');
+          }
+        });
+      }
+      flow.appendChild(detEl);
+    }
+
+    line.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  }
+
+  function separator() {
+    var hr = document.createElement('hr');
+    hr.className = 'log-separator';
+    flow.appendChild(hr);
+  }
+
+  function badgeText(type) {
+    var map = {
+      trace: 'TRACE', provider: 'PROVIDER', mcp: 'MCP', skill: 'SKILL',
+      llm_call: 'LLM CALL', llm_response: 'LLM RESP',
+      tool_start: 'TOOL', tool_result: 'RESULT', tool_error: 'TOOL ERR',
+      status: 'STATUS', token: 'RESPONSE', error: 'ERROR',
+      session_start: 'SESSION', session_end: 'SESSION', done: 'DONE',
+      tool_confirm: 'APPROVE'
+    };
+    return map[type] || type.toUpperCase();
+  }
+
+  function padLeft(s, len) {
+    s = String(s);
+    while (s.length < len) s = ' ' + s;
+    return s;
+  }
+
+  function esc(s) {
+    var d = document.createElement('span');
+    d.textContent = s;
+    return d.innerHTML;
+  }
+
+  function fmtNum(n) {
+    return n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n);
+  }
+
+  function summarize(val, max) {
+    if (!val) return '';
+    try {
+      return typeof val === 'string' ? val.substring(0, max || 500) : JSON.stringify(val, null, 2).substring(0, max || 500);
+    } catch (e) { return String(val).substring(0, max || 500); }
+  }
+
+  // ============================================================
+  //  RENDER EVENTS
+  // ============================================================
+
+  function renderEvent(ev) {
+    if (!ev || !ev.type) return;
+    if (ev.type === 'timeout') return;
+
+    var d = ev.data || {};
+    var type = ev.type;
+
+    // --- session_start ---
+    if (type === 'session_start') {
+      setStatus('connected', 'Live');
+      log('session_start',
+        '<span class="hi-ok">Session started</span> ' +
+        '<span class="hi-dim">user=</span><span class="hi-val">' + esc(d.user || '') + '</span> ' +
+        '<span class="hi-dim">ns=</span><span class="hi-val">' + esc(d.namespace || '') + '</span> ' +
+        '<span class="hi-dim">id=</span><span class="hi-val">' + esc((d.sessionId || '').substring(0, 8)) + '</span>');
+      separator();
+      return;
+    }
+
+    // --- provider ---
+    if (type === 'provider') {
+      log('provider',
+        '<span class="hi-val">' + esc(d.connection || '') + '</span> ' +
+        '<span class="hi-dim">provider=</span><span class="hi-val">' + esc(d.provider || '') + '</span> ' +
+        '<span class="hi-dim">model=</span><span class="hi-val">' + esc(d.model || '') + '</span>');
+      return;
+    }
+
+    // --- mcp ---
+    if (type === 'mcp') {
+      var mcpShort = (d.mcp || '').split('.').pop();
+      var toolsets = d.toolsets || '';
+      var tsNames = toolsets.split(',').map(function(t) { return t.trim().split('.').pop(); }).join(', ');
+      log('mcp',
+        '<span class="hi-name">' + esc(mcpShort) + '</span>' +
+        (tsNames ? ' <span class="hi-dim">toolsets=[</span>' + esc(tsNames) + '<span class="hi-dim">]</span>' : ''));
+      return;
+    }
+
+    // --- skill ---
+    if (type === 'skill') {
+      var skillShort = (d.class || '').split('.').pop();
+      log('skill',
+        '<span class="hi-name">' + esc(skillShort) + '</span> ' +
+        '<span class="hi-dim">' + esc(d.class || '') + '</span>');
+      return;
+    }
+
+    // --- trace ---
+    if (type === 'trace') {
+      log('trace', '<span class="hi-dim">' + esc(d.msg || '') + '</span>');
+      return;
+    }
+
+    // --- llm_call ---
+    if (type === 'llm_call') {
+      separator();
+      log('llm_call',
+        '<span class="hi-warn">' + esc(d.msg || 'Calling LLM...') + '</span>' +
+        (d.iteration ? ' <span class="hi-dim">iteration=' + d.iteration + '/' + (d.maxIterations || '?') + '</span>' : '') +
+        (d.model ? ' <span class="hi-dim">model=</span><span class="hi-val">' + esc(d.model) + '</span>' : ''));
+      return;
+    }
+
+    // --- llm_response ---
+    if (type === 'llm_response') {
+      var tokIn = d.inputTokens || 0;
+      var tokOut = d.outputTokens || 0;
+      if (tokIn || tokOut) {
+        tokenTotal += (tokIn + tokOut);
+        tokensCount.textContent = fmtNum(tokenTotal);
+      }
+      log('llm_response',
+        '<span class="hi-ok">' + esc(d.msg || 'Response received') + '</span>' +
+        ' <span class="hi-dim">latency=</span><span class="hi-val">' + (d.latencyMs || '?') + 'ms</span>' +
+        ' <span class="hi-dim">in=</span><span class="hi-val">' + fmtNum(tokIn) + '</span>' +
+        ' <span class="hi-dim">out=</span><span class="hi-val">' + fmtNum(tokOut) + '</span>' +
+        ' <span class="hi-dim">tools=</span>' + (d.hasToolCalls ? '<span class="hi-warn">yes</span>' : '<span class="hi-dim">no</span>'));
+      return;
+    }
+
+    // --- tool_start ---
+    if (type === 'tool_start') {
+      toolCount++;
+      toolsCount.textContent = toolCount;
+      var argsStr = '';
+      if (d.args) {
+        try {
+          argsStr = typeof d.args === 'string' ? d.args : JSON.stringify(d.args);
+        } catch (e) {}
+      }
+      log('tool_start',
+        '<span class="hi-name">' + esc(d.name || '?') + '</span>' +
+        (argsStr ? ' <span class="hi-dim">' + esc(argsStr.length > 120 ? argsStr.substring(0, 120) + '...' : argsStr) + '</span>' : ''),
+        argsStr.length > 120 ? argsStr : null);
+      return;
+    }
+
+    // --- tool_result ---
+    if (type === 'tool_result') {
+      var resultStr = summarize(d.result, 2000);
+      var shortResult = resultStr.length > 120 ? resultStr.substring(0, 120) + '...' : resultStr;
+      log('tool_result',
+        '<span class="hi-name">' + esc(d.name || '?') + '</span> ' +
+        '<span class="hi-dim">' + esc(shortResult) + '</span>',
+        resultStr.length > 120 ? resultStr : null);
+      return;
+    }
+
+    // --- status ---
+    if (type === 'status') {
+      var msg = d.message || d.phase || d.msg || 'status';
+      log('status', esc(msg));
+      return;
+    }
+
+    // --- token (response text) ---
+    if (type === 'token') {
+      // Don't flood the terminal with the full response text
+      if (!document.getElementById('response-logged')) {
+        separator();
+        var marker = document.createElement('span');
+        marker.id = 'response-logged';
+        marker.style.display = 'none';
+        flow.appendChild(marker);
+        var textLen = (d.text || '').length;
+        log('token', '<span class="hi-ok">Generating final response</span> <span class="hi-dim">(' + textLen + ' chars)</span>');
+      }
+      return;
+    }
+
+    // --- done ---
+    if (type === 'done') {
+      sessionEnded = true;
+      stopTimer();
+      setStatus('ended', 'Complete');
+      if (d.totalTokens) {
+        tokenTotal = +d.totalTokens;
+        tokensCount.textContent = fmtNum(tokenTotal);
+      }
+      separator();
+      var box = document.createElement('div');
+      box.className = 'completion-box';
+      var parts = [];
+      if (d.latencyMs) parts.push('<span class="stat">' + (d.latencyMs / 1000).toFixed(1) + 's</span> total');
+      if (d.iterations) parts.push('<span class="stat">' + d.iterations + '</span> iterations');
+      if (d.totalTokens) parts.push('<span class="stat">' + fmtNum(+d.totalTokens) + '</span> tokens');
+      if (toolCount) parts.push('<span class="stat">' + toolCount + '</span> tool calls');
+      if (d.toolTrace) parts.push('trace: <span class="stat">' + esc(d.toolTrace) + '</span>');
+      box.innerHTML = 'SESSION COMPLETE  |  ' + parts.join('  |  ');
+      flow.appendChild(box);
+      box.scrollIntoView({ behavior: 'smooth', block: 'end' });
+      return;
+    }
+
+    // --- session_end ---
+    if (type === 'session_end') {
+      sessionEnded = true;
+      return;
+    }
+
+    // --- error ---
+    if (type === 'error') {
+      log('error', '<span class="hi-err">' + esc(d.error || d.msg || 'Error') + '</span>' +
+        (d.stage ? ' <span class="hi-dim">stage=' + esc(d.stage) + '</span>' : ''));
+      return;
+    }
+
+    // --- tool_confirm ---
+    if (type === 'tool_confirm') {
+      log('tool_confirm',
+        '<span class="hi-warn">APPROVAL REQUIRED: ' + esc(d.name || d.tool || '') + '</span>');
+      return;
+    }
+
+    // --- fallback ---
+    log('trace', esc(type) + ': ' + esc(d.msg || JSON.stringify(d)));
+  }
+
+  // ============================================================
+  //  STATUS + RESET
+  // ============================================================
+
+  function setStatus(state, label) {
+    statusPill.className = 'status-pill ' + state;
+    statusLbl.textContent = label;
+  }
+
   function resetUI() {
-    // Abort any in-flight stream
     if (abortCtrl) { try { abortCtrl.abort(); } catch (e) {} abortCtrl = null; }
-    // Stop polling
     if (pollHandle) { clearInterval(pollHandle); pollHandle = null; }
-    // Stop timer
     stopTimer();
-    // Clear DOM
     flow.innerHTML = '';
-    // Re-add empty state
     var es = document.createElement('div');
     es.className = 'empty-state';
     es.id = 'empty-state';
@@ -94,45 +352,34 @@
       'This page will automatically show each step as the agent works.';
     flow.appendChild(es);
     emptyState = es;
-    // Reset counters
-    stepNum = 0;
-    toolCount = 0;
-    tokenCount = 0;
-    startTime = null;
-    currentPhase = null;
-    phaseEl = null;
-    listEl = null;
+    toolCount = 0; tokenTotal = 0; startTime = null;
     sessionEnded = false;
-    connectedSid = null;
     timerVal.textContent = '0.0s';
     toolsCount.textContent = '0';
     tokensCount.textContent = '0';
-    setStatus('waiting', 'Waiting for session...');
+    setStatus('waiting', 'Waiting...');
   }
 
-  // Clear button handler — purge server data then reset
   clearBtn.addEventListener('click', function () {
     var a = getAuth();
-    if (!a) return;
-    // Purge server-side LiveFeed
-    fetch('/api/agentic/observer/purge', {
-      method: 'POST',
-      headers: { 'Authorization': a }
-    }).catch(function () {});  // best-effort
-    // Reset UI and mark all known sessions as seen so we don't replay them
+    if (a) {
+      fetch('/api/agentic/observer/purge', {
+        method: 'POST', headers: { 'Authorization': a }
+      }).catch(function () {});
+    }
     resetUI();
     seenSessions = {};
-    // Restart polling
     startPolling();
   });
 
   // ============================================================
-  //  POLLING — look for an active session
+  //  POLLING + STREAM
   // ============================================================
+
   function startPolling() {
     if (pollHandle) return;
-    setStatus('waiting', 'Waiting for session...');
-    poll();  // immediate first check
+    setStatus('waiting', 'Waiting...');
+    poll();
     pollHandle = setInterval(poll, 2000);
   }
 
@@ -156,35 +403,25 @@
       return r.json();
     }).then(function (sessions) {
       if (!sessions || !Array.isArray(sessions)) return;
-      // Find an active session we haven't connected to yet
       for (var i = 0; i < sessions.length; i++) {
-        var s = sessions[i];
-        if (s.active && !seenSessions[s.id]) {
+        if (sessions[i].active && !seenSessions[sessions[i].id]) {
           stopPolling();
-          connectToSession(s.id);
+          connectToSession(sessions[i].id);
           return;
         }
       }
     }).catch(function () {});
   }
 
-  // ============================================================
-  //  STREAM — connect to a specific session
-  // ============================================================
   function connectToSession(sid) {
-    connectedSid = sid;
     seenSessions[sid] = true;
     sessionEnded = false;
-
     var a = getAuth();
     if (!a) return;
-
-    setStatus('connected', 'Connected');
-
+    setStatus('connected', 'Live');
     abortCtrl = new AbortController();
-    var url = '/api/agentic/observer/stream?session=' + encodeURIComponent(sid);
 
-    fetch(url, {
+    fetch('/api/agentic/observer/stream?session=' + encodeURIComponent(sid), {
       method: 'GET',
       headers: { 'Authorization': a },
       signal: abortCtrl.signal
@@ -192,13 +429,10 @@
       if (!response.ok) {
         if (response.status === 401) {
           localStorage.removeItem('agentic_credentials');
-          auth = null;
-          setStatus('error', 'Auth failed');
-          return;
+          auth = null; setStatus('error', 'Auth failed');
         }
-        throw new Error('HTTP ' + response.status);
+        return;
       }
-
       var reader = response.body.getReader();
       var decoder = new TextDecoder();
       var buffer = '';
@@ -206,463 +440,33 @@
       function pump() {
         return reader.read().then(function (result) {
           if (result.done) {
-            // Stream closed by server
-            if (!sessionEnded) {
-              setStatus('ended', 'Stream closed');
-            }
-            // Go back to polling for the next session
-            setTimeout(function () { startPolling(); }, 3000);
+            if (!sessionEnded) setStatus('ended', 'Stream closed');
+            setTimeout(startPolling, 3000);
             return;
           }
-
           buffer += decoder.decode(result.value, { stream: true });
           var lines = buffer.split('\n');
           buffer = lines.pop();
-
-          var eventType = null;
-          var eventData = null;
-
+          var evType = null, evData = null;
           for (var i = 0; i < lines.length; i++) {
             var line = lines[i];
-            if (line.indexOf('event: ') === 0) {
-              eventType = line.substring(7).trim();
-            } else if (line.indexOf('data: ') === 0) {
-              eventData = line.substring(6);
-            } else if (line === '' && eventType === 'feed' && eventData) {
-              try {
-                var envelope = JSON.parse(eventData);
-                renderStep(envelope);
-              } catch (e) {}
-              eventType = null;
-              eventData = null;
-            } else if (line === '' && eventType === 'error' && eventData) {
-              // Server-side error (e.g. "no session") — ignore, keep polling
-              eventType = null;
-              eventData = null;
-            } else if (line === '') {
-              eventType = null;
-              eventData = null;
-            }
+            if (line.indexOf('event: ') === 0) evType = line.substring(7).trim();
+            else if (line.indexOf('data: ') === 0) evData = line.substring(6);
+            else if (line === '' && evType === 'feed' && evData) {
+              try { renderEvent(JSON.parse(evData)); } catch (e) {}
+              evType = null; evData = null;
+            } else if (line === '') { evType = null; evData = null; }
           }
           return pump();
         });
       }
       return pump();
     }).catch(function (err) {
-      if (err.name === 'AbortError') return;  // user clicked Clear
-      console.error('Observer stream error:', err);
-      setTimeout(function () { startPolling(); }, 3000);
+      if (err.name === 'AbortError') return;
+      setTimeout(startPolling, 3000);
     });
   }
 
-  // ============================================================
-  //  PHASE + BADGE classification
-  // ============================================================
-  function classifyPhase(ev) {
-    var type = ev.type;
-    var data = ev.data || {};
-    var name = (data.name || '').toLowerCase();
-
-    if (type === 'session_start') return 'session';
-    if (type === 'session_end')   return 'complete';
-    if (type === 'error')         return 'error';
-    if (type === 'done')          return 'complete';
-    if (type === 'token')         return 'report';
-
-    if (type === 'tool_start' || type === 'tool_result') {
-      if (name.indexOf('search') >= 0 || name.indexOf('catalog') >= 0 ||
-          name.indexOf('describe') >= 0 || name.indexOf('gethl7') >= 0 ||
-          name.indexOf('fieldmapping') >= 0 || name.indexOf('field_mapping') >= 0 ||
-          name.indexOf('getsegment') >= 0 || name.indexOf('getschema') >= 0 ||
-          name.indexOf('pipeline') >= 0)
-        return 'research';
-      if (name.indexOf('list') >= 0 || name.indexOf('get') >= 0 ||
-          name.indexOf('lookup') >= 0 || name.indexOf('explain') >= 0)
-        return 'research';
-      if (name.indexOf('create') >= 0 || name.indexOf('add') >= 0 ||
-          name.indexOf('build') >= 0 || name.indexOf('update') >= 0 ||
-          name.indexOf('compile') >= 0 || name.indexOf('ensure') >= 0)
-        return 'build';
-      if (name.indexOf('test') >= 0 || name.indexOf('send') >= 0 ||
-          name.indexOf('validate') >= 0 || name.indexOf('dryrun') >= 0 ||
-          name.indexOf('dry_run') >= 0 || name.indexOf('compare') >= 0 ||
-          name.indexOf('postbuild') >= 0)
-        return 'test';
-      if (name.indexOf('confirm') >= 0 || name.indexOf('approve') >= 0)
-        return 'approve';
-      return 'build';
-    }
-    if (type === 'tool_confirm') return 'approve';
-    if (type === 'status') return 'status';
-    return 'status';
-  }
-
-  var phaseLabels = {
-    session: 'Session', research: 'Research', plan: 'Plan',
-    build: 'Build', test: 'Test', approve: 'Approval Gate',
-    report: 'Report', complete: 'Complete', error: 'Error', status: 'Status'
-  };
-  var phaseIcons = {
-    session: 'S', research: 'R', plan: 'P', build: 'B', test: 'T',
-    approve: 'A', report: 'F', complete: 'C', error: 'E', status: 'I'
-  };
-  var phaseClasses = {
-    session: 'research', research: 'research', plan: 'plan',
-    build: 'build', test: 'test', approve: 'plan',
-    report: 'report', complete: 'report', error: 'test', status: 'research'
-  };
-
-  function ensurePhase(phaseName) {
-    if (currentPhase === phaseName && phaseEl) return;
-    currentPhase = phaseName;
-    phaseEl = document.createElement('div');
-    phaseEl.className = 'phase-section';
-    var header = document.createElement('div');
-    header.className = 'phase-header';
-    var icon = document.createElement('div');
-    icon.className = 'phase-icon ' + (phaseClasses[phaseName] || 'research');
-    icon.textContent = phaseIcons[phaseName] || '?';
-    var title = document.createElement('div');
-    title.className = 'phase-title';
-    title.textContent = phaseLabels[phaseName] || phaseName;
-    var count = document.createElement('div');
-    count.className = 'phase-count';
-    header.appendChild(icon);
-    header.appendChild(title);
-    header.appendChild(count);
-    phaseEl.appendChild(header);
-    listEl = document.createElement('div');
-    listEl.className = 'step-list';
-    phaseEl.appendChild(listEl);
-    flow.appendChild(phaseEl);
-  }
-
-  function badgeType(ev) {
-    var type = ev.type;
-    var name = ((ev.data || {}).name || '').toLowerCase();
-    if (type === 'tool_confirm')   return 'approve';
-    if (type === 'error')          return 'error';
-    if (type === 'token')          return 'token';
-    if (type === 'status')         return 'status';
-    if (type === 'session_start' || type === 'session_end') return 'session';
-    if (type === 'done')           return 'session';
-    if (name.indexOf('search') >= 0 || name.indexOf('catalog') >= 0 ||
-        name.indexOf('describe') >= 0 || name.indexOf('gethl7') >= 0 ||
-        name.indexOf('getsegment') >= 0 || name.indexOf('getschema') >= 0 ||
-        name.indexOf('pipeline') >= 0 || name.indexOf('fieldmapping') >= 0)
-      return 'rag';
-    return 'tool';
-  }
-
-  function badgeLabel(ev) {
-    var labels = {
-      tool: 'TOOL', rag: 'RAG', skill: 'SKILL', approve: 'APPROVE',
-      status: 'STATUS', token: 'RESPONSE', error: 'ERROR', session: 'SESSION'
-    };
-    return labels[badgeType(ev)] || 'EVENT';
-  }
-
-  // ============================================================
-  //  RENDER a single step
-  // ============================================================
-  function renderStep(ev) {
-    if (!ev || !ev.type) return;
-    if (ev.type === 'timeout') return;
-
-    // Hide empty state on first real event
-    if (emptyState) emptyState.style.display = 'none';
-    if (!startTime) startTimer();
-
-    var data = ev.data || {};
-    var phase = classifyPhase(ev);
-
-    // --- token: single "Generating response..." card ---
-    if (ev.type === 'token') {
-      ensurePhase('report');
-      if (!document.getElementById('report-card')) {
-        stepNum++;
-        var card = buildCard(stepNum, ev, 'Generating response...');
-        card.id = 'report-card';
-        card.classList.add('active');
-        addCard(card);
-      }
-      return;
-    }
-
-    // --- done: completion banner ---
-    if (ev.type === 'done') {
-      // Mark the report card as done
-      var rc = document.getElementById('report-card');
-      if (rc) { rc.classList.remove('active'); rc.classList.add('done'); }
-      sessionEnded = true;
-      stopTimer();
-      setStatus('ended', 'Session complete');
-      if (data.totalTokens) {
-        tokenCount = +data.totalTokens;
-        tokensCount.textContent = formatNum(tokenCount);
-      }
-      showCompletionBanner(data);
-      return;
-    }
-
-    // --- session_end: mark finished ---
-    if (ev.type === 'session_end') {
-      sessionEnded = true;
-      return;
-    }
-
-    // --- session_start ---
-    if (ev.type === 'session_start') {
-      setStatus('connected', 'Live');
-      ensurePhase('session');
-      stepNum++;
-      var label = 'Session started';
-      if (data.user) label += '  |  user: ' + data.user;
-      if (data.namespace) label += '  |  namespace: ' + data.namespace;
-      var card = buildCard(stepNum, ev, label);
-      card.classList.add('done');
-      addCard(card);
-      return;
-    }
-
-    // --- status ---
-    if (ev.type === 'status') {
-      var msg = data.message || data.phase || 'Status update';
-      if (data.phase === 'ready') {
-        msg = 'Agent ready  (' + (data.turnsReplayed || 0) + ' prior turns replayed)';
-      }
-      ensurePhase('status');
-      stepNum++;
-      var card = buildCard(stepNum, ev, msg);
-      card.classList.add('done');
-      addCard(card);
-      return;
-    }
-
-    // --- error ---
-    if (ev.type === 'error') {
-      ensurePhase('error');
-      stepNum++;
-      var card = buildCard(stepNum, ev, data.error || 'Unknown error');
-      card.classList.add('error-card');
-      addCard(card);
-      return;
-    }
-
-    // --- tool_start ---
-    if (ev.type === 'tool_start') {
-      toolCount++;
-      toolsCount.textContent = toolCount;
-      ensurePhase(phase);
-      stepNum++;
-      var name = data.name || 'unknown';
-      var detail = '';
-      if (data.args) {
-        try {
-          detail = typeof data.args === 'string' ? data.args : JSON.stringify(data.args, null, 2);
-        } catch (e) { detail = String(data.args); }
-      }
-      var card = buildCard(stepNum, ev, name, detail);
-      card.classList.add('active');
-      card.setAttribute('data-tool', name);
-      if (phase === 'approve') card.classList.add('approve-gate');
-      addCard(card);
-      return;
-    }
-
-    // --- tool_result ---
-    if (ev.type === 'tool_result') {
-      var name = data.name || '(tool)';
-      var activeCards = flow.querySelectorAll('.step-card.active[data-tool="' + CSS.escape(name) + '"]');
-      if (activeCards.length > 0) {
-        var target = activeCards[activeCards.length - 1];
-        target.classList.remove('active');
-        target.classList.add('done');
-        appendResult(target, data.result);
-        if (ev.elapsed) {
-          var t = target.querySelector('.step-timing');
-          if (t) t.textContent = ev.elapsed + 's';
-        }
-      } else {
-        ensurePhase(phase);
-        stepNum++;
-        var snippet = summarize(data.result, 200);
-        var card = buildCard(stepNum, ev, name + ' (result)', snippet);
-        card.classList.add('done');
-        addCard(card);
-      }
-      if (ev.elapsed) timerVal.textContent = ev.elapsed + 's';
-      return;
-    }
-
-    // --- tool_confirm ---
-    if (ev.type === 'tool_confirm') {
-      ensurePhase('approve');
-      stepNum++;
-      var card = buildCard(stepNum, ev, 'Approval requested: ' + (data.name || data.tool || ''));
-      card.classList.add('approve-gate', 'active');
-      addCard(card);
-      return;
-    }
-
-    // --- fallback ---
-    ensurePhase('status');
-    stepNum++;
-    addCard(buildCard(stepNum, ev, ev.type));
-  }
-
-  // ============================================================
-  //  DOM builders
-  // ============================================================
-  function buildCard(num, ev, label, detail) {
-    var card = document.createElement('div');
-    card.className = 'step-card';
-
-    var numEl = document.createElement('div');
-    numEl.className = 'step-num';
-    numEl.textContent = num;
-
-    var badge = document.createElement('div');
-    badge.className = 'step-badge ' + badgeType(ev);
-    badge.textContent = badgeLabel(ev);
-
-    var content = document.createElement('div');
-    content.className = 'step-content';
-    var nameEl = document.createElement('div');
-    nameEl.className = 'step-name';
-    nameEl.textContent = label || '';
-    content.appendChild(nameEl);
-    if (detail) {
-      var detailEl = document.createElement('div');
-      detailEl.className = 'step-detail';
-      detailEl.textContent = detail.length > 300 ? detail.substring(0, 300) + '...' : detail;
-      content.appendChild(detailEl);
-      if (detail.length > 300) {
-        content.appendChild(makeToggle(detail, detailEl, 'Show more'));
-      }
-    }
-
-    var timing = document.createElement('div');
-    timing.className = 'step-timing';
-    timing.textContent = ev.elapsed ? ev.elapsed + 's' : '';
-
-    card.appendChild(numEl);
-    card.appendChild(badge);
-    card.appendChild(content);
-    card.appendChild(timing);
-    return card;
-  }
-
-  function appendResult(card, result) {
-    var text = summarize(result, 99999);
-    if (!text) return;
-    var contentEl = card.querySelector('.step-content');
-    if (!contentEl) return;
-    var el = document.createElement('div');
-    el.className = 'step-detail step-result';
-    el.style.marginTop = '6px';
-    el.style.color = '#6b7a8d';
-    el.style.borderTop = '1px solid #2a313c';
-    el.style.paddingTop = '6px';
-    el.textContent = text.length > 300 ? text.substring(0, 300) + '...' : text;
-    contentEl.appendChild(el);
-    if (text.length > 300) {
-      contentEl.appendChild(makeToggle(text, el, 'Show full result'));
-    }
-  }
-
-  function makeToggle(fullText, el, label) {
-    var tog = document.createElement('div');
-    tog.className = 'step-detail-toggle visible';
-    tog.textContent = label;
-    tog.addEventListener('click', function () {
-      if (el.classList.contains('expanded')) {
-        el.textContent = fullText.substring(0, 300) + '...';
-        el.classList.remove('expanded');
-        tog.textContent = label;
-      } else {
-        el.textContent = fullText;
-        el.classList.add('expanded');
-        tog.textContent = 'Collapse';
-      }
-    });
-    return tog;
-  }
-
-  function addCard(card) {
-    if (!listEl) return;
-    if (listEl.children.length > 0) {
-      var conn = document.createElement('div');
-      conn.className = 'step-connector' + (card.classList.contains('active') ? ' active' : '');
-      listEl.appendChild(conn);
-    }
-    listEl.appendChild(card);
-    card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    var pc = phaseEl ? phaseEl.querySelector('.phase-count') : null;
-    if (pc) {
-      var n = listEl.querySelectorAll('.step-card').length;
-      pc.textContent = n + ' step' + (n !== 1 ? 's' : '');
-    }
-  }
-
-  function showCompletionBanner(data) {
-    var banner = document.createElement('div');
-    banner.className = 'completion-banner';
-    var title = document.createElement('div');
-    title.className = 'title';
-    title.textContent = 'Session Complete';
-    banner.appendChild(title);
-    var stats = document.createElement('div');
-    stats.className = 'stats';
-    var parts = [];
-    if (data.latencyMs) parts.push('<span>' + (data.latencyMs / 1000).toFixed(1) + 's</span> total time');
-    if (data.iterations) parts.push('<span>' + data.iterations + '</span> iterations');
-    if (data.totalTokens) parts.push('<span>' + formatNum(data.totalTokens) + '</span> tokens');
-    if (toolCount > 0) parts.push('<span>' + toolCount + '</span> tool calls');
-    if (data.model) parts.push('Model: <span>' + escapeHtml(data.model) + '</span>');
-    stats.innerHTML = parts.join('  |  ');
-    banner.appendChild(stats);
-    flow.appendChild(banner);
-    banner.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  }
-
-  // ============================================================
-  //  Helpers
-  // ============================================================
-  function setStatus(state, label) {
-    statusPill.className = 'status-pill ' + state;
-    statusLbl.textContent = label;
-  }
-
-  function formatNum(n) {
-    return n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n);
-  }
-
-  function escapeHtml(s) {
-    var d = document.createElement('div');
-    d.textContent = s;
-    return d.innerHTML;
-  }
-
-  function summarize(val, max) {
-    if (!val) return '';
-    var s;
-    try {
-      s = typeof val === 'string' ? val : JSON.stringify(val, null, 2);
-    } catch (e) { s = String(val); }
-    return max && s.length > max ? s.substring(0, max) + '...' : s;
-  }
-
-  function toast(msg) {
-    var el = document.getElementById('toast');
-    el.textContent = msg;
-    el.hidden = false;
-    setTimeout(function () { el.hidden = true; }, 4000);
-  }
-
-  // ============================================================
-  //  Init — start polling immediately
-  // ============================================================
+  // --- Init ---
   startPolling();
-
 })();
