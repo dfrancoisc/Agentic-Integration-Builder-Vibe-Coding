@@ -4,11 +4,25 @@
    Shows every internal step: provider resolution, MCP registration,
    skill loading, LLM calls to Bedrock, tool dispatch, results,
    cooldowns, fabrication guards — all as a scrolling terminal log.
+
+   Split-view mode: clicking "Open Editor" loads the IRIS Interop
+   Editor in an iframe on the left half, terminal log on the right.
    ============================================================ */
 
 (function () {
   'use strict';
 
+  // Read namespace from ?ns= query param (default USER)
+  var nsParam = (function () {
+    var m = location.search.match(/[?&]ns=([^&]*)/);
+    return m ? decodeURIComponent(m[1]) : 'USER';
+  })();
+  var EDITOR_URL = '/ui/interop/interop-editor/index.html?%24NAMESPACE=' + encodeURIComponent(nsParam);
+
+  var app        = document.getElementById('app');
+  var editorPane = document.getElementById('editor-pane');
+  var editorFrame= document.getElementById('editor-frame');
+  var obsPane    = document.getElementById('observer-pane');
   var flow       = document.getElementById('flow');
   var emptyState = document.getElementById('empty-state');
   var statusPill = document.getElementById('status-pill');
@@ -17,6 +31,7 @@
   var toolsCount = document.getElementById('tools-count');
   var tokensCount= document.getElementById('tokens-count');
   var clearBtn   = document.getElementById('btn-clear');
+  var editorBtn  = document.getElementById('btn-editor');
 
   var toolCount     = 0;
   var tokenTotal    = 0;
@@ -27,6 +42,7 @@
   var abortCtrl     = null;
   var seenSessions  = {};
   var auth          = null;
+  var splitOpen     = false;
 
   // --- Auth ---
   function getAuth() {
@@ -53,6 +69,45 @@
   function stopTimer() {
     if (timerHandle) { clearInterval(timerHandle); timerHandle = null; }
   }
+
+  // ============================================================
+  //  SPLIT VIEW — Editor + Observer side by side
+  // ============================================================
+
+  function openSplitView() {
+    if (splitOpen) return;
+    splitOpen = true;
+    app.classList.add('split');
+    editorFrame.src = EDITOR_URL;
+    editorBtn.textContent = 'Close Editor';
+    editorBtn.classList.add('active');
+  }
+
+  function closeSplitView() {
+    if (!splitOpen) return;
+    splitOpen = false;
+    app.classList.remove('split');
+    editorFrame.src = 'about:blank';
+    editorBtn.textContent = 'Open Editor';
+    editorBtn.classList.remove('active');
+  }
+
+  function toggleSplitView() {
+    if (splitOpen) closeSplitView();
+    else openSplitView();
+  }
+
+  // Topbar button
+  editorBtn.addEventListener('click', toggleSplitView);
+
+  // Intercept all editor links (empty state + resetUI-generated)
+  document.addEventListener('click', function (e) {
+    var target = e.target;
+    if (target.id === 'open-editor-link' || target.classList.contains('editor-link')) {
+      e.preventDefault();
+      openSplitView();
+    }
+  });
 
   // ============================================================
   //  TERMINAL OUTPUT
@@ -348,7 +403,7 @@
     es.className = 'empty-state';
     es.id = 'empty-state';
     es.innerHTML = 'Waiting for a chat session to begin...<br><br>' +
-      'Open <a href="/ui/interop/interop-editor/index.html?%24NAMESPACE=USER" target="_blank">IRIS for Health Interop Editor</a> and click the chat icon in the toolbar.<br>' +
+      '<a href="#" class="editor-link">Open IRIS for Health Interop Editor</a> and click the chat icon in the toolbar.<br>' +
       'This page will automatically show each step as the agent works.';
     flow.appendChild(es);
     emptyState = es;
@@ -465,6 +520,13 @@
       if (err.name === 'AbortError') return;
       setTimeout(startPolling, 3000);
     });
+  }
+
+  // ============================================================
+  //  AUTOSTART — open split view if ?split query param is present
+  // ============================================================
+  if (location.search.indexOf('split') !== -1) {
+    openSplitView();
   }
 
   // --- Init ---

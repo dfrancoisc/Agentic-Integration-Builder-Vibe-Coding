@@ -38,21 +38,27 @@
       <span class="label">Tokens</span>
       <span class="value" id="tokens-count">0</span>
     </span>
+    <button id="btn-editor" type="button" class="editor-btn" title="Open IRIS Interop Editor in split view">Open Editor</button>
     <button id="btn-clear" type="button" class="clear-btn" title="Clear log and wait for next session">Clear</button>
   </div>
 </header>
 
-<main id="main">
-  <section class="flow" id="flow">
-    <div class="empty-state" id="empty-state">
-      Waiting for a chat session to begin...
-      <br><br>
-      Open <a href="/ui/interop/interop-editor/index.html?%24NAMESPACE=USER" target="_blank">IRIS for Health Interop Editor</a> and click the chat icon in the toolbar.
-      <br>
-      This page will automatically show each step as the agent works.
-    </div>
-  </section>
-</main>
+<div class="app" id="app">
+  <div class="editor-pane" id="editor-pane">
+    <iframe id="editor-frame" src="about:blank" allow="clipboard-read; clipboard-write"></iframe>
+  </div>
+  <div class="observer-pane" id="observer-pane">
+    <section class="flow" id="flow">
+      <div class="empty-state" id="empty-state">
+        Waiting for a chat session to begin...
+        <br><br>
+        <a href="#" id="open-editor-link" class="editor-link">Open IRIS for Health Interop Editor</a> and click the chat icon in the toolbar.
+        <br>
+        This page will automatically show each step as the agent works.
+      </div>
+    </section>
+  </div>
+</div>
 
 <div id="toast" class="toast" hidden></div>
 
