@@ -1,7 +1,18 @@
 /* ============================================================
    Observer — Behind the Scenes live feed
-   Connects to /api/agentic/observer/stream?session=latest
-   and renders every event as a step-by-step flow.
+
+   Demo flow:
+   1. Open this page -> "Waiting for session..."
+   2. Open chatbot in another tab, send a message
+   3. Observer lights up with real-time steps as the agent works
+   4. Session ends -> completion banner
+   5. Click "Clear" -> resets, waits for the next session
+
+   Connection model:
+   - Poll /observer/sessions every 2s looking for an ACTIVE session
+   - When found, stream /observer/stream?session=<id>
+   - When stream ends (session_end), show completion, stop polling
+   - "Clear" button: purge server data, reset UI, resume polling
    ============================================================ */
 
 (function () {
@@ -11,39 +22,41 @@
   var flow       = document.getElementById('flow');
   var emptyState = document.getElementById('empty-state');
   var statusPill = document.getElementById('status-pill');
-  var statusDot  = document.getElementById('status-dot');
   var statusLbl  = document.getElementById('status-label');
   var timerVal   = document.getElementById('timer-value');
   var toolsCount = document.getElementById('tools-count');
   var tokensCount= document.getElementById('tokens-count');
+  var clearBtn   = document.getElementById('btn-clear');
 
   // --- State ---
-  var stepNum    = 0;
-  var toolCount  = 0;
-  var tokenCount = 0;
-  var startTime  = null;
-  var timerHandle= null;
-  var currentPhase = null;
-  var phaseEl    = null;
-  var listEl     = null;
-  var lastCardEl = null;
-  var sessionEnded = false;
-  var retryCount = 0;
-  var maxRetries = 60;  // 60 retries * 5s = 5 min of trying
-  var evtSource  = null;
+  var stepNum       = 0;
+  var toolCount     = 0;
+  var tokenCount    = 0;
+  var startTime     = null;
+  var timerHandle   = null;
+  var currentPhase  = null;
+  var phaseEl       = null;
+  var listEl        = null;
+  var sessionEnded  = false;
+  var pollHandle    = null;
+  var abortCtrl     = null;    // AbortController for the current stream fetch
+  var connectedSid  = null;    // session id we are currently streaming
+  var seenSessions  = {};      // sessions we already showed (skip on next poll)
+  var auth          = null;
 
   // --- Auth ---
   function getAuth() {
+    if (auth) return auth;
     var creds = localStorage.getItem('agentic_credentials');
-    if (creds) return 'Basic ' + creds;
-    // Prompt for credentials
+    if (creds) { auth = 'Basic ' + creds; return auth; }
     var user = prompt('IRIS Username:');
     if (!user) return null;
     var pass = prompt('IRIS Password:');
     if (pass === null) return null;
     var encoded = btoa(user + ':' + pass);
     localStorage.setItem('agentic_credentials', encoded);
-    return 'Basic ' + encoded;
+    auth = 'Basic ' + encoded;
+    return auth;
   }
 
   // --- Timer ---
@@ -57,14 +70,194 @@
   }
 
   function stopTimer() {
-    if (timerHandle) {
-      clearInterval(timerHandle);
-      timerHandle = null;
-    }
+    if (timerHandle) { clearInterval(timerHandle); timerHandle = null; }
   }
 
-  // --- Phase management ---
-  // Classify events into phases based on tool names and event types
+  // ============================================================
+  //  RESET / CLEAR
+  // ============================================================
+  function resetUI() {
+    // Abort any in-flight stream
+    if (abortCtrl) { try { abortCtrl.abort(); } catch (e) {} abortCtrl = null; }
+    // Stop polling
+    if (pollHandle) { clearInterval(pollHandle); pollHandle = null; }
+    // Stop timer
+    stopTimer();
+    // Clear DOM
+    flow.innerHTML = '';
+    // Re-add empty state
+    var es = document.createElement('div');
+    es.className = 'empty-state';
+    es.id = 'empty-state';
+    es.innerHTML = 'Waiting for a chat session to begin...<br><br>' +
+      'Open the <a href="../chat/index.html" target="_blank">Chat UI</a> in another tab and send a message.<br>' +
+      'This page will automatically connect when the session starts.';
+    flow.appendChild(es);
+    emptyState = es;
+    // Reset counters
+    stepNum = 0;
+    toolCount = 0;
+    tokenCount = 0;
+    startTime = null;
+    currentPhase = null;
+    phaseEl = null;
+    listEl = null;
+    sessionEnded = false;
+    connectedSid = null;
+    timerVal.textContent = '0.0s';
+    toolsCount.textContent = '0';
+    tokensCount.textContent = '0';
+    setStatus('waiting', 'Waiting for session...');
+  }
+
+  // Clear button handler — purge server data then reset
+  clearBtn.addEventListener('click', function () {
+    var a = getAuth();
+    if (!a) return;
+    // Purge server-side LiveFeed
+    fetch('/api/agentic/observer/purge', {
+      method: 'POST',
+      headers: { 'Authorization': a }
+    }).catch(function () {});  // best-effort
+    // Reset UI and mark all known sessions as seen so we don't replay them
+    resetUI();
+    seenSessions = {};
+    // Restart polling
+    startPolling();
+  });
+
+  // ============================================================
+  //  POLLING — look for an active session
+  // ============================================================
+  function startPolling() {
+    if (pollHandle) return;
+    setStatus('waiting', 'Waiting for session...');
+    poll();  // immediate first check
+    pollHandle = setInterval(poll, 2000);
+  }
+
+  function stopPolling() {
+    if (pollHandle) { clearInterval(pollHandle); pollHandle = null; }
+  }
+
+  function poll() {
+    var a = getAuth();
+    if (!a) return;
+    fetch('/api/agentic/observer/sessions', {
+      headers: { 'Authorization': a }
+    }).then(function (r) {
+      if (r.status === 401) {
+        localStorage.removeItem('agentic_credentials');
+        auth = null;
+        setStatus('error', 'Auth failed');
+        stopPolling();
+        return null;
+      }
+      return r.json();
+    }).then(function (sessions) {
+      if (!sessions || !Array.isArray(sessions)) return;
+      // Find an active session we haven't connected to yet
+      for (var i = 0; i < sessions.length; i++) {
+        var s = sessions[i];
+        if (s.active && !seenSessions[s.id]) {
+          stopPolling();
+          connectToSession(s.id);
+          return;
+        }
+      }
+    }).catch(function () {});
+  }
+
+  // ============================================================
+  //  STREAM — connect to a specific session
+  // ============================================================
+  function connectToSession(sid) {
+    connectedSid = sid;
+    seenSessions[sid] = true;
+    sessionEnded = false;
+
+    var a = getAuth();
+    if (!a) return;
+
+    setStatus('connected', 'Connected');
+
+    abortCtrl = new AbortController();
+    var url = '/api/agentic/observer/stream?session=' + encodeURIComponent(sid);
+
+    fetch(url, {
+      method: 'GET',
+      headers: { 'Authorization': a },
+      signal: abortCtrl.signal
+    }).then(function (response) {
+      if (!response.ok) {
+        if (response.status === 401) {
+          localStorage.removeItem('agentic_credentials');
+          auth = null;
+          setStatus('error', 'Auth failed');
+          return;
+        }
+        throw new Error('HTTP ' + response.status);
+      }
+
+      var reader = response.body.getReader();
+      var decoder = new TextDecoder();
+      var buffer = '';
+
+      function pump() {
+        return reader.read().then(function (result) {
+          if (result.done) {
+            // Stream closed by server
+            if (!sessionEnded) {
+              setStatus('ended', 'Stream closed');
+            }
+            // Go back to polling for the next session
+            setTimeout(function () { startPolling(); }, 3000);
+            return;
+          }
+
+          buffer += decoder.decode(result.value, { stream: true });
+          var lines = buffer.split('\n');
+          buffer = lines.pop();
+
+          var eventType = null;
+          var eventData = null;
+
+          for (var i = 0; i < lines.length; i++) {
+            var line = lines[i];
+            if (line.indexOf('event: ') === 0) {
+              eventType = line.substring(7).trim();
+            } else if (line.indexOf('data: ') === 0) {
+              eventData = line.substring(6);
+            } else if (line === '' && eventType === 'feed' && eventData) {
+              try {
+                var envelope = JSON.parse(eventData);
+                renderStep(envelope);
+              } catch (e) {}
+              eventType = null;
+              eventData = null;
+            } else if (line === '' && eventType === 'error' && eventData) {
+              // Server-side error (e.g. "no session") — ignore, keep polling
+              eventType = null;
+              eventData = null;
+            } else if (line === '') {
+              eventType = null;
+              eventData = null;
+            }
+          }
+          return pump();
+        });
+      }
+      return pump();
+    }).catch(function (err) {
+      if (err.name === 'AbortError') return;  // user clicked Clear
+      console.error('Observer stream error:', err);
+      setTimeout(function () { startPolling(); }, 3000);
+    });
+  }
+
+  // ============================================================
+  //  PHASE + BADGE classification
+  // ============================================================
   function classifyPhase(ev) {
     var type = ev.type;
     var data = ev.data || {};
@@ -76,183 +269,131 @@
     if (type === 'done')          return 'complete';
     if (type === 'token')         return 'report';
 
-    // tool_start / tool_result classification
     if (type === 'tool_start' || type === 'tool_result') {
-      // RAG / catalog tools
       if (name.indexOf('search') >= 0 || name.indexOf('catalog') >= 0 ||
           name.indexOf('describe') >= 0 || name.indexOf('gethl7') >= 0 ||
-          name.indexOf('fieldmapping') >= 0 || name.indexOf('field_mapping') >= 0) {
+          name.indexOf('fieldmapping') >= 0 || name.indexOf('field_mapping') >= 0 ||
+          name.indexOf('getsegment') >= 0 || name.indexOf('getschema') >= 0 ||
+          name.indexOf('pipeline') >= 0)
         return 'research';
-      }
-      // Planning / listing tools
-      if (name.indexOf('list') >= 0 || name.indexOf('get') >= 0) {
+      if (name.indexOf('list') >= 0 || name.indexOf('get') >= 0 ||
+          name.indexOf('lookup') >= 0 || name.indexOf('explain') >= 0)
         return 'research';
-      }
-      // Build tools
       if (name.indexOf('create') >= 0 || name.indexOf('add') >= 0 ||
           name.indexOf('build') >= 0 || name.indexOf('update') >= 0 ||
-          name.indexOf('compile') >= 0 || name.indexOf('ensure') >= 0) {
+          name.indexOf('compile') >= 0 || name.indexOf('ensure') >= 0)
         return 'build';
-      }
-      // Test tools
       if (name.indexOf('test') >= 0 || name.indexOf('send') >= 0 ||
           name.indexOf('validate') >= 0 || name.indexOf('dryrun') >= 0 ||
-          name.indexOf('dry_run') >= 0 || name.indexOf('simulate') >= 0) {
+          name.indexOf('dry_run') >= 0 || name.indexOf('compare') >= 0 ||
+          name.indexOf('postbuild') >= 0)
         return 'test';
-      }
-      // Approval gate
-      if (name.indexOf('confirm') >= 0 || name.indexOf('approve') >= 0) {
+      if (name.indexOf('confirm') >= 0 || name.indexOf('approve') >= 0)
         return 'approve';
-      }
-      return 'build';  // default for unknown tools
+      return 'build';
     }
-
-    // tool_confirm events
     if (type === 'tool_confirm') return 'approve';
-
-    // status events
     if (type === 'status') return 'status';
-
     return 'status';
   }
 
   var phaseLabels = {
-    session:  'Session',
-    research: 'Research',
-    plan:     'Plan',
-    build:    'Build',
-    test:     'Test',
-    approve:  'Approval Gate',
-    report:   'Report',
-    complete: 'Complete',
-    error:    'Error',
-    status:   'Status'
+    session: 'Session', research: 'Research', plan: 'Plan',
+    build: 'Build', test: 'Test', approve: 'Approval Gate',
+    report: 'Report', complete: 'Complete', error: 'Error', status: 'Status'
   };
-
   var phaseIcons = {
-    session:  'S',
-    research: 'R',
-    plan:     'P',
-    build:    'B',
-    test:     'T',
-    approve:  'A',
-    report:   'F',
-    complete: 'C',
-    error:    'E',
-    status:   'I'
+    session: 'S', research: 'R', plan: 'P', build: 'B', test: 'T',
+    approve: 'A', report: 'F', complete: 'C', error: 'E', status: 'I'
   };
-
   var phaseClasses = {
-    session:  'research',
-    research: 'research',
-    plan:     'plan',
-    build:    'build',
-    test:     'test',
-    approve:  'plan',
-    report:   'report',
-    complete: 'report',
-    error:    'test',
-    status:   'research'
+    session: 'research', research: 'research', plan: 'plan',
+    build: 'build', test: 'test', approve: 'plan',
+    report: 'report', complete: 'report', error: 'test', status: 'research'
   };
 
   function ensurePhase(phaseName) {
     if (currentPhase === phaseName && phaseEl) return;
     currentPhase = phaseName;
-
-    // Create phase section
     phaseEl = document.createElement('div');
     phaseEl.className = 'phase-section';
-
     var header = document.createElement('div');
     header.className = 'phase-header';
-
     var icon = document.createElement('div');
     icon.className = 'phase-icon ' + (phaseClasses[phaseName] || 'research');
     icon.textContent = phaseIcons[phaseName] || '?';
-
     var title = document.createElement('div');
     title.className = 'phase-title';
     title.textContent = phaseLabels[phaseName] || phaseName;
-
     var count = document.createElement('div');
     count.className = 'phase-count';
-    count.setAttribute('data-phase', phaseName);
-
     header.appendChild(icon);
     header.appendChild(title);
     header.appendChild(count);
     phaseEl.appendChild(header);
-
     listEl = document.createElement('div');
     listEl.className = 'step-list';
     phaseEl.appendChild(listEl);
-
     flow.appendChild(phaseEl);
   }
 
-  // --- Badge type for events ---
   function badgeType(ev) {
     var type = ev.type;
     var name = ((ev.data || {}).name || '').toLowerCase();
-
     if (type === 'tool_confirm')   return 'approve';
     if (type === 'error')          return 'error';
     if (type === 'token')          return 'token';
     if (type === 'status')         return 'status';
     if (type === 'session_start' || type === 'session_end') return 'session';
     if (type === 'done')           return 'session';
-
-    // tool_start / tool_result
     if (name.indexOf('search') >= 0 || name.indexOf('catalog') >= 0 ||
         name.indexOf('describe') >= 0 || name.indexOf('gethl7') >= 0 ||
-        name.indexOf('fieldmapping') >= 0 || name.indexOf('field_mapping') >= 0) {
+        name.indexOf('getsegment') >= 0 || name.indexOf('getschema') >= 0 ||
+        name.indexOf('pipeline') >= 0 || name.indexOf('fieldmapping') >= 0)
       return 'rag';
-    }
     return 'tool';
   }
 
   function badgeLabel(ev) {
-    var b = badgeType(ev);
     var labels = {
       tool: 'TOOL', rag: 'RAG', skill: 'SKILL', approve: 'APPROVE',
       status: 'STATUS', token: 'RESPONSE', error: 'ERROR', session: 'SESSION'
     };
-    return labels[b] || b.toUpperCase();
+    return labels[badgeType(ev)] || 'EVENT';
   }
 
-  // --- Render a single step ---
+  // ============================================================
+  //  RENDER a single step
+  // ============================================================
   function renderStep(ev) {
     if (!ev || !ev.type) return;
-
-    // Skip keepalive / padding
     if (ev.type === 'timeout') return;
 
-    // Hide empty state
-    if (emptyState) {
-      emptyState.style.display = 'none';
-    }
-
-    // Start timer on first event
+    // Hide empty state on first real event
+    if (emptyState) emptyState.style.display = 'none';
     if (!startTime) startTimer();
 
-    var phase = classifyPhase(ev);
     var data = ev.data || {};
+    var phase = classifyPhase(ev);
 
-    // --- Special: token events accumulate, don't create individual cards ---
+    // --- token: single "Generating response..." card ---
     if (ev.type === 'token') {
-      // just update report phase indicator
       ensurePhase('report');
       if (!document.getElementById('report-card')) {
         stepNum++;
         var card = buildCard(stepNum, ev, 'Generating response...');
         card.id = 'report-card';
+        card.classList.add('active');
         addCard(card);
       }
       return;
     }
 
-    // --- Special: done event — show completion banner ---
+    // --- done: completion banner ---
     if (ev.type === 'done') {
+      // Mark the report card as done
+      var rc = document.getElementById('report-card');
+      if (rc) { rc.classList.remove('active'); rc.classList.add('done'); }
       sessionEnded = true;
       stopTimer();
       setStatus('ended', 'Session complete');
@@ -264,41 +405,41 @@
       return;
     }
 
-    // --- Special: session_end ---
+    // --- session_end: mark finished ---
     if (ev.type === 'session_end') {
       sessionEnded = true;
       return;
     }
 
-    // --- Special: session_start ---
+    // --- session_start ---
     if (ev.type === 'session_start') {
-      setStatus('connected', 'Connected');
+      setStatus('connected', 'Live');
       ensurePhase('session');
       stepNum++;
       var label = 'Session started';
-      if (data.user) label += ' by ' + data.user;
-      if (data.namespace) label += ' in ' + data.namespace;
+      if (data.user) label += '  |  user: ' + data.user;
+      if (data.namespace) label += '  |  namespace: ' + data.namespace;
       var card = buildCard(stepNum, ev, label);
       card.classList.add('done');
       addCard(card);
       return;
     }
 
-    // --- Special: status ---
+    // --- status ---
     if (ev.type === 'status') {
       var msg = data.message || data.phase || 'Status update';
       if (data.phase === 'ready') {
-        msg = 'Session ready (' + (data.turnsReplayed || 0) + ' turns replayed)';
+        msg = 'Agent ready  (' + (data.turnsReplayed || 0) + ' prior turns replayed)';
       }
-      // Don't create a card for rate-limit waits — update the last status card
       ensurePhase('status');
       stepNum++;
       var card = buildCard(stepNum, ev, msg);
+      card.classList.add('done');
       addCard(card);
       return;
     }
 
-    // --- Special: error ---
+    // --- error ---
     if (ev.type === 'error') {
       ensurePhase('error');
       stepNum++;
@@ -314,7 +455,6 @@
       toolsCount.textContent = toolCount;
       ensurePhase(phase);
       stepNum++;
-
       var name = data.name || 'unknown';
       var detail = '';
       if (data.args) {
@@ -322,16 +462,10 @@
           detail = typeof data.args === 'string' ? data.args : JSON.stringify(data.args, null, 2);
         } catch (e) { detail = String(data.args); }
       }
-
       var card = buildCard(stepNum, ev, name, detail);
       card.classList.add('active');
       card.setAttribute('data-tool', name);
-
-      // Check for approval gate
-      if (phase === 'approve') {
-        card.classList.add('approve-gate');
-      }
-
+      if (phase === 'approve') card.classList.add('approve-gate');
       addCard(card);
       return;
     }
@@ -339,81 +473,25 @@
     // --- tool_result ---
     if (ev.type === 'tool_result') {
       var name = data.name || '(tool)';
-      // Find the matching tool_start card and mark it done
-      var activeCards = flow.querySelectorAll('.step-card.active[data-tool="' + name + '"]');
+      var activeCards = flow.querySelectorAll('.step-card.active[data-tool="' + CSS.escape(name) + '"]');
       if (activeCards.length > 0) {
         var target = activeCards[activeCards.length - 1];
         target.classList.remove('active');
         target.classList.add('done');
-
-        // Add result snippet to the card
-        var resultText = '';
-        if (data.result) {
-          try {
-            resultText = typeof data.result === 'string' ? data.result : JSON.stringify(data.result, null, 2);
-          } catch (e) { resultText = String(data.result); }
-        }
-        if (resultText) {
-          var truncated = resultText.length > 300 ? resultText.substring(0, 300) + '...' : resultText;
-          var resultEl = target.querySelector('.step-result');
-          if (!resultEl) {
-            resultEl = document.createElement('div');
-            resultEl.className = 'step-detail step-result';
-            resultEl.style.marginTop = '6px';
-            resultEl.style.color = '#6b7a8d';
-            resultEl.style.borderTop = '1px solid #2a313c';
-            resultEl.style.paddingTop = '6px';
-            var contentEl = target.querySelector('.step-content');
-            if (contentEl) contentEl.appendChild(resultEl);
-          }
-          resultEl.textContent = truncated;
-
-          if (resultText.length > 300) {
-            var toggle = document.createElement('div');
-            toggle.className = 'step-detail-toggle visible';
-            toggle.textContent = 'Show full result';
-            toggle.addEventListener('click', (function(full, el, tog) {
-              return function() {
-                if (el.classList.contains('expanded')) {
-                  el.textContent = full.substring(0, 300) + '...';
-                  el.classList.remove('expanded');
-                  tog.textContent = 'Show full result';
-                } else {
-                  el.textContent = full;
-                  el.classList.add('expanded');
-                  tog.textContent = 'Collapse';
-                }
-              };
-            })(resultText, resultEl, toggle));
-            var contentEl = target.querySelector('.step-content');
-            if (contentEl) contentEl.appendChild(toggle);
-          }
-        }
-        // Update timing
+        appendResult(target, data.result);
         if (ev.elapsed) {
-          var timingEl = target.querySelector('.step-timing');
-          if (timingEl) timingEl.textContent = ev.elapsed + 's';
+          var t = target.querySelector('.step-timing');
+          if (t) t.textContent = ev.elapsed + 's';
         }
       } else {
-        // No matching start card — create a standalone result card
         ensurePhase(phase);
         stepNum++;
-        var resultSnippet = '';
-        if (data.result) {
-          try {
-            resultSnippet = typeof data.result === 'string' ? data.result : JSON.stringify(data.result, null, 2);
-            if (resultSnippet.length > 200) resultSnippet = resultSnippet.substring(0, 200) + '...';
-          } catch (e) {}
-        }
-        var card = buildCard(stepNum, ev, name + ' (result)', resultSnippet);
+        var snippet = summarize(data.result, 200);
+        var card = buildCard(stepNum, ev, name + ' (result)', snippet);
         card.classList.add('done');
         addCard(card);
       }
-
-      // Update timing
-      if (ev.elapsed) {
-        timerVal.textContent = ev.elapsed + 's';
-      }
+      if (ev.elapsed) timerVal.textContent = ev.elapsed + 's';
       return;
     }
 
@@ -421,73 +499,49 @@
     if (ev.type === 'tool_confirm') {
       ensurePhase('approve');
       stepNum++;
-      var label = 'Approval requested: ' + (data.name || data.tool || 'unknown tool');
-      var card = buildCard(stepNum, ev, label);
+      var card = buildCard(stepNum, ev, 'Approval requested: ' + (data.name || data.tool || ''));
       card.classList.add('approve-gate', 'active');
       addCard(card);
       return;
     }
 
-    // --- Fallback: unknown event type ---
+    // --- fallback ---
     ensurePhase('status');
     stepNum++;
-    var card = buildCard(stepNum, ev, ev.type);
-    addCard(card);
+    addCard(buildCard(stepNum, ev, ev.type));
   }
 
-  // --- Build a step card DOM element ---
+  // ============================================================
+  //  DOM builders
+  // ============================================================
   function buildCard(num, ev, label, detail) {
     var card = document.createElement('div');
     card.className = 'step-card';
 
-    // Step number
     var numEl = document.createElement('div');
     numEl.className = 'step-num';
     numEl.textContent = num;
 
-    // Badge
     var badge = document.createElement('div');
     badge.className = 'step-badge ' + badgeType(ev);
     badge.textContent = badgeLabel(ev);
 
-    // Content
     var content = document.createElement('div');
     content.className = 'step-content';
-
     var nameEl = document.createElement('div');
     nameEl.className = 'step-name';
     nameEl.textContent = label || '';
     content.appendChild(nameEl);
-
     if (detail) {
       var detailEl = document.createElement('div');
       detailEl.className = 'step-detail';
-      var truncated = detail.length > 300 ? detail.substring(0, 300) + '...' : detail;
-      detailEl.textContent = truncated;
+      detailEl.textContent = detail.length > 300 ? detail.substring(0, 300) + '...' : detail;
       content.appendChild(detailEl);
-
       if (detail.length > 300) {
-        var toggle = document.createElement('div');
-        toggle.className = 'step-detail-toggle visible';
-        toggle.textContent = 'Show more';
-        toggle.addEventListener('click', (function(full, el, tog) {
-          return function() {
-            if (el.classList.contains('expanded')) {
-              el.textContent = full.substring(0, 300) + '...';
-              el.classList.remove('expanded');
-              tog.textContent = 'Show more';
-            } else {
-              el.textContent = full;
-              el.classList.add('expanded');
-              tog.textContent = 'Collapse';
-            }
-          };
-        })(detail, detailEl, toggle));
-        content.appendChild(toggle);
+        content.appendChild(makeToggle(detail, detailEl, 'Show more'));
       }
     }
 
-    // Timing
     var timing = document.createElement('div');
     timing.className = 'step-timing';
     timing.textContent = ev.elapsed ? ev.elapsed + 's' : '';
@@ -496,46 +550,68 @@
     card.appendChild(badge);
     card.appendChild(content);
     card.appendChild(timing);
-
     return card;
   }
 
-  // --- Add card to current phase list ---
-  function addCard(card) {
-    if (!listEl) return;
-
-    // Add connector line between cards (except the first)
-    if (listEl.children.length > 0) {
-      var connector = document.createElement('div');
-      connector.className = 'step-connector';
-      if (card.classList.contains('active')) connector.classList.add('active');
-      listEl.appendChild(connector);
-    }
-
-    listEl.appendChild(card);
-    lastCardEl = card;
-
-    // Scroll into view
-    card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-
-    // Update phase count
-    var phaseCountEl = phaseEl ? phaseEl.querySelector('.phase-count') : null;
-    if (phaseCountEl) {
-      var cards = listEl.querySelectorAll('.step-card');
-      phaseCountEl.textContent = cards.length + ' step' + (cards.length !== 1 ? 's' : '');
+  function appendResult(card, result) {
+    var text = summarize(result, 99999);
+    if (!text) return;
+    var contentEl = card.querySelector('.step-content');
+    if (!contentEl) return;
+    var el = document.createElement('div');
+    el.className = 'step-detail step-result';
+    el.style.marginTop = '6px';
+    el.style.color = '#6b7a8d';
+    el.style.borderTop = '1px solid #2a313c';
+    el.style.paddingTop = '6px';
+    el.textContent = text.length > 300 ? text.substring(0, 300) + '...' : text;
+    contentEl.appendChild(el);
+    if (text.length > 300) {
+      contentEl.appendChild(makeToggle(text, el, 'Show full result'));
     }
   }
 
-  // --- Completion banner ---
+  function makeToggle(fullText, el, label) {
+    var tog = document.createElement('div');
+    tog.className = 'step-detail-toggle visible';
+    tog.textContent = label;
+    tog.addEventListener('click', function () {
+      if (el.classList.contains('expanded')) {
+        el.textContent = fullText.substring(0, 300) + '...';
+        el.classList.remove('expanded');
+        tog.textContent = label;
+      } else {
+        el.textContent = fullText;
+        el.classList.add('expanded');
+        tog.textContent = 'Collapse';
+      }
+    });
+    return tog;
+  }
+
+  function addCard(card) {
+    if (!listEl) return;
+    if (listEl.children.length > 0) {
+      var conn = document.createElement('div');
+      conn.className = 'step-connector' + (card.classList.contains('active') ? ' active' : '');
+      listEl.appendChild(conn);
+    }
+    listEl.appendChild(card);
+    card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    var pc = phaseEl ? phaseEl.querySelector('.phase-count') : null;
+    if (pc) {
+      var n = listEl.querySelectorAll('.step-card').length;
+      pc.textContent = n + ' step' + (n !== 1 ? 's' : '');
+    }
+  }
+
   function showCompletionBanner(data) {
     var banner = document.createElement('div');
     banner.className = 'completion-banner';
-
     var title = document.createElement('div');
     title.className = 'title';
     title.textContent = 'Session Complete';
     banner.appendChild(title);
-
     var stats = document.createElement('div');
     stats.className = 'stats';
     var parts = [];
@@ -546,27 +622,35 @@
     if (data.model) parts.push('Model: <span>' + escapeHtml(data.model) + '</span>');
     stats.innerHTML = parts.join('  |  ');
     banner.appendChild(stats);
-
     flow.appendChild(banner);
     banner.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
 
-  // --- Status pill ---
+  // ============================================================
+  //  Helpers
+  // ============================================================
   function setStatus(state, label) {
     statusPill.className = 'status-pill ' + state;
     statusLbl.textContent = label;
   }
 
-  // --- Helpers ---
   function formatNum(n) {
-    if (n >= 1000) return (n / 1000).toFixed(1) + 'k';
-    return String(n);
+    return n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n);
   }
 
   function escapeHtml(s) {
-    var div = document.createElement('div');
-    div.textContent = s;
-    return div.innerHTML;
+    var d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+  }
+
+  function summarize(val, max) {
+    if (!val) return '';
+    var s;
+    try {
+      s = typeof val === 'string' ? val : JSON.stringify(val, null, 2);
+    } catch (e) { s = String(val); }
+    return max && s.length > max ? s.substring(0, max) + '...' : s;
   }
 
   function toast(msg) {
@@ -576,122 +660,9 @@
     setTimeout(function () { el.hidden = true; }, 4000);
   }
 
-  // --- SSE connection ---
-  // EventSource doesn't support custom headers (for auth). We use
-  // fetch() with ReadableStream to parse the SSE manually, passing
-  // the Authorization header.
-  function connect() {
-    var auth = getAuth();
-    if (!auth) {
-      setStatus('error', 'No credentials');
-      return;
-    }
-
-    setStatus('waiting', 'Waiting for session...');
-
-    var url = '/api/agentic/observer/stream?session=latest';
-    fetch(url, {
-      method: 'GET',
-      headers: { 'Authorization': auth },
-      credentials: 'include'
-    }).then(function (response) {
-      if (!response.ok) {
-        if (response.status === 401) {
-          localStorage.removeItem('agentic_credentials');
-          setStatus('error', 'Auth failed');
-          toast('Authentication failed. Reload to re-enter credentials.');
-          return;
-        }
-        throw new Error('HTTP ' + response.status);
-      }
-
-      retryCount = 0;
-      var reader = response.body.getReader();
-      var decoder = new TextDecoder();
-      var buffer = '';
-
-      function pump() {
-        return reader.read().then(function (result) {
-          if (result.done) {
-            // Stream ended — retry after delay if session didn't end
-            if (!sessionEnded) {
-              setTimeout(function () { reconnect(); }, 3000);
-            }
-            return;
-          }
-
-          buffer += decoder.decode(result.value, { stream: true });
-
-          // Parse SSE frames from buffer
-          var lines = buffer.split('\n');
-          buffer = lines.pop(); // keep incomplete line
-
-          var eventType = null;
-          var eventData = null;
-
-          for (var i = 0; i < lines.length; i++) {
-            var line = lines[i];
-            if (line.indexOf('event: ') === 0) {
-              eventType = line.substring(7).trim();
-            } else if (line.indexOf('data: ') === 0) {
-              eventData = line.substring(6);
-            } else if (line === '' && eventType === 'feed' && eventData) {
-              // Complete event — parse the feed envelope
-              try {
-                var envelope = JSON.parse(eventData);
-                renderStep(envelope);
-              } catch (e) {
-                // Ignore parse errors (padding, comments)
-              }
-              eventType = null;
-              eventData = null;
-            } else if (line === '' && eventType === 'error' && eventData) {
-              try {
-                var errObj = JSON.parse(eventData);
-                setStatus('error', errObj.error || 'Unknown error');
-                toast(errObj.error || 'Stream error');
-              } catch (e) {}
-              eventType = null;
-              eventData = null;
-            } else if (line === '') {
-              // Reset on empty line (end of event)
-              eventType = null;
-              eventData = null;
-            }
-            // Skip comment lines (start with ':')
-          }
-
-          return pump();
-        });
-      }
-
-      return pump();
-    }).catch(function (err) {
-      console.error('Observer stream error:', err);
-      if (!sessionEnded) {
-        setTimeout(function () { reconnect(); }, 3000);
-      }
-    });
-  }
-
-  function reconnect() {
-    retryCount++;
-    if (retryCount > maxRetries) {
-      setStatus('error', 'Max retries exceeded');
-      toast('Could not connect to observer stream. Reload the page to try again.');
-      return;
-    }
-    setStatus('waiting', 'Reconnecting (' + retryCount + ')...');
-    connect();
-  }
-
-  // --- Polling mode (fallback) ---
-  // If the fetch/ReadableStream approach fails (older browsers), fall
-  // back to polling /observer/sessions every 3s and rendering events
-  // from the JSON sessions endpoint. Not implemented yet — the
-  // ReadableStream SSE approach works in all modern browsers.
-
-  // --- Init ---
-  connect();
+  // ============================================================
+  //  Init — start polling immediately
+  // ============================================================
+  startPolling();
 
 })();

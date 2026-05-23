@@ -79,6 +79,24 @@ html, body {
 .timer-pill .label, .counter-pill .label { color: var(--muted); }
 .timer-pill .value, .counter-pill .value { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
 
+/* Clear button */
+.clear-btn {
+  padding: 5px 14px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.clear-btn:hover {
+  border-color: var(--red);
+  color: var(--red);
+  background: rgba(239,68,68,0.08);
+}
+
 @keyframes pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.4; }

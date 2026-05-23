@@ -255,6 +255,30 @@ ClassMethod Purge(pMaxAgeMins As %Integer = 60) As %Integer
     Quit count
 }
 
+/// Purge ALL LiveFeed data (active + finished). Called by the
+/// observer UI "Clear" button so the next poll starts fresh.
+ClassMethod PurgeAll(pResponse As %CSP.Response) As %Status
+{
+    Set count = 0
+    Set sid = ""
+    For {
+        Set sid = $order(^AgInt.LiveFeed(sid))
+        If sid = "" Quit
+        If sid = "active" {
+            Kill ^AgInt.LiveFeed("active")
+            Continue
+        }
+        Kill ^AgInt.LiveFeed(sid)
+        Set count = count + 1
+    }
+    Set pResponse.ContentType = "application/json"
+    Set out = {}
+    Set out.ok = 1
+    Set out.purged = count
+    Do out.%ToJSON()
+    Quit $$$OK
+}
+
 /// 1KB padding — same pattern as ChatService.SSEPadding. Reuses the
 /// same process-private cache.
 ClassMethod Padding() As %String [ Internal ]

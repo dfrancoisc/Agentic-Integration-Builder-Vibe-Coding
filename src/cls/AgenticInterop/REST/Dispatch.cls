@@ -119,6 +119,7 @@ XData UrlMap [ XMLNamespace = "http://www.intersystems.com/urlmap" ]
          works. Separate SSE stream from the chat endpoint. -->
     <Route Url="/observer/sessions"             Method="GET"    Call="ObserverSessions" />
     <Route Url="/observer/stream"               Method="GET"    Call="ObserverStream" />
+    <Route Url="/observer/purge"                Method="POST"   Call="ObserverPurge" />
 </Routes>
 }
 
@@ -624,6 +625,11 @@ ClassMethod ObserverSessions() As %Status
 ClassMethod ObserverStream() As %Status
 {
     Quit ##class(AgenticInterop.Editor.ObserverService).Stream(%response)
+}
+
+ClassMethod ObserverPurge() As %Status
+{
+    Quit ##class(AgenticInterop.Editor.ObserverService).PurgeAll(%response)
 }
 
 }
