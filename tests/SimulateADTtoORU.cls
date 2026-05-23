@@ -135,7 +135,7 @@ ClassMethod Run() As %Status
     Set m12 = {}
     Set m12.action = "concat"
     Set m12.targetPath = "OBX(1):ObservationValue"
-    Set m12.parts = ["PID:PatientName.FamilyName.Surname", "PID:PatientName.GivenName", "PID:PatientName.SecondandFurtherGivenNamesorinitialsthereof"]
+    Set m12.parts = ["PID:PatientName.FamilyName.Surname", "PID:PatientName.GivenName", "PID:PatientName.SecondandFurtherGivenNamesor"]
     Set m12.separator = " "
     Do mappings.%Push(m12)
     ; 13. OBX:11 ObservationResultStatus
@@ -384,7 +384,7 @@ ClassMethod Run() As %Status
     Set fields."PID:PatientIdentifierList(1).IdentifierTypeCode" = "MR"
     Set fields."PID:PatientName(1).FamilyName.Surname" = "Nakamura"
     Set fields."PID:PatientName(1).GivenName" = "Kenji"
-    Set fields."PID:PatientName(1).SecondandFurtherGivenNamesorinitialsthereof" = "Takeshi"
+    Set fields."PID:PatientName(1).SecondandFurtherGivenNamesor" = "Takeshi"
     Set fields."PID:DateTimeofBirth" = "19870314"
     Set fields."PID:AdministrativeSex" = "M"
     Set fields."PID:PatientAddress(1).StreetAddress.StreetOrMailingAddress" = "2200 Coral Way"
@@ -397,7 +397,7 @@ ClassMethod Run() As %Status
     Set fields."PV1:AttendingDoctor(1).IDNumber" = "ATTEND-4401"
     Set fields."PV1:AttendingDoctor(1).FamilyName.Surname" = "Reeves"
     Set fields."PV1:AttendingDoctor(1).GivenName" = "Samantha"
-    Set fields."PV1:AttendingDoctor(1).SecondandFurtherGivenNamesorinitialsthereof" = "L"
+    Set fields."PV1:AttendingDoctor(1).SecondandFurtherGivenNamesor" = "L"
     Set fields."PV1:AttendingDoctor(1).Prefix" = "Dr."
     Set fields."PV1:AttendingDoctor(1).Degree" = "MD"
 
@@ -479,10 +479,12 @@ ClassMethod Run() As %Status
             } Else {
                 Write !,"  [WARN] Output does not contain 'ORU' - check MSH:9 mapping."
             }
-            If outMsg [ "Nakamura" {
-                Write !,"  [PASS] Output contains patient name 'Nakamura'."
+            If outMsg [ "Nakamura Kenji Takeshi" {
+                Write !,"  [PASS] Output contains full patient name 'Nakamura Kenji Takeshi' in OBX:5."
+            } ElseIf outMsg [ "Nakamura" {
+                Write !,"  [FAIL] Output contains 'Nakamura' but missing middle name 'Takeshi' — check XPN component 3 field name in concat parts."
             } Else {
-                Write !,"  [WARN] Output missing patient name."
+                Write !,"  [FAIL] Output missing patient name entirely."
             }
             If outMsg [ "MRN-88402" {
                 Write !,"  [PASS] Output contains MRN-88402 (from PID:3 -> OBR:3)."

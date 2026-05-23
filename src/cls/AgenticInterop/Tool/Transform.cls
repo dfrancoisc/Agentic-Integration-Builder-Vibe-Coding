@@ -889,7 +889,7 @@ ClassMethod GetCustomDTLPackage() As %DynamicObject
 ///     Copy one field from source to target.
 ///   { "action": "copy-all-components", "sourcePath": "PV1:AttendingDoctor", "targetPath": "OBR:OrderingProvider" }
 ///     Copy a complex field with all its sub-components.
-///   { "action": "concat", "targetPath": "OBX:ObservationValue", "parts": ["PID:PatientName.FamilyName.Surname", "PID:PatientName.GivenName", "PID:PatientName.SecondandFurtherGivenName"], "separator": " " }
+///   { "action": "concat", "targetPath": "OBX:ObservationValue", "parts": ["PID:PatientName.FamilyName.Surname", "PID:PatientName.GivenName", "PID:PatientName.SecondandFurtherGivenNamesor"], "separator": " " }
 ///     Concatenate multiple source fields into one target field.
 ///   { "action": "code", "objectscript": " set target.{...} = ..." }
 ///     Raw ObjectScript code block. Use sparingly.
