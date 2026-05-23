@@ -90,8 +90,8 @@
     es.className = 'empty-state';
     es.id = 'empty-state';
     es.innerHTML = 'Waiting for a chat session to begin...<br><br>' +
-      'Open the <a href="../chat/index.html" target="_blank">Chat UI</a> in another tab and send a message.<br>' +
-      'This page will automatically connect when the session starts.';
+      'Open <a href="/ui/interop/interop-editor/index.html" target="_blank">IRIS for Health Interop Editor</a> and click the chat icon in the toolbar.<br>' +
+      'This page will automatically show each step as the agent works.';
     flow.appendChild(es);
     emptyState = es;
     // Reset counters
