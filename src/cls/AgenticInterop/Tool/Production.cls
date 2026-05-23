@@ -1149,6 +1149,70 @@ ClassMethod CreateRoutingRule(name As %String, ruleXml As %String) As %DynamicOb
             Set out.error = "HL7 virtual document paths must use curly braces, not parentheses. Use HL7.{MSH:9.1} instead of HL7.(MSH:9.1). Parentheses silently fail to resolve."
             Quit
         }
+        ; ---- Validate: docName constraint must match DTL SOURCE, not TARGET ----
+        ; Common error: routing rule has docName="ORU_R01" but the referenced
+        ; DTL converts ADT_A01 -> ORU_R01. Rules evaluate the INCOMING message,
+        ; so the constraint should be docName="ADT_A01". Reject if mismatched.
+        Set mismatchErr = ""
+        ; Collect docName constraint values
+        Set docNameVals = ""
+        Set sp4 = 1
+        For {
+            Set f4 = $find(ruleXml, "constraint name=""docName"" value=""", sp4)
+            Quit:f4=0
+            Set eq4 = $find(ruleXml, """", f4)
+            If eq4 > 0 {
+                Set dnVal = $extract(ruleXml, f4, eq4 - 2)
+                If dnVal '= "" { Set docNameVals = docNameVals _ $select(docNameVals'="":"|",1:"") _ dnVal }
+            }
+            Set sp4 = $select(eq4>0:eq4, 1:f4+1)
+        }
+        ; Collect transform class names from <send> elements
+        Set xformClasses = ""
+        Set sp5 = 1
+        For {
+            Set f5 = $find(ruleXml, "transform=""", sp5)
+            Quit:f5=0
+            Set eq5 = $find(ruleXml, """", f5)
+            If eq5 > 0 {
+                Set xfVal = $extract(ruleXml, f5, eq5 - 2)
+                If xfVal '= "" { Set xformClasses = xformClasses _ $select(xformClasses'="":"|",1:"") _ xfVal }
+            }
+            Set sp5 = $select(eq5>0:eq5, 1:f5+1)
+        }
+        ; Cross-validate: if docName matches the DTL TARGET type, reject
+        If docNameVals '= "" && (xformClasses '= "") {
+            For xi=1:1:$length(xformClasses, "|") {
+                Set dtlCls = $piece(xformClasses, "|", xi)
+                If dtlCls = "" Continue
+                Try {
+                    If ##class(%Dictionary.CompiledXData).%ExistsId(dtlCls_"||DTLBody") {
+                        Set xdObj = ##class(%Dictionary.CompiledXData).%OpenId(dtlCls_"||DTLBody")
+                        Set xdText = xdObj.Data.Read(8000)
+                        Set srcStruct = ""
+                        Set tgtStruct = ""
+                        Set pSrc = $find(xdText, "sourceDocType=""")
+                        If pSrc > 0 { Set pSrc2 = $find(xdText, """", pSrc) If pSrc2 > 0 { Set srcStruct = $piece($extract(xdText, pSrc, pSrc2-2), ":", 2) } }
+                        Set pTgt = $find(xdText, "targetDocType=""")
+                        If pTgt > 0 { Set pTgt2 = $find(xdText, """", pTgt) If pTgt2 > 0 { Set tgtStruct = $piece($extract(xdText, pTgt, pTgt2-2), ":", 2) } }
+                        If tgtStruct '= "" && (tgtStruct '= srcStruct) {
+                            For di=1:1:$length(docNameVals, "|") {
+                                Set dn = $piece(docNameVals, "|", di)
+                                If dn = tgtStruct {
+                                    Set mismatchErr = "TRANSFORM-ON-SEND error: docName constraint '"_tgtStruct_"' matches the DTL TARGET (output) type, not the incoming message. Routing rules evaluate the INCOMING message. Change constraint to docName="""_srcStruct_""". DTL '"_dtlCls_"' converts "_srcStruct_" -> "_tgtStruct_" during the <send> action — match the incoming type."
+                                }
+                            }
+                        }
+                    }
+                } Catch  {}
+            }
+        }
+        If mismatchErr '= "" {
+            Set out.ok = 0
+            Set out.created = 0
+            Set out.error = mismatchErr
+            Quit
+        }
         ; ---- Create or update the class ----
         Set isUpdate = ##class(%Dictionary.ClassDefinition).%ExistsId(name)
         If isUpdate {
