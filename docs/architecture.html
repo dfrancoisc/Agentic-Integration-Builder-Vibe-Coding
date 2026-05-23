@@ -193,23 +193,23 @@
 <body>
 
 <h1>Agentic Interop for IRIS for Health</h1>
-<p class="subtitle">Architecture diagram — built on the InterSystems %AI Framework (IRIS 2026.2). Updated 2026-05-11.</p>
+<p class="subtitle">Architecture diagram — built on the InterSystems %AI Framework (IRIS 2026.2). Updated 2026-05-20.</p>
 
 <!-- Stats -->
 <div class="stats-bar">
-  <div class="stat"><span class="stat-value">58</span><span class="stat-label">Classes</span></div>
-  <div class="stat"><span class="stat-value">48</span><span class="stat-label">LLM Tools</span></div>
-  <div class="stat"><span class="stat-value">9</span><span class="stat-label">Skills</span></div>
+  <div class="stat"><span class="stat-value">64</span><span class="stat-label">Classes</span></div>
+  <div class="stat"><span class="stat-value">42</span><span class="stat-label">LLM Tools</span></div>
+  <div class="stat"><span class="stat-value">12</span><span class="stat-label">Skills</span></div>
   <div class="stat"><span class="stat-value">4</span><span class="stat-label">MCP Servers</span></div>
   <div class="stat"><span class="stat-value">2</span><span class="stat-label">RAG Catalogs</span></div>
   <div class="stat"><span class="stat-value">2</span><span class="stat-label">Policies</span></div>
-  <div class="stat"><span class="stat-value">2</span><span class="stat-label">Personas</span></div>
+  <div class="stat"><span class="stat-value">4</span><span class="stat-label">Personas</span></div>
 </div>
 
-<!-- DX vs Interface Engineer persona split -->
+<!-- Four personas -->
 <div style="display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 28px; max-width: 1400px; margin-left: auto; margin-right: auto;">
   <div class="card" style="flex: 1 1 calc(50% - 8px); min-width: 340px; background: #1a2a3a; border-color: #2a4a6a; color: #d0e0f0;">
-    <div class="card-title" style="font-size: 16px;">Developer Experience (DX) <span class="badge" style="background: rgba(88,166,255,0.25); color: #8cc4ff;">VS Code / IDE</span></div>
+    <div class="card-title" style="font-size: 16px;">Developer <span class="badge" style="background: rgba(88,166,255,0.25); color: #8cc4ff;">VS Code / IDE</span></div>
     <div class="card-body" style="margin-top: 8px; line-height: 1.7;">
       InterSystems engineers and partners who author the underlying capabilities.
       <hr class="section-divider">
@@ -220,24 +220,56 @@
         <li><strong>Package &amp; Ship</strong> — IPM module installs into any IRIS for Health / Health Connect namespace</li>
       </ul>
       <hr class="section-divider">
-      <em style="font-size: 11px; opacity: 0.7;">Developers define what the copilot CAN do. Their output is compiled classes in an IPM package.</em>
+      <em style="font-size: 11px; opacity: 0.7;">Developers define WHAT the copilot can do. Their output is compiled classes in an IPM package.</em>
     </div>
   </div>
   <div class="card" style="flex: 1 1 calc(50% - 8px); min-width: 340px; background: #2a1a3a; border-color: #4a2a6a; color: #e0d0f0;">
-    <div class="card-title" style="font-size: 16px;">Interface Engineer Experience (End User) <span class="badge" style="background: rgba(150,100,220,0.25); color: #c8a8f0;">IRIS Management Portal</span></div>
+    <div class="card-title" style="font-size: 16px;">AI Hub Admin <span class="badge" style="background: rgba(150,100,220,0.25); color: #c8a8f0;">Admin UI</span></div>
     <div class="card-body" style="margin-top: 8px; line-height: 1.7;">
-      Integration engineers inside IRIS for Health who configure and use the copilot. No code required.
+      Configures all AI settings through the admin UI. Assigns Interface Engineer and Operator roles.
       <hr class="section-divider">
       <ul>
         <li><strong>Create Agents</strong> — write system prompts, set temperature/iterations, attach MCP Servers and Skills</li>
         <li><strong>Assemble MCP Servers</strong> — select Toolsets from the developer-created pool, scope domains</li>
-        <li><strong>Browse Toolsets &amp; Tools</strong> — see names, descriptions, parameters. Decide what to include</li>
-        <li><strong>Attach Skills</strong> — link domain knowledge to agents. Pick which expertise the agent has</li>
         <li><strong>Configure Connections</strong> — LLM provider setup with health semaphore. Paste key, click Test</li>
-        <li><strong>Chat</strong> — streaming chat with tool cards, confirmation gates, guided prompts</li>
+        <li><strong>Build Catalogs</strong> — rebuild vector catalogs, test search relevance</li>
+        <li><strong>Review Audit</strong> — every API request logged with user, namespace, status, duration</li>
+        <li><strong>Manage Roles</strong> — bind different ToolSets to Interface Engineer vs Operator agent profiles</li>
       </ul>
       <hr class="section-divider">
-      <em style="font-size: 11px; opacity: 0.7;">Interface Engineers decide HOW the copilot behaves. Their work is configuration in the admin UI, not code.</em>
+      <em style="font-size: 11px; opacity: 0.7;">AI Hub Admins decide HOW the copilot behaves. Their work is configuration, not code.</em>
+    </div>
+  </div>
+  <div class="card" style="flex: 1 1 calc(50% - 8px); min-width: 340px; background: #1a3a2a; border-color: #2a6a4a; color: #d0f0e0;">
+    <div class="card-title" style="font-size: 16px;">Interface Engineer <span class="badge" style="background: rgba(63,185,80,0.25); color: #7be0a4;">End User — dev-time</span></div>
+    <div class="card-body" style="margin-top: 8px; line-height: 1.7;">
+      Creates new integration artifacts through conversation. Dev-time role — authors content for deployment.
+      <hr class="section-divider">
+      <ul>
+        <li><strong>Build Productions</strong> — describe requirements in plain English, agent proposes and builds</li>
+        <li><strong>Create DTLs</strong> — data transformations with schema introspection and dry-run testing</li>
+        <li><strong>Create BPLs</strong> — business process definitions with activity-level guidance</li>
+        <li><strong>Create Routing Rules</strong> — conditional routing with when-clause patterns</li>
+        <li><strong>Test Messages</strong> — send HL7/FHIR through productions, validate end-to-end</li>
+      </ul>
+      <hr class="section-divider">
+      <em style="font-size: 11px; opacity: 0.7;">Full tool access including all mutating tools. Changes flow through source control hooks and CI/CD.</em>
+    </div>
+  </div>
+  <div class="card" style="flex: 1 1 calc(50% - 8px); min-width: 340px; background: #3a2a1a; border-color: #6a4a2a; color: #f0e0d0;">
+    <div class="card-title" style="font-size: 16px;">Operator <span class="badge" style="background: rgba(200,170,60,0.25); color: #e8d080;">End User — run-time</span></div>
+    <div class="card-body" style="margin-top: 8px; line-height: 1.7;">
+      Monitors, triages, and reviews existing integrations. Does not create new productions or DTLs.
+      <hr class="section-divider">
+      <ul>
+        <li><strong>Triage Errors</strong> — query event logs, group by host, identify top failures</li>
+        <li><strong>Assess Health</strong> — queue depths, throughput, suspended messages, host status</li>
+        <li><strong>Review DTLs</strong> — check for hardcoded values, missing null checks, deprecated APIs</li>
+        <li><strong>Compare Messages</strong> — align inbound/outbound fields, highlight discrepancies</li>
+        <li><strong>Tune Settings</strong> — pool size, throttle, retry intervals (operational only)</li>
+      </ul>
+      <hr class="section-divider">
+      <em style="font-size: 11px; opacity: 0.7;">Read-only + monitoring tools. Structural changes escalate to the Interface Engineer.</em>
     </div>
   </div>
 </div>
@@ -397,7 +429,7 @@
           XData INSTRUCTIONS: system prompt (~1.5K tokens) — mandatory research-first workflow, parallel tool batching, build sequence, PostBuildValidation mandate, anti-fabrication rules.
           <hr class="section-divider">
           <strong>Parameter MCPS:</strong> Production, Transform, Testing, Catalog (admin UI metadata only)<br>
-          <strong>Parameter SKILLS:</strong> 9 specialist skills (below)
+          <strong>Parameter SKILLS:</strong> 12 specialist skills (below)
         </div>
       </div>
 
@@ -412,7 +444,7 @@
             <li><span class="step-number">2</span> SetDiscoveryPolicy(ToolFilter) — catalog dedup + waste removal</li>
             <li><span class="step-number">3</span> Overlay: system prompt, temperature, MaxIterations</li>
             <li><span class="step-number">4</span> UseToolSet() on each Tool.* class — makes methods executable</li>
-            <li><span class="step-number">5</span> SkillLoader — registers 9 sub-agent skills</li>
+            <li><span class="step-number">5</span> SkillLoader — registers 12 sub-agent skills</li>
             <li><span class="step-number">6</span> ConfirmationGate + Catalog.Attach (search_ens, search_hs)</li>
           </ul>
         </div>
@@ -470,7 +502,7 @@
 
       <div class="card card-fw card-wide" style="padding: 12px 16px;">
         <div class="card-title">
-          9 Specialist Skills
+          12 Specialist Skills
           <span class="badge">%AI.Agent.Skill</span>
           <span class="badge">via Skill.Base workaround</span>
         </div>
@@ -511,6 +543,18 @@
           <div class="inner-card">
             <div class="inner-card-title">HL7 v2</div>
             ~1,266 tok — message types, segments, ACK semantics
+          </div>
+          <div class="inner-card">
+            <div class="inner-card-title">X12</div>
+            HIPAA EDI transactions, envelope structures, schemas
+          </div>
+          <div class="inner-card">
+            <div class="inner-card-title">CDA</div>
+            CDA/C-CDA documents, XSLT pipelines, SDA conversion
+          </div>
+          <div class="inner-card">
+            <div class="inner-card-title">Adapters</div>
+            File/TCP/HTTP/REST/FTP/SQL/MQTT/SOAP adapter selection and configuration
           </div>
         </div>
       </div>
@@ -879,7 +923,7 @@
 <div style="margin-top: 48px; max-width: 1400px; margin-left: auto; margin-right: auto;">
   <h2>%AI Framework Class Map</h2>
   <p style="font-size: 13px; color: var(--text-dim); margin-bottom: 20px;">
-    How our 58 classes extend or wrap the InterSystems %AI Framework (IRIS 2026.2).
+    How our 64 classes extend or wrap the InterSystems %AI Framework (IRIS 2026.2).
     Bold = framework base class. Regular = our extension.
   </p>
 
@@ -908,6 +952,9 @@
           <li style="padding-left: 12px;">Skill.SDA</li>
           <li style="padding-left: 12px;">Skill.RestInProductions</li>
           <li style="padding-left: 12px;">Skill.ESBPattern</li>
+          <li style="padding-left: 12px;">Skill.X12</li>
+          <li style="padding-left: 12px;">Skill.CDA</li>
+          <li style="padding-left: 12px;">Skill.Adapters</li>
         </ul>
       </div>
     </div>
@@ -1090,7 +1137,7 @@
     <div class="card card-ext card-wide" style="display: flex; align-items: flex-start; gap: 16px; padding: 12px 16px;">
       <span class="step-number" style="margin-top: 2px; flex-shrink: 0;">5</span>
       <div>
-        <div class="card-title" style="font-size: 13px;">SkillLoader — register 9 sub-agent skills</div>
+        <div class="card-title" style="font-size: 13px;">SkillLoader — register 12 sub-agent skills</div>
         <div class="card-body">
           Reads SKILLS parameter (overlay-aware). For each skill class, constructs an %AI.Agent.Skill via the Skill.Base
           workaround (fixes $ZF marshal bug) and adds it to the ToolManager. Skills are invoked as sub-agent tools by the LLM.
@@ -1166,11 +1213,13 @@
 <!-- Footer -->
 <div style="margin-top: 48px; padding: 20px 0; border-top: 1px solid var(--line); max-width: 1400px; margin-left: auto; margin-right: auto;">
   <p style="font-size: 12px; color: var(--text-dim);">
-    Agentic Interop for InterSystems IRIS for Health — 58 classes, 48 tools, 9 skills, 4 MCP servers, 2 policies, 2 RAG catalogs.
+    Agentic Interop for InterSystems IRIS for Health — 64 classes, 42 tools, 12 skills, 4 MCP servers, 2 policies, 2 RAG catalogs.
     Built on the %AI Framework (IRIS 2026.2). IPM package: agentic-interop.
-    Two personas: Developer Experience (VS Code / IDE) authors Tools, Skills, and Catalogs.
-    Interface Engineer Experience (IRIS Management Portal) configures Agents, MCP Servers, Toolsets, and chats with the copilot.
-    <br>Updated 2026-05-11. Token optimization: tool definitions 15.6K &rarr; 7K, schema maps 30K &rarr; 7K, system prompt 7.2K &rarr; 1.5K.
+    Four personas: Developer (VS Code / IDE) authors Tools, Skills, and Catalogs.
+    AI Hub Admin (admin UI) configures Agents, Connections, Catalogs, and role-based ToolSet bindings.
+    Interface Engineer (chatbot, dev-time) builds productions, DTLs, BPLs, and routing rules.
+    Operator (chatbot, run-time) monitors, triages, and reviews existing integrations.
+    <br>Updated 2026-05-20. Token optimization: tool definitions 15.6K &rarr; 7K, schema maps 30K &rarr; 7K, system prompt 7.2K &rarr; 1.5K.
   </p>
 </div>
 

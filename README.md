@@ -275,31 +275,6 @@ The chat UI lives at `/agentic/chat/index.html`. Two integration modes:
 
 **Standalone mode.** Open `/agentic/chat/index.html` directly. The page shows an inline credentials overlay on first visit; credentials persist in `localStorage`.
 
-## Documentation
-
-Project documentation with embedded screenshots from the live system:
-
-| Document | Description |
-|---|---|
-| [01_Requirements_User_Stories.md](docs/01_Requirements_User_Stories.md) | End-to-end requirements, four personas, use cases, Interface Engineer and Operator user stories |
-| [02_Technical_Build_Specification.md](docs/02_Technical_Build_Specification.md) | Technical specification for all 11 components (Chatbot, Agent, Skills, MCPs, Tools, Catalogs, Transformation and Mapping Catalog, Connections, Audit, Performance) |
-| [03_Lessons_Learned.md](docs/03_Lessons_Learned.md) | Framework bugs, Vector Search optimization, token reduction strategies with before/after metrics |
-| [PLAN.md](docs/PLAN.md) | Architecture decisions, restrictions, build phases |
-| [MIGRATION.md](docs/MIGRATION.md) | Class-by-class build map |
-| [system_integrator_persona.md](docs/system_integrator_persona.md) | Daniel persona: identity, expertise, working philosophy, behavioral rules |
-| [SKILLS.md](docs/SKILLS.md) | INSTRUCTIONS markdown for each skill |
-| [TOOLS.md](docs/TOOLS.md) | Full catalog of agent tools with IRIS API mappings |
-| [BUG.md](docs/BUG.md) | Known framework bugs, workarounds, and ObjectScript gotchas |
-
-Word (.docx) versions with embedded screenshots are also available in `docs/`.
-
-Presentations:
-
-| File | Audience | Slides |
-|---|---|---|
-| [Agentic_Health_Interop_Executive.pptx](docs/Agentic_Health_Interop_Executive.pptx) | President / executive | 8 slides: opportunity, vision, use cases, capabilities, demo, benefits, next steps |
-| [Agentic_Health_Interop_Engineering.pptx](docs/Agentic_Health_Interop_Engineering.pptx) | PM / Engineer | 10 slides: framework primitives, architecture, detailed use cases, framework vs content, catalogs, performance, roadmap |
-
 ## Operations runbook
 
 **Daily.** No action required. The chat surface is self-serve and the audit log captures every request.
@@ -327,12 +302,6 @@ See [docs/BUG.md](docs/BUG.md) and [docs/03_Lessons_Learned.md](docs/03_Lessons_
 - CSP `UseSession` deadlock on REST endpoints (workaround: set `UseSession=0`)
 - `%OpenId` returns stale data in cross-process polling (workaround: use SQL queries)
 - ObjectScript language gotchas (QUIT in blocks, comment syntax, numeric comparisons)
-
-## Development
-
-All 7 build phases are complete. See [docs/PLAN.md](docs/PLAN.md) for architecture details and [docs/MIGRATION.md](docs/MIGRATION.md) for the class-by-class build map.
-
-The runtime container used for local development is `iris-agentic` on ports 21972 (super) / 22773 (web) / 23773 (xDBC), separate from any other IRIS containers on the host.
 
 ## License
 
