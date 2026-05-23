@@ -112,6 +112,13 @@ XData UrlMap [ XMLNamespace = "http://www.intersystems.com/urlmap" ]
     <Route Url="/cleanup/productions"           Method="POST"   Call="CleanupProductions" />
     <Route Url="/cleanup/artifacts"             Method="GET"    Call="ListCustomArtifacts" />
     <Route Url="/cleanup/artifacts"             Method="DELETE" Call="DeleteCustomArtifacts" />
+
+    <!-- Observer: behind-the-scenes live feed for VP demos. The
+         observer page tails ^AgInt.LiveFeed in real time, showing
+         every tool call, RAG search, and approval gate as the agent
+         works. Separate SSE stream from the chat endpoint. -->
+    <Route Url="/observer/sessions"             Method="GET"    Call="ObserverSessions" />
+    <Route Url="/observer/stream"               Method="GET"    Call="ObserverStream" />
 </Routes>
 }
 
@@ -607,6 +614,16 @@ ClassMethod ListCustomArtifacts() As %Status
 ClassMethod DeleteCustomArtifacts() As %Status
 {
     Quit ##class(AgenticInterop.Editor.CleanupService).DeleteArtifacts(%response)
+}
+
+ClassMethod ObserverSessions() As %Status
+{
+    Quit ##class(AgenticInterop.Editor.ObserverService).Sessions(%response)
+}
+
+ClassMethod ObserverStream() As %Status
+{
+    Quit ##class(AgenticInterop.Editor.ObserverService).Stream(%response)
 }
 
 }

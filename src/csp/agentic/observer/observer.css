@@ -1,0 +1,343 @@
+/* ============================================================
+   Observer — Behind the Scenes live feed
+   Dark theme matching the chat UI.
+   ============================================================ */
+
+/* --- Reset & base --- */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:        #0f1115;
+  --surface:   #161a21;
+  --border:    #2a313c;
+  --text:      #e6e8eb;
+  --muted:     #8b95a6;
+  --dim:       #5a6270;
+  --accent:    #3b82f6;
+  --teal:      #00b2a9;
+  --purple:    #c5b4e2;
+  --blue:      #92c0e9;
+  --coral:     #ffa489;
+  --green:     #22c55e;
+  --orange:    #f59e0b;
+  --red:       #ef4444;
+  --font:      ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --mono:      ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+html, body {
+  height: 100%;
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+/* --- Top bar --- */
+.topbar {
+  position: fixed; top: 0; left: 0; right: 0;
+  height: 52px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  z-index: 100;
+}
+.brand { display: flex; align-items: baseline; gap: 8px; }
+.brand-title { font-size: 16px; font-weight: 700; color: var(--text); }
+.brand-sub { font-size: 12px; color: var(--muted); }
+
+.meta { display: flex; align-items: center; gap: 12px; }
+
+.status-pill, .timer-pill, .counter-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 9999px;
+  font-size: 12px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+}
+.status-pill .dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--dim);
+  transition: background 0.3s;
+}
+.status-pill.connected .dot { background: var(--green); }
+.status-pill.waiting .dot {
+  background: var(--orange);
+  animation: pulse 1.5s ease-in-out infinite;
+}
+.status-pill.ended .dot { background: var(--muted); }
+.status-pill.error .dot { background: var(--red); }
+
+.timer-pill .label, .counter-pill .label { color: var(--muted); }
+.timer-pill .value, .counter-pill .value { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* --- Main content --- */
+main {
+  margin-top: 52px;
+  padding: 24px 32px;
+  max-width: 960px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.empty-state {
+  text-align: center;
+  color: var(--muted);
+  padding: 80px 20px;
+  font-size: 15px;
+  line-height: 1.8;
+}
+.empty-state a { color: var(--accent); text-decoration: none; }
+.empty-state a:hover { text-decoration: underline; }
+
+/* --- Phase sections --- */
+.phase-section {
+  margin-bottom: 32px;
+}
+.phase-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+.phase-icon {
+  width: 28px; height: 28px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 700;
+  color: #fff;
+}
+.phase-icon.research { background: var(--blue); }
+.phase-icon.plan     { background: var(--purple); }
+.phase-icon.build    { background: var(--teal); }
+.phase-icon.test     { background: var(--coral); }
+.phase-icon.report   { background: var(--green); }
+
+.phase-title {
+  font-size: 14px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text);
+}
+.phase-count {
+  font-size: 11px;
+  color: var(--muted);
+  margin-left: auto;
+}
+
+/* --- Step cards --- */
+.step-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.step-card {
+  display: grid;
+  grid-template-columns: 40px 70px 1fr auto;
+  align-items: start;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  transition: border-color 0.3s, box-shadow 0.3s;
+}
+.step-card.active {
+  border-color: var(--teal);
+  box-shadow: 0 0 0 1px var(--teal), 0 0 20px rgba(0,178,169,0.08);
+  animation: stepEnter 0.4s ease-out;
+}
+.step-card.done {
+  opacity: 0.85;
+}
+
+@keyframes stepEnter {
+  from { transform: translateY(8px); opacity: 0; }
+  to   { transform: translateY(0); opacity: 1; }
+}
+
+/* Step number */
+.step-num {
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  background: var(--bg);
+  border: 2px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+  transition: all 0.3s;
+}
+.step-card.active .step-num {
+  border-color: var(--teal);
+  color: var(--teal);
+}
+.step-card.done .step-num {
+  border-color: var(--green);
+  color: var(--green);
+  background: rgba(34,197,94,0.1);
+}
+
+/* Type badge */
+.step-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+  margin-top: 3px;
+}
+.step-badge.tool       { background: rgba(0,178,169,0.15); color: var(--teal); }
+.step-badge.rag        { background: rgba(146,192,233,0.15); color: var(--blue); }
+.step-badge.skill      { background: rgba(197,180,226,0.15); color: var(--purple); }
+.step-badge.approve    { background: rgba(245,158,11,0.15); color: var(--orange); }
+.step-badge.status     { background: rgba(139,149,166,0.15); color: var(--muted); }
+.step-badge.token      { background: rgba(59,130,246,0.15); color: var(--accent); }
+.step-badge.error      { background: rgba(239,68,68,0.15); color: var(--red); }
+.step-badge.session    { background: rgba(34,197,94,0.15); color: var(--green); }
+
+/* Step content */
+.step-content { min-width: 0; }
+.step-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 2px;
+}
+.step-detail {
+  font-size: 11px;
+  color: var(--muted);
+  font-family: var(--mono);
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 120px;
+  overflow: hidden;
+  transition: max-height 0.3s;
+}
+.step-detail.expanded {
+  max-height: none;
+}
+.step-detail-toggle {
+  font-size: 10px;
+  color: var(--accent);
+  cursor: pointer;
+  margin-top: 4px;
+  display: none;
+}
+.step-detail-toggle.visible { display: block; }
+
+/* Step timing */
+.step-timing {
+  font-size: 11px;
+  color: var(--dim);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  margin-top: 4px;
+}
+
+/* --- Connector line between steps --- */
+.step-connector {
+  width: 2px;
+  height: 12px;
+  background: var(--border);
+  margin: 0 0 0 33px;
+}
+.step-connector.active {
+  background: var(--teal);
+}
+
+/* --- Approval gate highlight --- */
+.step-card.approve-gate {
+  border-color: var(--orange);
+  background: rgba(245,158,11,0.04);
+}
+.step-card.approve-gate .step-num {
+  border-color: var(--orange);
+  color: var(--orange);
+}
+
+/* --- Error card --- */
+.step-card.error-card {
+  border-color: var(--red);
+  background: rgba(239,68,68,0.04);
+}
+
+/* --- Completion banner --- */
+.completion-banner {
+  margin-top: 24px;
+  padding: 20px 24px;
+  background: rgba(0,178,169,0.06);
+  border: 1px solid var(--teal);
+  border-radius: 8px;
+  text-align: center;
+}
+.completion-banner .title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--teal);
+  margin-bottom: 8px;
+}
+.completion-banner .stats {
+  font-size: 13px;
+  color: var(--muted);
+}
+.completion-banner .stats span {
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* --- Toast --- */
+.toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 10px 20px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--text);
+  z-index: 200;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+}
+
+/* --- Scrollbar --- */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--dim); }
+
+/* --- Responsive --- */
+@media (max-width: 768px) {
+  main { padding: 16px; }
+  .step-card { grid-template-columns: 32px 60px 1fr; gap: 8px; }
+  .step-timing { grid-column: 2 / -1; }
+  .meta { gap: 6px; }
+  .timer-pill, .counter-pill { padding: 3px 8px; }
+}

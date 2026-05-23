@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="cache-control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="pragma" content="no-cache">
+<meta http-equiv="expires" content="0">
+<title>agentic_interop - Observer</title>
+<script>
+  (function () {
+    var v = Date.now();
+    document.write('<link rel="stylesheet" href="observer.css?v=' + v + '">');
+    window.__agenticVer = v;
+  })();
+</script>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-title">Observer</span>
+    <span class="brand-sub">Behind the Scenes</span>
+  </div>
+  <div class="meta">
+    <span class="status-pill" id="status-pill">
+      <span class="dot" id="status-dot"></span>
+      <span id="status-label">Connecting...</span>
+    </span>
+    <span class="timer-pill" id="timer-pill">
+      <span class="label">Elapsed</span>
+      <span class="value" id="timer-value">0.0s</span>
+    </span>
+    <span class="counter-pill" id="tools-pill">
+      <span class="label">Tools</span>
+      <span class="value" id="tools-count">0</span>
+    </span>
+    <span class="counter-pill" id="tokens-pill">
+      <span class="label">Tokens</span>
+      <span class="value" id="tokens-count">0</span>
+    </span>
+  </div>
+</header>
+
+<main id="main">
+  <section class="flow" id="flow">
+    <div class="empty-state" id="empty-state">
+      Waiting for a chat session to begin...
+      <br><br>
+      Open the <a href="../chat/index.html" target="_blank">Chat UI</a> in another tab and send a message.
+      <br>
+      This page will automatically connect when the session starts.
+    </div>
+  </section>
+</main>
+
+<div id="toast" class="toast" hidden></div>
+
+<script>document.write('<scr' + 'ipt src="observer.js?v=' + window.__agenticVer + '"></scr' + 'ipt>');</script>
+</body>
+</html>

@@ -236,6 +236,19 @@ ClassMethod ChatStream(pResponse As %CSP.Response, pBodyStream) As %Status
     // tool_confirm emit corrupt their JSON response with SSE frames.
     Set %agenticChatSSE = 1
 
+    ; LiveFeed session tracking — unique id per chat request. The
+    ; Observer page tails ^AgInt.LiveFeed(sessionId, seq) via its own
+    ; SSE endpoint. The id is process-scoped; it clears at request end.
+    Set %agenticChatSessionId = $zstrip($system.Util.CreateGUID(), "<>W")
+    Set %agenticChatStart = $zhorolog
+    Set ^AgInt.LiveFeed("active", %agenticChatSessionId) = $horolog
+    ; Write a session_start event so the observer knows who/what
+    Set startInfo = {}
+    Set startInfo.sessionId = %agenticChatSessionId
+    Set startInfo.user = $username
+    Set startInfo.namespace = $namespace
+    Do ..WriteLiveFeed("session_start", startInfo)
+
     Set req = $classmethod(util, "ParseBody", pBodyStream)
     If '$isobject(req) {
         Do ..SSEEvent("error", {"error":"Invalid JSON body","stage":"parse"})
@@ -390,6 +403,12 @@ ClassMethod ChatStream(pResponse As %CSP.Response, pBodyStream) As %Status
     } Catch ex {
         Do ..SSEEvent("error", {"error":($extract(ex.DisplayString(),1,1000)),"stage":(stage)})
     }
+    ; Mark session as finished in the LiveFeed so the Observer shows
+    ; the completed state and stops polling.
+    If $get(%agenticChatSessionId) '= "" {
+        Do ..WriteLiveFeed("session_end", {})
+        Kill ^AgInt.LiveFeed("active", %agenticChatSessionId)
+    }
     Quit $$$OK
 }
 
@@ -511,6 +530,32 @@ ClassMethod SSEEvent(pType As %String, pData As %DynamicObject)
     Write ":", ..SSEPadding(), $char(10)
     Write $char(10)
     Write *-3
+    ; Mirror every SSE event to ^AgInt.LiveFeed so the Observer page
+    ; can tail the session in real time from a separate browser tab.
+    ; The global is keyed by session id + auto-incrementing sequence.
+    ; ObserverService tails this global via its own SSE endpoint.
+    Do ..WriteLiveFeed(pType, pData)
+}
+
+/// Write one event to the LiveFeed global so the Observer page can
+/// tail it in real time. Each event is stored as a JSON string under
+/// ^AgInt.LiveFeed(sessionId, seq). The session id comes from the
+/// process-private %agenticChatSessionId set by ChatStream at the
+/// start of the request. Active sessions are tracked in
+/// ^AgInt.LiveFeed("active", sessionId) = $horolog.
+ClassMethod WriteLiveFeed(pType As %String, pData As %DynamicObject)
+{
+    Set sid = $get(%agenticChatSessionId)
+    If sid = "" Quit
+    Set entry = {}
+    Set entry.type = pType
+    Set entry.data = pData
+    Set entry.ts = $zdatetime($horolog, 3, 1)
+    Set entry.elapsed = $fnumber($zhorolog - $get(%agenticChatStart, $zhorolog), "", 1)
+    Set seq = $increment(^AgInt.LiveFeed(sid))
+    Set ^AgInt.LiveFeed(sid, seq) = entry.%ToJSON()
+    ; Update active-session marker with latest activity time
+    Set ^AgInt.LiveFeed("active", sid) = $horolog
 }
 
 ClassMethod SSEPadding() As %String [ Internal ]
