@@ -43,6 +43,7 @@ ClassMethod %TargetNs() As %String [ Internal ]
 /// Read-only.
 ClassMethod ValidateHL7Structure(message As %String) As %DynamicObject
 {
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("ValidateHL7Structure")
     Set out = {}
     If $get(message) = "" {
         Set out.ok = 0
@@ -85,6 +86,7 @@ ClassMethod ValidateHL7Structure(message As %String) As %DynamicObject
         Set out.valid = 0
         Set out.error = $extract(ex.DisplayString(), 1, 400)
     }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("ValidateHL7Structure", out)
     Quit out
 }
 
@@ -105,6 +107,7 @@ ClassMethod ValidateHL7Structure(message As %String) As %DynamicObject
 /// issues:[{severity,code,location,details}] }. Read-only.
 ClassMethod ValidateFHIRResource(resource) As %DynamicObject
 {
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("ValidateFHIRResource")
     Set out = {}
     Set out.issues = []
     Try {
@@ -159,6 +162,7 @@ ClassMethod ValidateFHIRResource(resource) As %DynamicObject
         Set out.valid = 0
         Set out.error = $extract(ex.DisplayString(), 1, 400)
     }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("ValidateFHIRResource", out)
     Quit out
 }
 
@@ -193,6 +197,7 @@ ClassMethod %CountReferences(node) As %Integer [ Internal ]
 /// Returns: { ok, valid, docType, schemaError?, error? }. Read-only.
 ClassMethod ValidateHL7Semantics(message As %String, docType As %String = "") As %DynamicObject
 {
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("ValidateHL7Semantics")
     Set out = {}
     If $get(message) = "" {
         Set out.ok = 0
@@ -246,6 +251,7 @@ ClassMethod ValidateHL7Semantics(message As %String, docType As %String = "") As
         Set out.valid = 0
         Set out.error = $extract(ex.DisplayString(), 1, 400)
     }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("ValidateHL7Semantics", out)
     Quit out
 }
 
@@ -260,6 +266,7 @@ ClassMethod ValidateHL7Semantics(message As %String, docType As %String = "") As
 /// addedInB, removedFromA, fieldDiffs:[{segment, segIndex, field, a, b}], total }.
 ClassMethod CompareMessages(messageA As %String, messageB As %String) As %DynamicObject
 {
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("CompareMessages")
     Set out = {}
     Set out.fieldDiffs = []
     If $get(messageA) = "" || ($get(messageB) = "") {
@@ -328,6 +335,7 @@ ClassMethod CompareMessages(messageA As %String, messageB As %String) As %Dynami
         Set out.ok = 0
         Set out.error = $extract(ex.DisplayString(), 1, 400)
     }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("CompareMessages", out)
     Quit out
 }
 
@@ -344,6 +352,7 @@ ClassMethod CompareMessages(messageA As %String, messageB As %String) As %Dynami
 /// Returns: { ok, namespace, target, ack?, response?, error? }.
 ClassMethod SendHL7(message As %String, targetHost As %String) As %DynamicObject
 {
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("SendHL7")
     Set out = {}
     Set out.tool = "send_hl7"
     Set out.target = targetHost
@@ -401,6 +410,7 @@ ClassMethod SendHL7(message As %String, targetHost As %String) As %DynamicObject
         Set out.ok = 0
         Set out.error = $extract(ex.DisplayString(), 1, 400)
     }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("SendHL7", out)
     Quit out
 }
 
@@ -419,6 +429,7 @@ ClassMethod SendHL7(message As %String, targetHost As %String) As %DynamicObject
 /// Returns: { ok, status, statusCode, location?, response?, error? }.
 ClassMethod SendFHIR(resource, endpoint As %String, authBearer As %String = "") As %DynamicObject
 {
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("SendFHIR")
     Set out = {}
     Set out.tool = "send_fhir"
     Set out.endpoint = endpoint
@@ -485,6 +496,7 @@ ClassMethod SendFHIR(resource, endpoint As %String, authBearer As %String = "") 
         Set out.ok = 0
         Set out.error = $extract(ex.DisplayString(), 1, 400)
     }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("SendFHIR", out)
     Quit out
 }
 
@@ -519,6 +531,7 @@ ClassMethod SendFHIR(resource, endpoint As %String, authBearer As %String = "") 
 /// Read-only (does not persist the message).
 ClassMethod BuildHL7TestMessage(docType As %String, fields As %DynamicObject) As %DynamicObject
 {
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("BuildHL7TestMessage")
     Set out = {}
     Set out.tool = "build_hl7_test_message"
     If $get(docType) = "" {
@@ -592,6 +605,7 @@ ClassMethod BuildHL7TestMessage(docType As %String, fields As %DynamicObject) As
         Set out.ok = 0
         Set out.error = $extract(ex.DisplayString(), 1, 400)
     }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("BuildHL7TestMessage", out)
     Quit out
 }
 
@@ -615,6 +629,7 @@ ClassMethod BuildHL7TestMessage(docType As %String, fields As %DynamicObject) As
 ///   sendResult: { ok, messages, errors }, hint }
 ClassMethod BuildAndSendHL7TestMessage(docType As %String, fields As %DynamicObject, targetHost As %String) As %DynamicObject
 {
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("BuildAndSendHL7TestMessage")
     Set out = {}
     Set out.tool = "build_and_send_hl7_test_message"
     ; Step 1: Build the message using BuildHL7TestMessage
@@ -647,6 +662,7 @@ ClassMethod BuildAndSendHL7TestMessage(docType As %String, fields As %DynamicObj
     }
     Set out.ok = 1
     Set out.hint = "Message built with correct field positions via SetValueAt() and sent to " _ targetHost _ ". Check the transformed output in the production message trace."
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("BuildAndSendHL7TestMessage", out)
     Quit out
 }
 

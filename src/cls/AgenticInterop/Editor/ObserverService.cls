@@ -1,16 +1,18 @@
-/// Observer SSE service — tails ^AgInt.LiveFeed(sessionId, seq) in
-/// real time, delivering every event the chat session writes to the
-/// LiveFeed global. Used by the Observer HTML page to show a "behind
-/// the scenes" view of the agent's computation during VP demos.
+/// Observer service — tails ^AgInt.LiveFeed(sessionId, seq) in real time,
+/// delivering every event the chat session writes to the LiveFeed global.
+/// Used by the Observer HTML page to show a "behind the scenes" view of
+/// the agent's computation during VP demos.
 ///
-/// Two endpoints:
-///   GET /observer/sessions — JSON list of active and recent sessions
-///   GET /observer/stream?session=<id> — SSE stream tailing the feed
+/// Three endpoints:
+///   GET  /observer/sessions — JSON list of active and recent sessions
+///   POST /observer/stream   — JSON batch of events since a cursor
+///   POST /observer/purge    — Clear all LiveFeed data
 ///
-/// The stream endpoint long-polls the global: it reads all events from
-/// the last-seen sequence, sends them as SSE frames, then hangs 0.5s
-/// and checks again. It terminates when a session_end event arrives
-/// or 10 minutes of inactivity pass (whichever comes first).
+/// The stream endpoint uses fast JSON polling (POST every 500ms from the
+/// browser with an incrementing cursor) instead of SSE long-poll because
+/// the Apache CSP gateway buffers SSE responses on non-chat endpoints and
+/// they never reach the browser. The 500ms poll rate gives near-real-time
+/// visibility into tool execution during agent.Chat().
 ///
 /// Security: inherits the Dispatch.cls OnPreDispatch auth gate. The
 /// observer page requires login just like the chat page.
@@ -90,103 +92,60 @@ ClassMethod SessionInfo(pId As %String, pActive As %Boolean) As %DynamicObject [
     Quit info
 }
 
-/// SSE stream that tails ^AgInt.LiveFeed(sessionId). Polls every 500ms
-/// for new events, sends them as SSE frames. Terminates on session_end
-/// event or 600s inactivity timeout.
+/// Return events since a cursor position for a given session. The
+/// observer page polls this every 500ms with an incrementing cursor to
+/// get near-real-time visibility into tool execution during agent.Chat().
 ///
-/// Query param: session=<id> — required.
-/// If session=latest, picks the most recently active session.
+/// POST body: { "session": "<id>", "cursor": <int> }
+/// session — required. Use "latest" to auto-pick the most recent.
+/// cursor  — optional (default 0). Events after this seq are returned.
+///
+/// Response: { session, cursor, events: [...], ended: 0|1 }
 ClassMethod Stream(pResponse As %CSP.Response) As %Status
 {
-    Set pResponse.ContentType = "text/event-stream"
-    Set pResponse.CharSet = "utf-8"
-    Do pResponse.SetHeader("Cache-Control", "no-cache, no-transform")
-    Do pResponse.SetHeader("X-Accel-Buffering", "no")
-    Do pResponse.SetHeader("Connection", "close")
-
-    Set sid = $get(%request.Data("session", 1))
+    ; Read session id from POST body or query param (backwards compat)
+    Set sid = ""
+    Set body = ""
+    Try {
+        Set body = ##class(%DynamicAbstractObject).%FromJSON(%request.Content)
+        If $isobject(body) Set sid = body.session
+    } Catch {}
+    If sid = "" Set sid = $get(%request.Data("session", 1))
     ; "latest" mode: find most recently active session
     If sid = "latest" {
         Set sid = ..FindLatestSession()
     }
     If sid = "" {
-        Write "event: error", $char(10)
-        Write "data: {""error"":""Missing session parameter""}", $char(10), $char(10)
+        Set pResponse.ContentType = "application/json"
+        Set pResponse.Status = "400 Bad Request"
+        Set err = {}
+        Set err.error = "Missing session parameter"
+        Do err.%ToJSON()
         Quit $$$OK
     }
-
-    ; Send initial snapshot: replay all existing events. Flush after
-    ; every event — the Apache CSP gateway buffers aggressively on GET
-    ; SSE streams, so one big batch+flush at the end never reaches the
-    ; browser. Per-event flush mirrors what ChatService does.
-    Set cursor = 0
-    Set ended = 0
+    Set cursor = +$get(%request.Data("cursor", 1))
+    Try {
+        If $isobject(body), body.%IsDefined("cursor") Set cursor = +body.cursor
+    } Catch {}
+    Set pResponse.ContentType = "application/json"
+    Set arr = []
     Set lastSeq = +$get(^AgInt.LiveFeed(sid))
-    For seq=1:1:lastSeq {
+    Set ended = 0
+    For seq=(cursor+1):1:lastSeq {
         Set raw = $get(^AgInt.LiveFeed(sid, seq))
         If raw = "" Continue
-        Write "event: feed", $char(10)
-        Write "data: ", raw, $char(10)
-        Write ":", ..Padding(), $char(10)
-        Write $char(10)
-        Write *-3
-        Set cursor = seq
-        ; Detect session_end during replay so we exit cleanly for
-        ; completed sessions instead of hanging in the poll loop.
         Try {
             Set ev = ##class(%DynamicAbstractObject).%FromJSON(raw)
-            If $isobject(ev), ev.type = "session_end" Set ended = 1
+            Do arr.%Push(ev)
+            If ev.type = "session_end" Set ended = 1
         } Catch {}
     }
-
-    ; If session already ended during replay, exit immediately.
-    If ended Quit $$$OK
-
-    ; Long-poll for new events. Check every 500ms. Exit on
-    ; session_end or 600s (10 min) inactivity timeout.
-    Set idleStart = $zhorolog
-    Set maxIdle = 600
-    Set lastKeepalive = $zhorolog
-    While 'ended {
-        ; Check for new events since cursor
-        Set newSeq = +$get(^AgInt.LiveFeed(sid))
-        If newSeq > cursor {
-            Set idleStart = $zhorolog
-            For seq=(cursor+1):1:newSeq {
-                Set raw = $get(^AgInt.LiveFeed(sid, seq))
-                If raw = "" Continue
-                Write "event: feed", $char(10)
-                Write "data: ", raw, $char(10)
-                Write ":", ..Padding(), $char(10)
-                Write $char(10)
-                Write *-3
-                ; Check if this is session_end
-                Try {
-                    Set ev = ##class(%DynamicAbstractObject).%FromJSON(raw)
-                    If $isobject(ev), ev.type = "session_end" Set ended = 1
-                } Catch {}
-            }
-            Set cursor = newSeq
-        } Else {
-            ; No new events — send keepalive comment every 10s to
-            ; prevent Apache from killing the idle connection.
-            If ($zhorolog - lastKeepalive) > 10 {
-                Write ":keepalive ", $zdatetime($horolog, 3, 1), $char(10)
-                Write $char(10)
-                Write *-3
-                Set lastKeepalive = $zhorolog
-            }
-            ; Check idle timeout
-            If ($zhorolog - idleStart) > maxIdle {
-                Set ended = 1
-                Write "event: feed", $char(10)
-                Write "data: {""type"":""timeout"",""data"":{},""ts"":"""_$zdatetime($horolog,3,1)_""",""elapsed"":""0""}", $char(10)
-                Write $char(10)
-                Write *-3
-            }
-        }
-        If 'ended Hang 0.5
-    }
+    Set out = {}
+    Set out.session = sid
+    Set out.cursor = lastSeq
+    Set out.events = arr
+    Set out.ended = ended
+    Do out.%ToJSON()
     Quit $$$OK
 }
 

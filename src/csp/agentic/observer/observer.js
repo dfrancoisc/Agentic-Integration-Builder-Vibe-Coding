@@ -201,16 +201,19 @@
     }
     if (t === 'tool_start') {
       toolCount++; toolsCount.textContent = toolCount;
+      var toolName = d.name || d.tool || d.msg || '?';
       var argsStr = '';
       try { argsStr = d.args ? (typeof d.args === 'string' ? d.args : JSON.stringify(d.args)) : ''; } catch (e) {}
-      line('tool_start', esc(d.name || '?'), argsStr || null);
+      line('tool_start', esc(toolName), argsStr || null);
       return;
     }
     if (t === 'tool_result') {
+      var toolName = d.name || d.tool || d.msg || '?';
       var r = '';
       try { r = d.result ? (typeof d.result === 'string' ? d.result : JSON.stringify(d.result, null, 2)) : ''; } catch (e) { r = String(d.result); }
-      var ok = r.indexOf('"ok":1') !== -1 || r.indexOf('"ok": 1') !== -1;
-      line('tool_result', esc(d.name || '?') + (ok ? '  ok' : ''), r || null);
+      var ok = d.ok === 1 || d.ok === true || r.indexOf('"ok":1') !== -1 || r.indexOf('"ok": 1') !== -1;
+      var errMsg = d.error ? '  ' + d.error.substring(0, 80) : '';
+      line(ok ? 'tool_result' : 'tool_error', esc(toolName) + (ok ? '  ok' : errMsg), r || (d.error ? d.error : null));
       return;
     }
     if (t === 'tool_error') {
@@ -315,59 +318,63 @@
   //  STREAM — connect to a session's event stream
   // ============================================================
 
+  // Active session poll handle — separate from the discovery poll.
+  // Polls /observer/stream every 500ms with an incrementing cursor
+  // to fetch new events as JSON batches (fast-poll approach replaces
+  // the SSE stream because the Apache CSP gateway buffers SSE responses
+  // on non-chat endpoints and they never reach the browser).
+  var activePollHandle = null;
+  var activePollCursor = 0;
+
   function connectToSession(sid) {
     seenSessions[sid] = true;
     sessionEnded = false;
+    activePollCursor = 0;
     var a = getAuth();
     if (!a) return;
-    setStatus('connected', 'Connecting...');
-    if (abortCtrl) { try { abortCtrl.abort(); } catch (e) {} }
-    abortCtrl = new AbortController();
+    setStatus('connected', 'Connected');
+    // Stop discovery polling while we're tailing a session
+    stopPolling();
+    // Stop any previous active poll
+    if (activePollHandle) { clearInterval(activePollHandle); activePollHandle = null; }
 
-    fetch('/api/agentic/observer/stream?session=' + encodeURIComponent(sid), {
-      method: 'GET',
-      headers: { 'Authorization': a },
-      signal: abortCtrl.signal
-    }).then(function (response) {
-      if (!response.ok) {
-        if (response.status === 401) {
-          localStorage.removeItem('agentic_credentials');
-          auth = null; setStatus('error', 'Auth failed');
+    function fetchEvents() {
+      var a2 = getAuth();
+      if (!a2) return;
+      fetch('/api/agentic/observer/stream', {
+        method: 'POST',
+        headers: { 'Authorization': a2, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session: sid, cursor: activePollCursor })
+      }).then(function (r) {
+        if (!r.ok) {
+          if (r.status === 401) {
+            localStorage.removeItem('agentic_credentials');
+            auth = null; setStatus('error', 'Auth failed');
+          }
+          return;
         }
-        return;
-      }
-      var reader = response.body.getReader();
-      var decoder = new TextDecoder();
-      var buffer = '';
+        return r.json();
+      }).then(function (data) {
+        if (!data) return;
+        if (data.cursor > activePollCursor) activePollCursor = data.cursor;
+        if (data.events && data.events.length > 0) {
+          for (var i = 0; i < data.events.length; i++) {
+            try { render(data.events[i]); } catch (e) {}
+          }
+        }
+        if (data.ended) {
+          sessionEnded = true;
+          setStatus('ended', 'Session ended');
+          if (activePollHandle) { clearInterval(activePollHandle); activePollHandle = null; }
+          // Resume discovery polling after a delay
+          setTimeout(startPolling, 3000);
+        }
+      }).catch(function () {});
+    }
 
-      function pump() {
-        return reader.read().then(function (result) {
-          if (result.done) {
-            if (!sessionEnded) setStatus('ended', 'Stream closed');
-            setTimeout(startPolling, 3000);
-            return;
-          }
-          buffer += decoder.decode(result.value, { stream: true });
-          var lines = buffer.split('\n');
-          buffer = lines.pop();
-          var evType = null, evData = null;
-          for (var i = 0; i < lines.length; i++) {
-            var l = lines[i];
-            if (l.indexOf('event: ') === 0) evType = l.substring(7).trim();
-            else if (l.indexOf('data: ') === 0) evData = l.substring(6);
-            else if (l === '' && evType === 'feed' && evData) {
-              try { render(JSON.parse(evData)); } catch (e) {}
-              evType = null; evData = null;
-            } else if (l === '') { evType = null; evData = null; }
-          }
-          return pump();
-        });
-      }
-      return pump();
-    }).catch(function (err) {
-      if (err.name === 'AbortError') return;
-      setTimeout(startPolling, 3000);
-    });
+    // Immediate first fetch + 500ms interval
+    fetchEvents();
+    activePollHandle = setInterval(fetchEvents, 500);
   }
 
   // ============================================================

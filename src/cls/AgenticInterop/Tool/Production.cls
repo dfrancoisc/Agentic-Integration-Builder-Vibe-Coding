@@ -35,6 +35,7 @@ ClassMethod %TargetNs() As %String [ Internal ]
 /// Returns: { ok, namespace, productions:[{name, isActive, status?}], total }.
 ClassMethod ListProductions() As %DynamicObject
 {
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("ListProductions")
     Set out = {}
     Set out.productions = []
     Set targetNs = ..%TargetNs()
@@ -69,6 +70,7 @@ ClassMethod ListProductions() As %DynamicObject
         Set out.ok = 0
         Set out.error = $extract(ex.DisplayString(), 1, 400)
     }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("ListProductions", out)
     Quit out
 }
 
@@ -84,6 +86,7 @@ ClassMethod ListProductions() As %DynamicObject
 /// items:[{name, className, poolSize, enabled, comment, settings:[{target, name, value}]}], total }.
 ClassMethod GetProduction(name As %String) As %DynamicObject
 {
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("GetProduction")
     Set out = {}
     Set out.name = name
     Set targetNs = ..%TargetNs()
@@ -136,6 +139,7 @@ ClassMethod GetProduction(name As %String) As %DynamicObject
         Set out.ok = 0
         Set out.error = $extract(ex.DisplayString(), 1, 400)
     }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("GetProduction", out)
     Quit out
 }
 
@@ -159,6 +163,7 @@ ClassMethod GetProduction(name As %String) As %DynamicObject
 /// production: fully-qualified production class name.
 ClassMethod StartProduction(production As %String) As %DynamicObject
 {
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("StartProduction")
     Set out = {}
     Set out.tool = "start_production"
     Set out.production = production
@@ -203,6 +208,7 @@ ClassMethod StartProduction(production As %String) As %DynamicObject
         Set out.ok = 0
         Set out.error = $extract(ex.DisplayString(), 1, 400)
     }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("StartProduction", out)
     Quit out
 }
 
@@ -213,6 +219,7 @@ ClassMethod StartProduction(production As %String) As %DynamicObject
 /// force:   if 1, hard-stop after the grace period instead of waiting.
 ClassMethod StopProduction(timeout As %Integer = 30, force As %Boolean = 0) As %DynamicObject
 {
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("StopProduction")
     Set out = {}
     Set out.tool = "stop_production"
     ; Guard against the framework passing "" when the LLM omits a parameter
@@ -250,6 +257,7 @@ ClassMethod StopProduction(timeout As %Integer = 30, force As %Boolean = 0) As %
         Set out.ok = 0
         Set out.error = $extract(ex.DisplayString(), 1, 400)
     }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("StopProduction", out)
     Quit out
 }
 
@@ -262,6 +270,7 @@ ClassMethod StopProduction(timeout As %Integer = 30, force As %Boolean = 0) As %
 /// description: shown in the SMP / Production Configuration page.
 ClassMethod CreateProduction(name As %String, description As %String = "") As %DynamicObject
 {
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("CreateProduction")
     Set out = {}
     Set out.tool = "create_production"
     Set out.production = name
@@ -315,6 +324,7 @@ ClassMethod CreateProduction(name As %String, description As %String = "") As %D
         Set out.ok = 0
         Set out.error = $extract(ex.DisplayString(), 1, 400)
     }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("CreateProduction", out)
     Quit out
 }
 
@@ -325,6 +335,7 @@ ClassMethod CreateProduction(name As %String, description As %String = "") As %D
 /// name: fully-qualified production class name.
 ClassMethod DeleteProduction(name As %String) As %DynamicObject
 {
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("DeleteProduction")
     Set out = {}
     Set out.tool = "delete_production"
     Set out.production = name
@@ -365,6 +376,7 @@ ClassMethod DeleteProduction(name As %String) As %DynamicObject
         Set out.ok = 0
         Set out.error = $extract(ex.DisplayString(), 1, 400)
     }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("DeleteProduction", out)
     Quit out
 }
 
@@ -386,6 +398,7 @@ ClassMethod DeleteProduction(name As %String) As %DynamicObject
 /// (e.g., GT1 after IN1) with "ErrMapSegUnrecog".
 ClassMethod AddBusinessHost(production As %String, hostName As %String, hostClass As %String, settings As %DynamicObject = "") As %DynamicObject
 {
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("AddBusinessHost")
     Set out = {}
     Set out.tool = "add_business_host"
     Set out.production = production
@@ -493,6 +506,7 @@ ClassMethod AddBusinessHost(production As %String, hostName As %String, hostClas
         Set out.ok = 0
         Set out.error = $extract(ex.DisplayString(), 1, 400)
     }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("AddBusinessHost", out)
     Quit out
 }
 
@@ -503,6 +517,7 @@ ClassMethod AddBusinessHost(production As %String, hostName As %String, hostClas
 /// hostName:   the logical host name to remove.
 ClassMethod RemoveBusinessHost(production As %String, hostName As %String) As %DynamicObject
 {
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("RemoveBusinessHost")
     Set out = {}
     Set out.tool = "remove_business_host"
     Set out.production = production
@@ -567,6 +582,7 @@ ClassMethod RemoveBusinessHost(production As %String, hostName As %String) As %D
         Set out.ok = 0
         Set out.error = $extract(ex.DisplayString(), 1, 400)
     }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("RemoveBusinessHost", out)
     Quit out
 }
 
@@ -586,6 +602,7 @@ ClassMethod RemoveBusinessHost(production As %String, hostName As %String) As %D
 ///                "Adapter": { "FilePath": "/tmp/in/", "FileSpec": "*.hl7" } }
 ClassMethod UpdateBusinessHostSettings(production As %String, hostName As %String, settings As %DynamicObject) As %DynamicObject
 {
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("UpdateBusinessHostSettings")
     Set out = {}
     Set out.tool = "update_business_host_settings"
     Set out.production = production
@@ -688,6 +705,7 @@ ClassMethod UpdateBusinessHostSettings(production As %String, hostName As %Strin
         Set out.ok = 0
         Set out.error = $extract(ex.DisplayString(), 1, 400)
     }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("UpdateBusinessHostSettings", out)
     Quit out
 }
 
@@ -702,6 +720,7 @@ ClassMethod UpdateBusinessHostSettings(production As %String, hostName As %Strin
 /// minutesBack: how far back to check event log and messages (default 5).
 ClassMethod PostBuildValidation(production As %String, minutesBack As %Integer = 5) As %DynamicObject
 {
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("PostBuildValidation")
     Set out = {}
     Set out.production = production
     Set out.checks = []
@@ -993,6 +1012,7 @@ ClassMethod PostBuildValidation(production As %String, minutesBack As %Integer =
         Set out.ok = 0
         Set out.error = $extract(ex.DisplayString(), 1, 400)
     }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("PostBuildValidation", out)
     Quit out
 }
 
@@ -1004,6 +1024,7 @@ ClassMethod PostBuildValidation(production As %String, minutesBack As %Integer =
 /// Returns: { ok, namespace, rules:[{name, super, description?}], total }.
 ClassMethod ListBusinessRules() As %DynamicObject
 {
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("ListBusinessRules")
     Set out = {}
     Set targetNs = ..%TargetNs()
     Set out.namespace = targetNs
@@ -1035,6 +1056,7 @@ ClassMethod ListBusinessRules() As %DynamicObject
         Set out.ok = 0
         Set out.error = $extract(ex.DisplayString(), 1, 400)
     }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("ListBusinessRules", out)
     Quit out
 }
 
@@ -1087,6 +1109,7 @@ ClassMethod ListBusinessRules() As %DynamicObject
 ///          </ruleDefinition>
 ClassMethod CreateRoutingRule(name As %String, ruleXml As %String) As %DynamicObject
 {
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("CreateRoutingRule")
     Set out = {}
     Set out.tool = "create_routing_rule"
     Set out.name = name
@@ -1280,6 +1303,7 @@ ClassMethod CreateRoutingRule(name As %String, ruleXml As %String) As %DynamicOb
         Set out.ok = 0
         Set out.error = $extract(ex.DisplayString(), 1, 400)
     }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("CreateRoutingRule", out)
     Quit out
 }
 
@@ -1293,6 +1317,7 @@ ClassMethod CreateRoutingRule(name As %String, ruleXml As %String) As %DynamicOb
 /// service uses ArchivePath.
 ClassMethod EnsureDirectory(path As %String) As %DynamicObject
 {
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("EnsureDirectory")
     Set out = {}
     Set out.tool = "ensure_directory"
     Set out.path = path
@@ -1321,6 +1346,7 @@ ClassMethod EnsureDirectory(path As %String) As %DynamicObject
         Set out.ok = 0
         Set out.error = $extract(ex.DisplayString(), 1, 400)
     }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("EnsureDirectory", out)
     Quit out
 }
 

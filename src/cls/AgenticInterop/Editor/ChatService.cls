@@ -81,6 +81,18 @@ ClassMethod Chat(pResponse As %CSP.Response, pBodyStream) As %Status
     }
     Set %agenticApprovedTokens = approvedCsv
 
+    ; LiveFeed session tracking for the Observer — same setup as
+    ; ChatStream but without SSE output. ToolStart/ToolDone (Manager.cls)
+    ; write to ^AgInt.LiveFeed during agent.Run() using this session id.
+    Set clientObs = $classmethod(util, "DObj", req, "observerId")
+    If clientObs '= "" {
+        Set %agenticChatSessionId = clientObs
+    } Else {
+        Set %agenticChatSessionId = $zstrip($system.Util.CreateGUID(), "<>W")
+    }
+    Set %agenticChatStart = $zhorolog
+    Set ^AgInt.LiveFeed("active", %agenticChatSessionId) = $horolog
+
     Set out = {}
     Set start = $zhorolog
     Set stage = "connection"
@@ -147,6 +159,10 @@ ClassMethod Chat(pResponse As %CSP.Response, pBodyStream) As %Status
         Set out.ok = 0
         Set out.error = $extract(ex.DisplayString(), 1, 1000)
         Set out.stage = stage
+    }
+    ; Clean up LiveFeed session so Observer shows completion
+    If $get(%agenticChatSessionId) '= "" {
+        Kill ^AgInt.LiveFeed("active", %agenticChatSessionId)
     }
     Quit $classmethod(util, "WriteJSON", pResponse, out)
 }
@@ -562,8 +578,11 @@ ClassMethod SSEEvent(pType As %String, pData As %DynamicObject)
     Write *-3
     ; Mirror every SSE event to ^AgInt.LiveFeed so the Observer page
     ; can tail the session in real time from a separate browser tab.
-    ; The global is keyed by session id + auto-incrementing sequence.
-    ; ObserverService tails this global via its own SSE endpoint.
+    ; Skip tool_start / tool_result — these are now emitted in real-time
+    ; by ToolStart/ToolDone (Manager.cls) DURING agent.Chat() execution.
+    ; Mirroring them here would create duplicates in the Observer since
+    ; the Monitor fires AFTER Chat() returns.
+    If (pType = "tool_start") || (pType = "tool_result") Quit
     Do ..WriteLiveFeed(pType, pData)
 }
 

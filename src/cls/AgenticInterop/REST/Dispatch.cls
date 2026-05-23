@@ -118,7 +118,7 @@ XData UrlMap [ XMLNamespace = "http://www.intersystems.com/urlmap" ]
          every tool call, RAG search, and approval gate as the agent
          works. Separate SSE stream from the chat endpoint. -->
     <Route Url="/observer/sessions"             Method="GET"    Call="ObserverSessions" />
-    <Route Url="/observer/stream"               Method="GET"    Call="ObserverStream" />
+    <Route Url="/observer/stream"               Method="POST"   Call="ObserverStream" />
     <Route Url="/observer/purge"                Method="POST"   Call="ObserverPurge" />
 </Routes>
 }

@@ -36,6 +36,7 @@ ClassMethod TargetNs() As %String [ Internal ]
 /// totalProperties, totalMethods }. Read-only, fast, safe.
 ClassMethod DescribeClass(className As %String) As %DynamicObject
 {
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("DescribeClass")
     Set out = {}
     Set out.className = className
     Set targetNs = ..TargetNs()
@@ -120,6 +121,7 @@ ClassMethod DescribeClass(className As %String) As %DynamicObject
         Set out.ok = 0
         Set out.error = $extract(ex.DisplayString(), 1, 400)
     }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("DescribeClass", out)
     Quit out
 }
 
@@ -132,6 +134,7 @@ ClassMethod DescribeClass(className As %String) As %DynamicObject
 /// Returns: { ok, namespace, dispatchNamespace, source }. Read-only.
 ClassMethod GetUserNamespace() As %DynamicObject
 {
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("GetUserNamespace")
     Set out = {}
     Set targetNs = ""
     Try { Set targetNs = $get(%request.CgiEnvs("HTTP_X_IRIS_NAMESPACE")) } Catch  {}
@@ -144,6 +147,7 @@ ClassMethod GetUserNamespace() As %DynamicObject
     }
     Set out.dispatchNamespace = $namespace
     Set out.ok = 1
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("GetUserNamespace", out)
     Quit out
 }
 
@@ -154,6 +158,7 @@ ClassMethod GetUserNamespace() As %DynamicObject
 /// Returns: { ok, current, namespaces:[name], total }. Read-only.
 ClassMethod ListUserAccessibleNamespaces() As %DynamicObject
 {
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("ListUserAccessibleNamespaces")
     Set out = {}
     Set out.current = $namespace
     Set out.namespaces = []
@@ -185,6 +190,7 @@ ClassMethod ListUserAccessibleNamespaces() As %DynamicObject
         Set out.ok = 0
         Set out.error = $extract(ex.DisplayString(), 1, 400)
     }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("ListUserAccessibleNamespaces", out)
     Quit out
 }
 
@@ -199,6 +205,7 @@ ClassMethod ListUserAccessibleNamespaces() As %DynamicObject
 /// Returns: { ok, text }. Read-only.
 ClassMethod ExplainStatus(status As %String) As %DynamicObject
 {
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("ExplainStatus")
     Set out = {}
     Try {
         If $get(status) = "" {
@@ -212,6 +219,7 @@ ClassMethod ExplainStatus(status As %String) As %DynamicObject
         Set out.ok = 0
         Set out.error = $extract(ex.DisplayString(), 1, 400)
     }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("ExplainStatus", out)
     Quit out
 }
 
@@ -229,6 +237,7 @@ ClassMethod ExplainStatus(status As %String) As %DynamicObject
 /// Read-only.
 ClassMethod LookupErrorCode(code As %Integer) As %DynamicObject
 {
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("LookupErrorCode")
     Set out = {}
     Try {
         If $get(code) = "" {
@@ -261,6 +270,7 @@ ClassMethod LookupErrorCode(code As %Integer) As %DynamicObject
         Set out.ok = 0
         Set out.error = $extract(ex.DisplayString(), 1, 400)
     }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("LookupErrorCode", out)
     Quit out
 }
 
@@ -278,6 +288,7 @@ ClassMethod LookupErrorCode(code As %Integer) As %DynamicObject
 /// Read-only.
 ClassMethod LookupGlossaryTerm(term As %String) As %DynamicObject
 {
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("LookupGlossaryTerm")
     Set out = {}
     Try {
         If $get(term) = "" {
@@ -335,6 +346,7 @@ ClassMethod LookupGlossaryTerm(term As %String) As %DynamicObject
         Set out.ok = 0
         Set out.error = $extract(ex.DisplayString(), 1, 400)
     }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("LookupGlossaryTerm", out)
     Quit out
 }
 
@@ -349,6 +361,7 @@ ClassMethod LookupGlossaryTerm(term As %String) As %DynamicObject
 /// namespaces, where}], total }. Read-only.
 ClassMethod SearchApiIndex(query As %String, k As %Integer = 5) As %DynamicObject
 {
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("SearchApiIndex")
     Set out = {}
     Set out.results = []
     Try {
@@ -400,6 +413,7 @@ ClassMethod SearchApiIndex(query As %String, k As %Integer = 5) As %DynamicObjec
         Set out.ok = 0
         Set out.error = $extract(ex.DisplayString(), 1, 400)
     }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("SearchApiIndex", out)
     Quit out
 }
 

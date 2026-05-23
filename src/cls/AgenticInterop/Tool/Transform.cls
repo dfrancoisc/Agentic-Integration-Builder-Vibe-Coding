@@ -36,6 +36,7 @@ ClassMethod %TargetNs() As %String [ Internal ]
 /// total }. Read-only.
 ClassMethod ListDTLs() As %DynamicObject
 {
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("ListDTLs")
     Set out = {}
     Set targetNs = ""
     Try { Set targetNs = $get(%request.CgiEnvs("HTTP_X_IRIS_NAMESPACE")) } Catch  {}
@@ -71,6 +72,7 @@ ClassMethod ListDTLs() As %DynamicObject
         Set out.ok = 0
         Set out.error = $extract(ex.DisplayString(), 1, 400)
     }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("ListDTLs", out)
     Quit out
 }
 
@@ -86,6 +88,7 @@ ClassMethod ListDTLs() As %DynamicObject
 /// Returns: { ok, namespace, name, compiled, errors? }.
 ClassMethod CompileDTL(name As %String) As %DynamicObject
 {
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("CompileDTL")
     Set out = {}
     Set out.name = name
     Set targetNs = ""
@@ -124,6 +127,7 @@ ClassMethod CompileDTL(name As %String) As %DynamicObject
         Set out.ok = 0
         Set out.error = $extract(ex.DisplayString(), 1, 400)
     }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("CompileDTL", out)
     Quit out
 }
 
@@ -152,6 +156,7 @@ ClassMethod CompileDTL(name As %String) As %DynamicObject
 ///              update_dtl multiple times for individual fields.
 ClassMethod CreateDTL(name As %String, sourceClass As %String, targetClass As %String, sourceDocType As %String = "", targetDocType As %String = "", dtlXml As %String = "") As %DynamicObject
 {
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("CreateDTL")
     Set out = {}
     Set out.tool = "create_dtl"
     Set out.name = name
@@ -230,6 +235,7 @@ ClassMethod CreateDTL(name As %String, sourceClass As %String, targetClass As %S
         Set out.ok = 0
         Set out.error = $extract(ex.DisplayString(), 1, 400)
     }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("CreateDTL", out)
     Quit out
 }
 
@@ -246,6 +252,7 @@ ClassMethod CreateDTL(name As %String, sourceClass As %String, targetClass As %S
 ///          "<transform sourceClass=...>" and ends with "</transform>".
 ClassMethod UpdateDTL(name As %String, dtlXml As %String) As %DynamicObject
 {
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("UpdateDTL")
     Set out = {}
     Set out.tool = "update_dtl"
     Set out.name = name
@@ -321,6 +328,7 @@ ClassMethod UpdateDTL(name As %String, dtlXml As %String) As %DynamicObject
         Set out.ok = 0
         Set out.error = $extract(ex.DisplayString(), 1, 400)
     }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("UpdateDTL", out)
     Quit out
 }
 
@@ -347,6 +355,7 @@ ClassMethod UpdateDTL(name As %String, dtlXml As %String) As %DynamicObject
 /// Returns: { ok, output? (string), outputJson? (object), error? }.
 ClassMethod DryRunDTL(name As %String, sourceText As %String = "", sourceJson As %DynamicObject = "") As %DynamicObject
 {
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("DryRunDTL")
     Set out = {}
     Set out.tool = "dry_run_dtl"
     Set out.name = name
@@ -450,6 +459,7 @@ ClassMethod DryRunDTL(name As %String, sourceText As %String = "", sourceJson As
         Set out.ok = 0
         Set out.error = $extract(ex.DisplayString(), 1, 400)
     }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("DryRunDTL", out)
     Quit out
 }
 
@@ -462,6 +472,7 @@ ClassMethod DryRunDTL(name As %String, sourceText As %String = "", sourceJson As
 /// Returns: { ok, namespace, tables:[{name, entries}], total }.
 ClassMethod ListLookupTables() As %DynamicObject
 {
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("ListLookupTables")
     Set out = {}
     Set targetNs = ..%TargetNs()
     Set out.namespace = targetNs
@@ -490,6 +501,7 @@ ClassMethod ListLookupTables() As %DynamicObject
         Set out.ok = 0
         Set out.error = $extract(ex.DisplayString(), 1, 400)
     }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("ListLookupTables", out)
     Quit out
 }
 
@@ -504,6 +516,7 @@ ClassMethod ListLookupTables() As %DynamicObject
 /// responseClass:  response message class (default "Ens.Response").
 ClassMethod CreateBPL(name As %String, requestClass As %String = "Ens.Request", responseClass As %String = "Ens.Response") As %DynamicObject
 {
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("CreateBPL")
     Set out = {}
     Set out.tool = "create_bpl"
     Set out.name = name
@@ -560,6 +573,7 @@ ClassMethod CreateBPL(name As %String, requestClass As %String = "Ens.Request", 
         Set out.ok = 0
         Set out.error = $extract(ex.DisplayString(), 1, 400)
     }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("CreateBPL", out)
     Quit out
 }
 
@@ -571,6 +585,7 @@ ClassMethod CreateBPL(name As %String, requestClass As %String = "Ens.Request", 
 /// name: fully-qualified BPL class name.
 ClassMethod ValidateBPL(name As %String) As %DynamicObject
 {
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("ValidateBPL")
     Set out = {}
     Set out.tool = "validate_bpl"
     Set out.name = name
@@ -609,6 +624,7 @@ ClassMethod ValidateBPL(name As %String) As %DynamicObject
         Set out.ok = 0
         Set out.error = $extract(ex.DisplayString(), 1, 400)
     }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("ValidateBPL", out)
     Quit out
 }
 
@@ -627,6 +643,7 @@ ClassMethod ValidateBPL(name As %String) As %DynamicObject
 /// targetClass, description?}], total }. Read-only.
 ClassMethod ListSDAFHIRDTLs(direction As %String = "sda2fhir", fhirVersion As %String = "vR4", filter As %String = "") As %DynamicObject
 {
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("ListSDAFHIRDTLs")
     Set out = {}
     Set targetNs = ..%TargetNs()
     Set out.namespace = targetNs
@@ -695,6 +712,7 @@ ClassMethod ListSDAFHIRDTLs(direction As %String = "sda2fhir", fhirVersion As %S
         Set out.ok = 0
         Set out.error = $extract(ex.DisplayString(), 1, 400)
     }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("ListSDAFHIRDTLs", out)
     Quit out
 }
 
@@ -711,6 +729,7 @@ ClassMethod ListSDAFHIRDTLs(direction As %String = "sda2fhir", fhirVersion As %S
 /// productionHosts:[{class, role, keySettings}] }.
 ClassMethod DescribeTransformationPipeline(sourceFormat As %String, targetFormat As %String) As %DynamicObject
 {
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("DescribeTransformationPipeline")
     Set out = {}
     Set out.sourceFormat = $get(sourceFormat)
     Set out.targetFormat = $get(targetFormat)
@@ -831,6 +850,7 @@ ClassMethod DescribeTransformationPipeline(sourceFormat As %String, targetFormat
         Set out.ok = 0
         Set out.error = $extract(ex.DisplayString(), 1, 400)
     }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("DescribeTransformationPipeline", out)
     Quit out
 }
 
@@ -842,6 +862,7 @@ ClassMethod DescribeTransformationPipeline(sourceFormat As %String, targetFormat
 /// Returns: { ok, namespace, customPackage, configured }.
 ClassMethod GetCustomDTLPackage() As %DynamicObject
 {
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("GetCustomDTLPackage")
     Set out = {}
     Set targetNs = ..%TargetNs()
     Set out.namespace = targetNs
@@ -864,6 +885,7 @@ ClassMethod GetCustomDTLPackage() As %DynamicObject
         Set out.ok = 0
         Set out.error = $extract(ex.DisplayString(), 1, 400)
     }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("GetCustomDTLPackage", out)
     Quit out
 }
 
@@ -899,6 +921,7 @@ ClassMethod GetCustomDTLPackage() As %DynamicObject
 /// Returns: { ok, dtlXml, segmentPathsUsed, warnings? }
 ClassMethod BuildDTLXml(sourceDocType As %String, targetDocType As %String, mappingsJson As %String, createMode As %String = "new") As %DynamicObject
 {
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("BuildDTLXml")
     Set out = {}
     Set out.tool = "build_dtl_xml"
     If $get(sourceDocType) = "" || ($get(targetDocType) = "") || ($get(mappingsJson) = "") {
@@ -1030,6 +1053,7 @@ ClassMethod BuildDTLXml(sourceDocType As %String, targetDocType As %String, mapp
         Set out.ok = 0
         Set out.error = $extract(ex.DisplayString(), 1, 600)
     }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("BuildDTLXml", out)
     Return out
 }
 
@@ -1267,6 +1291,7 @@ ClassMethod %ValidateHL7Paths(dtlXml As %String, sourceDocType As %String, targe
 /// segmentType}], segmentCount, hint }.
 ClassMethod GetHL7SchemaMap(category As %String, messageStructure As %String) As %DynamicObject
 {
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("GetHL7SchemaMap")
     Set out = {}
     Set out.category = $get(category)
     Set out.messageStructure = $get(messageStructure)
@@ -1343,6 +1368,7 @@ ClassMethod GetHL7SchemaMap(category As %String, messageStructure As %String) As
         Set out.ok = 0
         Set out.error = $extract(ex.DisplayString(), 1, 400)
     }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("GetHL7SchemaMap", out)
     Return out
 }
 
@@ -1366,6 +1392,7 @@ ClassMethod GetHL7SchemaMap(category As %String, messageStructure As %String) As
 /// Read-only.
 ClassMethod GetHL7SegmentFields(category As %String, segmentType As %String) As %DynamicObject
 {
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("GetHL7SegmentFields")
     Set out = {}
     Set out.tool = "get_hl7_segment_fields"
     Set out.category = $get(category)
@@ -1476,6 +1503,7 @@ ClassMethod GetHL7SegmentFields(category As %String, segmentType As %String) As 
         Set out.ok = 0
         Set out.error = $extract(ex.DisplayString(), 1, 400)
     }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("GetHL7SegmentFields", out)
     Return out
 }
 

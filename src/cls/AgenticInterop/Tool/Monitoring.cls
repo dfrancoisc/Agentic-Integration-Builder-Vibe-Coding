@@ -33,6 +33,7 @@ ClassMethod TargetNs() As %String [ Internal ]
 /// Read-only.
 ClassMethod QueryEventLog(type As %String = "error", hours As %Integer = 2, configName As %String = "", maxRows As %Integer = 50) As %DynamicObject
 {
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("QueryEventLog")
     Set out = {}
     Set targetNs = ..TargetNs()
     Set out.namespace = targetNs
@@ -121,6 +122,7 @@ ClassMethod QueryEventLog(type As %String = "error", hours As %Integer = 2, conf
         Set out.ok = 0
         Set out.error = ex.DisplayString()
     }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("QueryEventLog", out)
     Return out
 }
 
@@ -137,6 +139,7 @@ ClassMethod QueryEventLog(type As %String = "error", hours As %Integer = 2, conf
 /// Read-only.
 ClassMethod TopErrors(hours As %Integer = 2, topN As %Integer = 10) As %DynamicObject
 {
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("TopErrors")
     Set out = {}
     Set targetNs = ..TargetNs()
     Set out.namespace = targetNs
@@ -180,6 +183,7 @@ ClassMethod TopErrors(hours As %Integer = 2, topN As %Integer = 10) As %DynamicO
         Set out.ok = 0
         Set out.error = ex.DisplayString()
     }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("TopErrors", out)
     Return out
 }
 
@@ -200,6 +204,7 @@ ClassMethod TopErrors(hours As %Integer = 2, topN As %Integer = 10) As %DynamicO
 /// truncated }. Read-only.
 ClassMethod QueryMessageStatus(status As %String = "Error", hours As %Integer = 2, maxRows As %Integer = 50) As %DynamicObject
 {
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("QueryMessageStatus")
     Set out = {}
     Set targetNs = ..TargetNs()
     Set out.namespace = targetNs
@@ -267,6 +272,7 @@ ClassMethod QueryMessageStatus(status As %String = "Error", hours As %Integer = 
         Set out.ok = 0
         Set out.error = ex.DisplayString()
     }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("QueryMessageStatus", out)
     Return out
 }
 
@@ -282,6 +288,7 @@ ClassMethod QueryMessageStatus(status As %String = "Error", hours As %Integer = 
 /// grandTotal }. Read-only.
 ClassMethod MessageSummary(hours As %Integer = 2) As %DynamicObject
 {
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("MessageSummary")
     Set out = {}
     Set targetNs = ..TargetNs()
     Set out.namespace = targetNs
@@ -337,6 +344,7 @@ ClassMethod MessageSummary(hours As %Integer = 2) As %DynamicObject
         Set out.ok = 0
         Set out.error = ex.DisplayString()
     }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("MessageSummary", out)
     Return out
 }
 
@@ -348,6 +356,7 @@ ClassMethod MessageSummary(hours As %Integer = 2) As %DynamicObject
 /// totalQueued }. Read-only.
 ClassMethod QueueStatus() As %DynamicObject
 {
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("QueueStatus")
     Set out = {}
     Set targetNs = ..TargetNs()
     Set out.namespace = targetNs
@@ -379,6 +388,7 @@ ClassMethod QueueStatus() As %DynamicObject
         Set out.ok = 0
         Set out.error = ex.DisplayString()
     }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("QueueStatus", out)
     Return out
 }
 

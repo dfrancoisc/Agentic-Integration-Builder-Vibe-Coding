@@ -140,4 +140,43 @@ ClassMethod LiveFeedEvent(pType As %String, pData As %DynamicObject) [ Internal 
     Set ^AgInt.LiveFeed("active", sid) = $horolog
 }
 
+/// Emit a tool_start event to the Observer live feed. Called at the
+/// top of every %AI.Tool method so the Observer terminal shows the
+/// tool name the moment the Rust bridge dispatches it — DURING
+/// agent.Chat(), not after. Safe to call anywhere; silently no-ops
+/// if no observer session is active.
+ClassMethod ToolStart(pName As %String) [ Internal ]
+{
+    Try {
+        Set sid = $get(%agenticChatSessionId)
+        If sid = "" Quit
+        Set ev = {}
+        Set ev.name = pName
+        Set ev.tool = pName
+        Set ev.msg = pName
+        Do ..LiveFeedEvent("tool_start", ev)
+    } Catch {}
+}
+
+/// Emit a tool_result event to the Observer live feed. Called at the
+/// end of every %AI.Tool method with the result object so the
+/// Observer shows whether the tool succeeded or failed — DURING
+/// agent.Chat(), not after.
+ClassMethod ToolDone(pName As %String, pResult As %DynamicObject = "") [ Internal ]
+{
+    Try {
+        Set sid = $get(%agenticChatSessionId)
+        If sid = "" Quit
+        Set ev = {}
+        Set ev.name = pName
+        Set ev.tool = pName
+        Set ev.msg = pName
+        If $isobject(pResult) {
+            If pResult.%IsDefined("ok") Set ev.ok = pResult.ok
+            If pResult.%IsDefined("error") Set ev.error = $extract(pResult.error, 1, 200)
+        }
+        Do ..LiveFeedEvent("tool_result", ev)
+    } Catch {}
+}
+
 }
