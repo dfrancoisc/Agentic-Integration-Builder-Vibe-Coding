@@ -1,18 +1,16 @@
 /* ============================================================
-   Observer — Terminal-style behind-the-scenes view
+   Observer — real-time terminal view of agent internals.
 
-   Shows every internal step: provider resolution, MCP registration,
-   skill loading, LLM calls to Bedrock, tool dispatch, results,
-   cooldowns, fabrication guards — all as a scrolling terminal log.
-
-   Split-view mode: clicking "Open Editor" loads the IRIS Interop
-   Editor in an iframe on the left half, terminal log on the right.
+   Each event is a single short line. Click any line to expand
+   its detail payload. Events stream in AS they happen — the
+   chatbot broadcasts the session ID via BroadcastChannel before
+   the request fires, so the Observer connects to the stream
+   before any events exist.
    ============================================================ */
 
 (function () {
   'use strict';
 
-  // Read namespace from ?ns= query param (default USER)
   var nsParam = (function () {
     var m = location.search.match(/[?&]ns=([^&]*)/);
     return m ? decodeURIComponent(m[1]) : 'USER';
@@ -22,7 +20,6 @@
   var app        = document.getElementById('app');
   var editorPane = document.getElementById('editor-pane');
   var editorFrame= document.getElementById('editor-frame');
-  var obsPane    = document.getElementById('observer-pane');
   var flow       = document.getElementById('flow');
   var emptyState = document.getElementById('empty-state');
   var statusPill = document.getElementById('status-pill');
@@ -44,7 +41,9 @@
   var auth          = null;
   var splitOpen     = false;
 
-  // --- Auth ---
+  // ============================================================
+  //  AUTH
+  // ============================================================
   function getAuth() {
     if (auth) return auth;
     var creds = localStorage.getItem('agentic_credentials');
@@ -71,9 +70,8 @@
   }
 
   // ============================================================
-  //  SPLIT VIEW — Editor + Observer side by side
+  //  SPLIT VIEW
   // ============================================================
-
   function openSplitView() {
     if (splitOpen) return;
     splitOpen = true;
@@ -82,7 +80,6 @@
     editorBtn.textContent = 'Close Editor';
     editorBtn.classList.add('active');
   }
-
   function closeSplitView() {
     if (!splitOpen) return;
     splitOpen = false;
@@ -91,298 +88,186 @@
     editorBtn.textContent = 'Open Editor';
     editorBtn.classList.remove('active');
   }
-
-  function toggleSplitView() {
-    if (splitOpen) closeSplitView();
-    else openSplitView();
-  }
-
-  // Topbar button
-  editorBtn.addEventListener('click', toggleSplitView);
-
-  // Intercept all editor links (empty state + resetUI-generated)
+  editorBtn.addEventListener('click', function () {
+    if (splitOpen) closeSplitView(); else openSplitView();
+  });
   document.addEventListener('click', function (e) {
-    var target = e.target;
-    if (target.id === 'open-editor-link' || target.classList.contains('editor-link')) {
+    if (e.target.classList.contains('editor-link')) {
       e.preventDefault();
       openSplitView();
     }
   });
 
   // ============================================================
-  //  TERMINAL OUTPUT
+  //  TERMINAL — one short line per event, click to expand
   // ============================================================
 
-  function log(type, msg, detail) {
+  function line(type, text, detail) {
     if (emptyState) emptyState.style.display = 'none';
     if (!startTime) startTimer();
-
+    var el = document.createElement('div');
+    el.className = 'log-line';
     var elapsed = startTime ? ((Date.now() - startTime) / 1000).toFixed(1) : '0.0';
 
-    var line = document.createElement('div');
-    line.className = 'log-line';
-
-    var ts = document.createElement('span');
-    ts.className = 'log-ts';
-    ts.textContent = '+' + padLeft(elapsed, 6) + 's';
-
-    var badge = document.createElement('span');
-    badge.className = 'log-badge ' + type;
-    badge.textContent = badgeText(type);
-
-    var msgEl = document.createElement('span');
-    msgEl.className = 'log-msg';
-    msgEl.innerHTML = msg;
-
-    line.appendChild(ts);
-    line.appendChild(badge);
-    line.appendChild(msgEl);
-    flow.appendChild(line);
+    var html = '<span class="ts">' + elapsed + 's</span>' +
+               '<span class="badge ' + type + '">' + badge(type) + '</span>' +
+               '<span class="msg">' + text + '</span>';
+    el.innerHTML = html;
 
     if (detail) {
-      var detEl = document.createElement('div');
-      detEl.className = 'log-detail';
-      var truncated = detail.length > 500 ? detail.substring(0, 500) + '...' : detail;
-      detEl.textContent = truncated;
-      if (detail.length > 500) {
-        detEl.addEventListener('click', function () {
-          if (detEl.classList.contains('expanded')) {
-            detEl.textContent = truncated;
-            detEl.classList.remove('expanded');
-          } else {
-            detEl.textContent = detail;
-            detEl.classList.add('expanded');
-          }
-        });
-      }
-      flow.appendChild(detEl);
+      el.classList.add('has-detail');
+      var det = document.createElement('div');
+      det.className = 'detail';
+      det.textContent = typeof detail === 'string' ? detail : JSON.stringify(detail, null, 2);
+      det.hidden = true;
+      el.addEventListener('click', function () { det.hidden = !det.hidden; });
+      flow.appendChild(el);
+      flow.appendChild(det);
+    } else {
+      flow.appendChild(el);
     }
-
-    line.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    el.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }
 
-  function separator() {
+  function sep() {
     var hr = document.createElement('hr');
-    hr.className = 'log-separator';
+    hr.className = 'sep';
     flow.appendChild(hr);
   }
 
-  function badgeText(type) {
-    var map = {
-      trace: 'TRACE', provider: 'PROVIDER', mcp: 'MCP', skill: 'SKILL',
-      llm_call: 'LLM CALL', llm_response: 'LLM RESP',
-      tool_start: 'TOOL', tool_result: 'RESULT', tool_error: 'TOOL ERR',
-      status: 'STATUS', token: 'RESPONSE', error: 'ERROR',
-      session_start: 'SESSION', session_end: 'SESSION', done: 'DONE',
-      tool_confirm: 'APPROVE'
-    };
-    return map[type] || type.toUpperCase();
+  function badge(type) {
+    return ({ trace:'TRACE', provider:'PROVIDER', mcp:'MCP', skill:'SKILL',
+      llm_call:'LLM >>>', llm_response:'LLM <<<',
+      tool_start:'TOOL >>>', tool_result:'TOOL <<<', tool_error:'TOOL ERR',
+      status:'STATUS', token:'RESPONSE', error:'ERROR',
+      session_start:'SESSION', session_end:'SESSION', done:'DONE',
+      tool_confirm:'CONFIRM' })[type] || type.toUpperCase();
   }
 
-  function padLeft(s, len) {
-    s = String(s);
-    while (s.length < len) s = ' ' + s;
-    return s;
-  }
+  function esc(s) { var d = document.createElement('span'); d.textContent = s; return d.innerHTML; }
 
-  function esc(s) {
-    var d = document.createElement('span');
-    d.textContent = s;
-    return d.innerHTML;
-  }
-
-  function fmtNum(n) {
-    return n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n);
-  }
-
-  function summarize(val, max) {
-    if (!val) return '';
-    try {
-      return typeof val === 'string' ? val.substring(0, max || 500) : JSON.stringify(val, null, 2).substring(0, max || 500);
-    } catch (e) { return String(val).substring(0, max || 500); }
-  }
+  function fmtNum(n) { return n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n); }
 
   // ============================================================
-  //  RENDER EVENTS
+  //  RENDER — one event = one light line
   // ============================================================
 
-  function renderEvent(ev) {
-    if (!ev || !ev.type) return;
-    if (ev.type === 'timeout') return;
-
+  function render(ev) {
+    if (!ev || !ev.type || ev.type === 'timeout') return;
     var d = ev.data || {};
-    var type = ev.type;
+    var t = ev.type;
 
-    // --- session_start ---
-    if (type === 'session_start') {
+    if (t === 'session_start') {
       setStatus('connected', 'Live');
-      log('session_start',
-        '<span class="hi-ok">Session started</span> ' +
-        '<span class="hi-dim">user=</span><span class="hi-val">' + esc(d.user || '') + '</span> ' +
-        '<span class="hi-dim">ns=</span><span class="hi-val">' + esc(d.namespace || '') + '</span> ' +
-        '<span class="hi-dim">id=</span><span class="hi-val">' + esc((d.sessionId || '').substring(0, 8)) + '</span>');
-      separator();
+      line('session_start', esc(d.user || '') + ' @ ' + esc(d.namespace || ''),
+        'session=' + (d.sessionId || ''));
+      sep();
       return;
     }
-
-    // --- provider ---
-    if (type === 'provider') {
-      log('provider',
-        '<span class="hi-val">' + esc(d.connection || '') + '</span> ' +
-        '<span class="hi-dim">provider=</span><span class="hi-val">' + esc(d.provider || '') + '</span> ' +
-        '<span class="hi-dim">model=</span><span class="hi-val">' + esc(d.model || '') + '</span>');
+    if (t === 'provider') {
+      line('provider', esc(d.connection || 'default'),
+        'provider=' + (d.provider || '') + '  model=' + (d.model || ''));
       return;
     }
-
-    // --- mcp ---
-    if (type === 'mcp') {
-      var mcpShort = (d.mcp || '').split('.').pop();
-      var toolsets = d.toolsets || '';
-      var tsNames = toolsets.split(',').map(function(t) { return t.trim().split('.').pop(); }).join(', ');
-      log('mcp',
-        '<span class="hi-name">' + esc(mcpShort) + '</span>' +
-        (tsNames ? ' <span class="hi-dim">toolsets=[</span>' + esc(tsNames) + '<span class="hi-dim">]</span>' : ''));
+    if (t === 'mcp') {
+      var short = (d.mcp || '').split('.').pop();
+      var ts = (d.toolsets || '').split(',').map(function (s) { return s.trim().split('.').pop(); }).filter(Boolean).join(', ');
+      line('mcp', esc(short) + (ts ? '  [' + esc(ts) + ']' : ''), d.mcp);
       return;
     }
-
-    // --- skill ---
-    if (type === 'skill') {
-      var skillShort = (d.class || '').split('.').pop();
-      log('skill',
-        '<span class="hi-name">' + esc(skillShort) + '</span> ' +
-        '<span class="hi-dim">' + esc(d.class || '') + '</span>');
+    if (t === 'skill') {
+      line('skill', esc((d.class || '').split('.').pop()), d.class);
       return;
     }
-
-    // --- trace ---
-    if (type === 'trace') {
-      log('trace', '<span class="hi-dim">' + esc(d.msg || '') + '</span>');
+    if (t === 'trace') {
+      line('trace', esc(d.msg || ''));
       return;
     }
-
-    // --- llm_call ---
-    if (type === 'llm_call') {
-      separator();
-      log('llm_call',
-        '<span class="hi-warn">' + esc(d.msg || 'Calling LLM...') + '</span>' +
-        (d.iteration ? ' <span class="hi-dim">iteration=' + d.iteration + '/' + (d.maxIterations || '?') + '</span>' : '') +
-        (d.model ? ' <span class="hi-dim">model=</span><span class="hi-val">' + esc(d.model) + '</span>' : ''));
+    if (t === 'llm_call') {
+      sep();
+      var iter = d.iteration ? 'iteration ' + d.iteration + '/' + (d.maxIterations || '?') : '';
+      line('llm_call', esc(iter),
+        'model=' + (d.model || '') + '  ' + (d.msg || ''));
       return;
     }
-
-    // --- llm_response ---
-    if (type === 'llm_response') {
-      var tokIn = d.inputTokens || 0;
-      var tokOut = d.outputTokens || 0;
-      if (tokIn || tokOut) {
-        tokenTotal += (tokIn + tokOut);
-        tokensCount.textContent = fmtNum(tokenTotal);
-      }
-      log('llm_response',
-        '<span class="hi-ok">' + esc(d.msg || 'Response received') + '</span>' +
-        ' <span class="hi-dim">latency=</span><span class="hi-val">' + (d.latencyMs || '?') + 'ms</span>' +
-        ' <span class="hi-dim">in=</span><span class="hi-val">' + fmtNum(tokIn) + '</span>' +
-        ' <span class="hi-dim">out=</span><span class="hi-val">' + fmtNum(tokOut) + '</span>' +
-        ' <span class="hi-dim">tools=</span>' + (d.hasToolCalls ? '<span class="hi-warn">yes</span>' : '<span class="hi-dim">no</span>'));
+    if (t === 'llm_response') {
+      var tin = d.inputTokens || 0, tout = d.outputTokens || 0;
+      if (tin || tout) { tokenTotal += tin + tout; tokensCount.textContent = fmtNum(tokenTotal); }
+      var lat = d.latencyMs ? (d.latencyMs / 1000).toFixed(1) + 's' : '?';
+      var tc = d.hasToolCalls ? '  tools: yes' : '';
+      line('llm_response', lat + '  ' + fmtNum(tin) + ' in / ' + fmtNum(tout) + ' out' + tc,
+        'latency=' + (d.latencyMs || '') + 'ms  inputTokens=' + tin + '  outputTokens=' + tout);
       return;
     }
-
-    // --- tool_start ---
-    if (type === 'tool_start') {
-      toolCount++;
-      toolsCount.textContent = toolCount;
+    if (t === 'tool_start') {
+      toolCount++; toolsCount.textContent = toolCount;
       var argsStr = '';
-      if (d.args) {
-        try {
-          argsStr = typeof d.args === 'string' ? d.args : JSON.stringify(d.args);
-        } catch (e) {}
-      }
-      log('tool_start',
-        '<span class="hi-name">' + esc(d.name || '?') + '</span>' +
-        (argsStr ? ' <span class="hi-dim">' + esc(argsStr.length > 120 ? argsStr.substring(0, 120) + '...' : argsStr) + '</span>' : ''),
-        argsStr.length > 120 ? argsStr : null);
+      try { argsStr = d.args ? (typeof d.args === 'string' ? d.args : JSON.stringify(d.args)) : ''; } catch (e) {}
+      line('tool_start', esc(d.name || '?'), argsStr || null);
       return;
     }
-
-    // --- tool_result ---
-    if (type === 'tool_result') {
-      var resultStr = summarize(d.result, 2000);
-      var shortResult = resultStr.length > 120 ? resultStr.substring(0, 120) + '...' : resultStr;
-      log('tool_result',
-        '<span class="hi-name">' + esc(d.name || '?') + '</span> ' +
-        '<span class="hi-dim">' + esc(shortResult) + '</span>',
-        resultStr.length > 120 ? resultStr : null);
+    if (t === 'tool_result') {
+      var r = '';
+      try { r = d.result ? (typeof d.result === 'string' ? d.result : JSON.stringify(d.result, null, 2)) : ''; } catch (e) { r = String(d.result); }
+      var ok = r.indexOf('"ok":1') !== -1 || r.indexOf('"ok": 1') !== -1;
+      line('tool_result', esc(d.name || '?') + (ok ? '  ok' : ''), r || null);
       return;
     }
-
-    // --- status ---
-    if (type === 'status') {
-      var msg = d.message || d.phase || d.msg || 'status';
-      log('status', esc(msg));
+    if (t === 'tool_error') {
+      line('tool_error', esc(d.name || '?') + '  ' + esc(d.error || ''));
       return;
     }
-
-    // --- token (response text) ---
-    if (type === 'token') {
-      // Don't flood the terminal with the full response text
-      if (!document.getElementById('response-logged')) {
-        separator();
-        var marker = document.createElement('span');
-        marker.id = 'response-logged';
-        marker.style.display = 'none';
-        flow.appendChild(marker);
-        var textLen = (d.text || '').length;
-        log('token', '<span class="hi-ok">Generating final response</span> <span class="hi-dim">(' + textLen + ' chars)</span>');
+    if (t === 'status') {
+      line('status', esc(d.message || d.phase || d.msg || ''));
+      return;
+    }
+    if (t === 'token') {
+      if (!document.getElementById('resp-mark')) {
+        sep();
+        var m = document.createElement('span'); m.id = 'resp-mark'; m.hidden = true; flow.appendChild(m);
+        line('token', (d.text || '').length + ' chars');
       }
       return;
     }
-
-    // --- done ---
-    if (type === 'done') {
-      sessionEnded = true;
-      stopTimer();
+    if (t === 'done') {
+      sessionEnded = true; stopTimer();
       setStatus('ended', 'Complete');
-      if (d.totalTokens) {
-        tokenTotal = +d.totalTokens;
-        tokensCount.textContent = fmtNum(tokenTotal);
-      }
-      separator();
-      var box = document.createElement('div');
-      box.className = 'completion-box';
+      if (d.totalTokens) { tokenTotal = +d.totalTokens; tokensCount.textContent = fmtNum(tokenTotal); }
+      sep();
       var parts = [];
-      if (d.latencyMs) parts.push('<span class="stat">' + (d.latencyMs / 1000).toFixed(1) + 's</span> total');
-      if (d.iterations) parts.push('<span class="stat">' + d.iterations + '</span> iterations');
-      if (d.totalTokens) parts.push('<span class="stat">' + fmtNum(+d.totalTokens) + '</span> tokens');
-      if (toolCount) parts.push('<span class="stat">' + toolCount + '</span> tool calls');
-      if (d.toolTrace) parts.push('trace: <span class="stat">' + esc(d.toolTrace) + '</span>');
-      box.innerHTML = 'SESSION COMPLETE  |  ' + parts.join('  |  ');
-      flow.appendChild(box);
+      if (d.latencyMs) parts.push((d.latencyMs / 1000).toFixed(1) + 's');
+      if (d.iterations) parts.push(d.iterations + ' iter');
+      if (d.totalTokens) parts.push(fmtNum(+d.totalTokens) + ' tokens');
+      if (toolCount) parts.push(toolCount + ' tools');
+      var box = document.createElement('div');
+      box.className = 'done-box';
+      box.textContent = 'DONE  ' + parts.join('  |  ');
+      if (d.toolTrace) {
+        var det = document.createElement('div');
+        det.className = 'detail';
+        det.textContent = 'trace: ' + d.toolTrace;
+        det.hidden = true;
+        box.style.cursor = 'pointer';
+        box.addEventListener('click', function () { det.hidden = !det.hidden; });
+        flow.appendChild(box);
+        flow.appendChild(det);
+      } else {
+        flow.appendChild(box);
+      }
       box.scrollIntoView({ behavior: 'smooth', block: 'end' });
       return;
     }
-
-    // --- session_end ---
-    if (type === 'session_end') {
-      sessionEnded = true;
+    if (t === 'session_end') { sessionEnded = true; return; }
+    if (t === 'error') {
+      line('error', esc(d.error || d.msg || 'error') + (d.stage ? '  [' + d.stage + ']' : ''));
       return;
     }
-
-    // --- error ---
-    if (type === 'error') {
-      log('error', '<span class="hi-err">' + esc(d.error || d.msg || 'Error') + '</span>' +
-        (d.stage ? ' <span class="hi-dim">stage=' + esc(d.stage) + '</span>' : ''));
+    if (t === 'tool_confirm') {
+      line('tool_confirm', 'APPROVE: ' + esc(d.name || d.tool || ''));
       return;
     }
-
-    // --- tool_confirm ---
-    if (type === 'tool_confirm') {
-      log('tool_confirm',
-        '<span class="hi-warn">APPROVAL REQUIRED: ' + esc(d.name || d.tool || '') + '</span>');
-      return;
-    }
-
-    // --- fallback ---
-    log('trace', esc(type) + ': ' + esc(d.msg || JSON.stringify(d)));
+    // fallback
+    line('trace', t + ': ' + esc(d.msg || JSON.stringify(d)));
   }
 
   // ============================================================
@@ -402,9 +287,8 @@
     var es = document.createElement('div');
     es.className = 'empty-state';
     es.id = 'empty-state';
-    es.innerHTML = 'Waiting for a chat session to begin...<br><br>' +
-      '<a href="#" class="editor-link">Open IRIS for Health Interop Editor</a> and click the chat icon in the toolbar.<br>' +
-      'This page will automatically show each step as the agent works.';
+    es.innerHTML = 'Waiting for a chat session...<br>' +
+      '<a href="#" class="editor-link">Open IRIS Interop Editor</a> to start.';
     flow.appendChild(es);
     emptyState = es;
     toolCount = 0; tokenTotal = 0; startTime = null;
@@ -428,52 +312,16 @@
   });
 
   // ============================================================
-  //  POLLING + STREAM
+  //  STREAM — connect to a session's event stream
   // ============================================================
-
-  function startPolling() {
-    if (pollHandle) return;
-    setStatus('waiting', 'Waiting...');
-    poll();
-    pollHandle = setInterval(poll, 2000);
-  }
-
-  function stopPolling() {
-    if (pollHandle) { clearInterval(pollHandle); pollHandle = null; }
-  }
-
-  function poll() {
-    var a = getAuth();
-    if (!a) return;
-    fetch('/api/agentic/observer/sessions', {
-      headers: { 'Authorization': a }
-    }).then(function (r) {
-      if (r.status === 401) {
-        localStorage.removeItem('agentic_credentials');
-        auth = null;
-        setStatus('error', 'Auth failed');
-        stopPolling();
-        return null;
-      }
-      return r.json();
-    }).then(function (sessions) {
-      if (!sessions || !Array.isArray(sessions)) return;
-      for (var i = 0; i < sessions.length; i++) {
-        if (sessions[i].active && !seenSessions[sessions[i].id]) {
-          stopPolling();
-          connectToSession(sessions[i].id);
-          return;
-        }
-      }
-    }).catch(function () {});
-  }
 
   function connectToSession(sid) {
     seenSessions[sid] = true;
     sessionEnded = false;
     var a = getAuth();
     if (!a) return;
-    setStatus('connected', 'Live');
+    setStatus('connected', 'Connecting...');
+    if (abortCtrl) { try { abortCtrl.abort(); } catch (e) {} }
     abortCtrl = new AbortController();
 
     fetch('/api/agentic/observer/stream?session=' + encodeURIComponent(sid), {
@@ -504,13 +352,13 @@
           buffer = lines.pop();
           var evType = null, evData = null;
           for (var i = 0; i < lines.length; i++) {
-            var line = lines[i];
-            if (line.indexOf('event: ') === 0) evType = line.substring(7).trim();
-            else if (line.indexOf('data: ') === 0) evData = line.substring(6);
-            else if (line === '' && evType === 'feed' && evData) {
-              try { renderEvent(JSON.parse(evData)); } catch (e) {}
+            var l = lines[i];
+            if (l.indexOf('event: ') === 0) evType = l.substring(7).trim();
+            else if (l.indexOf('data: ') === 0) evData = l.substring(6);
+            else if (l === '' && evType === 'feed' && evData) {
+              try { render(JSON.parse(evData)); } catch (e) {}
               evType = null; evData = null;
-            } else if (line === '') { evType = null; evData = null; }
+            } else if (l === '') { evType = null; evData = null; }
           }
           return pump();
         });
@@ -523,12 +371,89 @@
   }
 
   // ============================================================
-  //  AUTOSTART — open split view if ?split query param is present
+  //  POLLING — discover active sessions
   // ============================================================
+
+  function startPolling() {
+    if (pollHandle) return;
+    setStatus('waiting', 'Waiting...');
+    poll();
+    pollHandle = setInterval(poll, 2000);
+  }
+
+  function stopPolling() {
+    if (pollHandle) { clearInterval(pollHandle); pollHandle = null; }
+  }
+
+  function poll() {
+    var a = getAuth();
+    if (!a) return;
+    fetch('/api/agentic/observer/sessions', {
+      headers: { 'Authorization': a }
+    }).then(function (r) {
+      if (r.status === 401) {
+        localStorage.removeItem('agentic_credentials');
+        auth = null; setStatus('error', 'Auth failed');
+        stopPolling();
+        return null;
+      }
+      return r.json();
+    }).then(function (sessions) {
+      if (!sessions || !Array.isArray(sessions)) return;
+      for (var i = 0; i < sessions.length; i++) {
+        if (sessions[i].active && !seenSessions[sessions[i].id]) {
+          stopPolling();
+          connectToSession(sessions[i].id);
+          return;
+        }
+      }
+    }).catch(function () {});
+  }
+
+  // ============================================================
+  //  BROADCAST CHANNEL — chatbot tells us the session ID
+  //  BEFORE the request fires, so we connect instantly
+  // ============================================================
+
+  try {
+    var channel = new BroadcastChannel('agentic-observer');
+    channel.onmessage = function (ev) {
+      if (ev.data && ev.data.type === 'session' && ev.data.id) {
+        // Stop any existing poll/stream — new session incoming
+        stopPolling();
+        if (abortCtrl) { try { abortCtrl.abort(); } catch (e) {} abortCtrl = null; }
+        // Reset counters for the new session
+        toolCount = 0; tokenTotal = 0; startTime = null; sessionEnded = false;
+        timerVal.textContent = '0.0s';
+        toolsCount.textContent = '0';
+        tokensCount.textContent = '0';
+        // Clear previous log
+        flow.innerHTML = '';
+        emptyState = null;
+        // Connect immediately — the stream will wait for events
+        setStatus('connected', 'Waiting for events...');
+        connectToSession(ev.data.id);
+      }
+    };
+  } catch (e) {}
+
+  // ============================================================
+  //  INIT
+  // ============================================================
+
+  // If ?session= is in the URL, connect directly (no polling)
+  var urlSession = (function () {
+    var m = location.search.match(/[?&]session=([^&]*)/);
+    return m ? decodeURIComponent(m[1]) : '';
+  })();
+
   if (location.search.indexOf('split') !== -1) {
     openSplitView();
   }
 
-  // --- Init ---
-  startPolling();
+  if (urlSession) {
+    connectToSession(urlSession);
+  } else {
+    startPolling();
+  }
 })();

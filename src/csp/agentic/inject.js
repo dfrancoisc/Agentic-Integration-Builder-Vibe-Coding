@@ -266,6 +266,12 @@
             '  width:26px; height:26px; border-radius:4px; cursor:pointer; font-size:13px;',
             '}',
             '#' + CHAT_OVERLAY_ID + ' .bar .close:hover { background:rgba(255,255,255,0.06); color:#e6e8eb; }',
+            '#' + CHAT_OVERLAY_ID + ' .bar .obs-link {',
+            '  color:#4ec9b0; font-size:11px; font-weight:400; text-decoration:none;',
+            '  margin-left:auto; margin-right:12px; cursor:pointer;',
+            '  opacity:0.7; transition:opacity 120ms;',
+            '}',
+            '#' + CHAT_OVERLAY_ID + ' .bar .obs-link:hover { opacity:1; text-decoration:underline; }',
             '#' + CHAT_OVERLAY_ID + ' iframe { flex:1; width:100%; border:0; background:#0f1115; }',
 
             // Config full-screen overlay
@@ -301,11 +307,15 @@
             '<div class="panel">' +
               '<div class="bar">' +
                 '<span>AI Chatbot</span>' +
+                '<a class="obs-link" title="Open Observer in a new tab — shows every internal step as the agent works">Observer</a>' +
                 '<button class="close" type="button" title="Close">✕</button>' +
               '</div>' +
               '<iframe src="about:blank" title="AI Chatbot"></iframe>' +
             '</div>';
         document.body.appendChild(overlay);
+        overlay.querySelector('.obs-link').addEventListener('click', function () {
+            window.open('/agentic/observer/index.html?split', '_blank');
+        });
         overlay.querySelector('.close').addEventListener('click', closeChat);
         overlay.addEventListener('click', function (e) { if (e.target === overlay) closeChat(); });
         document.addEventListener('keydown', function (e) {

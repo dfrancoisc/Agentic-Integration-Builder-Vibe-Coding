@@ -8,6 +8,13 @@
 const API = '/api/agentic';
 const AUTH_KEY = 'AGENTIC_AUTH';
 
+// Observer integration — BroadcastChannel tells any open Observer tab
+// which session to connect to BEFORE the chat request fires, so the
+// Observer sees every event in real-time (not replayed after the fact).
+const observerChannel = (function () {
+    try { return new BroadcastChannel('agentic-observer'); } catch { return null; }
+})();
+
 // [CSP cookie fix] Force credentials:'omit' on every fetch from this
 // iframe. Without this, the browser's default credentials:'same-origin'
 // sends the Interop Editor's CSPSESSIONID cookie with every request to
@@ -848,11 +855,20 @@ async function send(message) {
         // previous SSE stream. The CSP gateway maintains connection-level
         // auth state that becomes stale after a long SSE response closes,
         // causing 401 on the next request over the same socket.
+        // Generate observer session ID and broadcast it to any open
+        // Observer tab BEFORE the fetch. The Observer connects to the
+        // stream for this ID immediately, so it sees every event live
+        // — including session_start, provider resolution, MCP/skill
+        // loading — instead of replaying them after the fact.
+        const observerId = crypto.randomUUID();
+        if (observerChannel) {
+            try { observerChannel.postMessage({ type: 'session', id: observerId }); } catch {}
+        }
         const streamUrl = API + '/chat/stream?_t=' + Date.now();
         let res = await fetch(streamUrl, {
             method: 'POST',
             headers,
-            body: JSON.stringify({ message, history, approvedTokens: tokensThisTurn })
+            body: JSON.stringify({ message, history, approvedTokens: tokensThisTurn, observerId })
         });
         // 401 recovery: the CSP session or bridge bearer expired.
         // Try increasingly aggressive recovery before showing the
@@ -864,7 +880,7 @@ async function send(message) {
             headers['Authorization'] = authHeader();
             res = await fetch(API + '/chat/stream?_t=' + Date.now(), {
                 method: 'POST', headers,
-                body: JSON.stringify({ message, history, approvedTokens: tokensThisTurn })
+                body: JSON.stringify({ message, history, approvedTokens: tokensThisTurn, observerId })
             });
         }
         if (res.status === 401) {
@@ -876,7 +892,7 @@ async function send(message) {
                     headers['Authorization'] = bridgeBearer;
                     res = await fetch(API + '/chat/stream?_t=' + Date.now(), {
                         method: 'POST', headers,
-                        body: JSON.stringify({ message, history, approvedTokens: tokensThisTurn })
+                        body: JSON.stringify({ message, history, approvedTokens: tokensThisTurn, observerId })
                     });
                 }
             }
@@ -891,7 +907,7 @@ async function send(message) {
                 headers['Authorization'] = stored;
                 res = await fetch(API + '/chat/stream?_t=' + Date.now(), {
                     method: 'POST', headers,
-                    body: JSON.stringify({ message, history, approvedTokens: tokensThisTurn })
+                    body: JSON.stringify({ message, history, approvedTokens: tokensThisTurn, observerId })
                 });
             }
         }
@@ -917,7 +933,7 @@ async function send(message) {
             headers['Authorization'] = authHeader();
             res = await fetch(API + '/chat/stream?_t=' + Date.now(), {
                 method: 'POST', headers,
-                body: JSON.stringify({ message, history, approvedTokens: tokensThisTurn })
+                body: JSON.stringify({ message, history, approvedTokens: tokensThisTurn, observerId })
             });
         }
         if (res.status === 401) {

@@ -236,19 +236,7 @@ ClassMethod ChatStream(pResponse As %CSP.Response, pBodyStream) As %Status
     // tool_confirm emit corrupt their JSON response with SSE frames.
     Set %agenticChatSSE = 1
 
-    ; LiveFeed session tracking — unique id per chat request. The
-    ; Observer page tails ^AgInt.LiveFeed(sessionId, seq) via its own
-    ; SSE endpoint. The id is process-scoped; it clears at request end.
-    Set %agenticChatSessionId = $zstrip($system.Util.CreateGUID(), "<>W")
-    Set %agenticChatStart = $zhorolog
-    Set ^AgInt.LiveFeed("active", %agenticChatSessionId) = $horolog
-    ; Write a session_start event so the observer knows who/what
-    Set startInfo = {}
-    Set startInfo.sessionId = %agenticChatSessionId
-    Set startInfo.user = $username
-    Set startInfo.namespace = $namespace
-    Do ..WriteLiveFeed("session_start", startInfo)
-
+    ; Parse body first so we can read the client-supplied observerId.
     Set req = $classmethod(util, "ParseBody", pBodyStream)
     If '$isobject(req) {
         Do ..SSEEvent("error", {"error":"Invalid JSON body","stage":"parse"})
@@ -259,6 +247,26 @@ ClassMethod ChatStream(pResponse As %CSP.Response, pBodyStream) As %Status
         Do ..SSEEvent("error", {"error":"Missing 'message'","stage":"parse"})
         Quit $$$OK
     }
+
+    ; LiveFeed session tracking. If the client provides an observerId
+    ; (generated before the request so the Observer tab can connect to
+    ; the stream before any events exist), use it. Otherwise generate
+    ; a server-side GUID. The id is process-scoped; clears at request end.
+    Set clientObs = $classmethod(util, "DObj", req, "observerId")
+    If clientObs '= "" {
+        Set %agenticChatSessionId = clientObs
+    } Else {
+        Set %agenticChatSessionId = $zstrip($system.Util.CreateGUID(), "<>W")
+    }
+    Set %agenticChatStart = $zhorolog
+    Set ^AgInt.LiveFeed("active", %agenticChatSessionId) = $horolog
+    ; Write a session_start event so the observer knows who/what
+    Set startInfo = {}
+    Set startInfo.sessionId = %agenticChatSessionId
+    Set startInfo.user = $username
+    Set startInfo.namespace = $namespace
+    Do ..WriteLiveFeed("session_start", startInfo)
+
     Set agentClass = $classmethod(util, "DObj", req, "agentClass", "AgenticInterop.Agent.HealthInterop")
     Set connectionName = $classmethod(util, "DObj", req, "connection")
     Set history = $S(req.%IsDefined("history"):req.history, 1:[])
