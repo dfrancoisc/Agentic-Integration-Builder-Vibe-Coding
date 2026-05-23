@@ -1149,11 +1149,14 @@ ClassMethod CreateRoutingRule(name As %String, ruleXml As %String) As %DynamicOb
             Set out.error = "HL7 virtual document paths must use curly braces, not parentheses. Use HL7.{MSH:9.1} instead of HL7.(MSH:9.1). Parentheses silently fail to resolve."
             Quit
         }
-        ; ---- Validate: docName constraint must match DTL SOURCE, not TARGET ----
+        ; ---- Auto-correct: docName constraint must match DTL SOURCE, not TARGET ----
         ; Common error: routing rule has docName="ORU_R01" but the referenced
-        ; DTL converts ADT_A01 -> ORU_R01. Rules evaluate the INCOMING message,
-        ; so the constraint should be docName="ADT_A01". Reject if mismatched.
-        Set mismatchErr = ""
+        ; DTL converts ADT_A01 -> ORU_R01. Rules evaluate the INCOMING message.
+        ; Instead of rejecting (which causes the agent to enter a costly error-fix
+        ; loop), auto-correct the constraint and condition expressions to match
+        ; the incoming type. This handles the "transform before routing" pattern
+        ; that users describe but IRIS implements as transform-on-send.
+        Set correctionNote = ""
         ; Collect docName constraint values
         Set docNameVals = ""
         Set sp4 = 1
@@ -1180,7 +1183,7 @@ ClassMethod CreateRoutingRule(name As %String, ruleXml As %String) As %DynamicOb
             }
             Set sp5 = $select(eq5>0:eq5, 1:f5+1)
         }
-        ; Cross-validate: if docName matches the DTL TARGET type, reject
+        ; Cross-validate and auto-correct if docName matches DTL TARGET type
         If docNameVals '= "" && (xformClasses '= "") {
             For xi=1:1:$length(xformClasses, "|") {
                 Set dtlCls = $piece(xformClasses, "|", xi)
@@ -1199,19 +1202,27 @@ ClassMethod CreateRoutingRule(name As %String, ruleXml As %String) As %DynamicOb
                             For di=1:1:$length(docNameVals, "|") {
                                 Set dn = $piece(docNameVals, "|", di)
                                 If dn = tgtStruct {
-                                    Set mismatchErr = "TRANSFORM-ON-SEND error: docName constraint '"_tgtStruct_"' matches the DTL TARGET (output) type, not the incoming message. Routing rules evaluate the INCOMING message. Change constraint to docName="""_srcStruct_""". DTL '"_dtlCls_"' converts "_srcStruct_" -> "_tgtStruct_" during the <send> action — match the incoming type."
+                                    ; Auto-correct docName constraint: target -> source
+                                    Set ruleXml = $replace(ruleXml, "constraint name=""docName"" value=""" _ tgtStruct _ """", "constraint name=""docName"" value=""" _ srcStruct _ """")
+                                    ; Auto-correct condition expressions: fix message code and trigger event
+                                    ; e.g. &quot;ORU&quot; -> &quot;ADT&quot; and &quot;R01&quot; -> &quot;A01&quot;
+                                    Set tgtCode = $piece(tgtStruct, "_", 1)
+                                    Set tgtEvent = $piece(tgtStruct, "_", 2)
+                                    Set srcCode = $piece(srcStruct, "_", 1)
+                                    Set srcEvent = $piece(srcStruct, "_", 2)
+                                    If tgtCode '= srcCode {
+                                        Set ruleXml = $replace(ruleXml, "&quot;" _ tgtCode _ "&quot;", "&quot;" _ srcCode _ "&quot;")
+                                    }
+                                    If tgtEvent '= srcEvent {
+                                        Set ruleXml = $replace(ruleXml, "&quot;" _ tgtEvent _ "&quot;", "&quot;" _ srcEvent _ "&quot;")
+                                    }
+                                    Set correctionNote = "Auto-corrected: docName changed from " _ tgtStruct _ " to " _ srcStruct _ ". Routing rules evaluate the INCOMING message. DTL '" _ dtlCls _ "' converts " _ srcStruct _ " -> " _ tgtStruct _ " during the <send> action."
                                 }
                             }
                         }
                     }
                 } Catch  {}
             }
-        }
-        If mismatchErr '= "" {
-            Set out.ok = 0
-            Set out.created = 0
-            Set out.error = mismatchErr
-            Quit
         }
         ; ---- Create or update the class ----
         Set isUpdate = ##class(%Dictionary.ClassDefinition).%ExistsId(name)
@@ -1260,6 +1271,10 @@ ClassMethod CreateRoutingRule(name As %String, ruleXml As %String) As %DynamicOb
             Set out.message = "Routing rule '" _ name _ "' updated. XData replaced and recompiled."
         } Else {
             Set out.message = "Routing rule '" _ name _ "' created. Point a routing engine's BusinessRuleName to this class."
+        }
+        If correctionNote '= "" {
+            Set out.corrected = 1
+            Set out.correctionNote = correctionNote
         }
     } Catch ex {
         Set out.ok = 0

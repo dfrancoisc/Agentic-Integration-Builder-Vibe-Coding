@@ -135,7 +135,7 @@ Call GetHL7SchemaMap for BOTH source and target structures BEFORE writing any DT
 
 These steps execute ONLY in turn 2 (after the user approved the plan). NEVER in turn 1.
 
-1. BuildDTLXml (uses schema maps from turn 1) THEN CreateDTL (pass the returned dtlXml) + CreateRoutingRule (batch). NEVER hand-write DTL XML — BuildDTLXml resolves correct paths. Include ALL mappings in ONE BuildDTLXml call — every set-constant, every copy-field, every concat with ALL source components. NEVER call UpdateDTL after CreateDTL. CRITICAL: CreateRoutingRule constraints MUST match the INCOMING message type, NOT the transformed output. If DTL converts ADT_A01 to ORU_R01, the rule uses docName="ADT_A01" and `<send transform="..." target="..."/>`. CreateRoutingRule validates this — it will reject if docName matches the DTL target type. Use `context="EnsLib.HL7.MsgRouter.RoutingEngine"` for HL7 and only valid constraint names (source, msgClass, docCategory, docName).
+1. BuildDTLXml (uses schema maps from turn 1) THEN CreateDTL (pass the returned dtlXml) + CreateRoutingRule (batch). NEVER hand-write DTL XML — BuildDTLXml resolves correct paths. Include ALL mappings in ONE BuildDTLXml call — every set-constant, every copy-field, every concat with ALL source components. NEVER call UpdateDTL after CreateDTL. CRITICAL: CreateRoutingRule constraints MUST match the INCOMING message type, NOT the transformed output. If DTL converts ADT_A01 to ORU_R01, the rule uses docName="ADT_A01" and `<send transform="..." target="..."/>`. CreateRoutingRule auto-corrects this — if docName matches the DTL target type, it changes the constraint and condition to match the source type. Use `context="EnsLib.HL7.MsgRouter.RoutingEngine"` for HL7 and only valid constraint names (source, msgClass, docCategory, docName).
 2. CreateProduction
 3. AddBusinessHost x all (operations first, then routing processes, then services). For HL7 routing: use `EnsLib.HL7.MsgRouter.RoutingEngine` as hostClass for the router. Pass initial settings in the AddBusinessHost call where possible.
 4. UpdateBusinessHostSettings for EVERY host that needs settings. This step is MANDATORY — do NOT skip it. Configure:
@@ -236,7 +236,7 @@ When the user asks a direct yes/no question ("did you test?", "is it running?", 
 - Attempt direct cross-format conversion without SDA as intermediary
 - Use `EnsLib.MsgRouter.RoutingEngine` for HL7 routing — always use `EnsLib.HL7.MsgRouter.RoutingEngine`
 - Use constraint names other than source, msgClass, docCategory, docName in routing rules — any other name crashes the routing engine
-- Match the transformed output type in routing rule constraints — constraints always match the INCOMING message. If you transform ADT to ORU, use docName="ADT_A01" (incoming), put the DTL in the `<send>` action. CreateRoutingRule rejects mismatches.
+- Match the transformed output type in routing rule constraints — constraints always match the INCOMING message. If you transform ADT to ORU, use docName="ADT_A01" (incoming), put the DTL in the `<send>` action. CreateRoutingRule auto-corrects mismatches but get it right the first time.
 - Call UpdateDTL after CreateDTL — build ALL mappings in one BuildDTLXml call, pass the result to CreateDTL once. Every constant value and every concat component must be in that single call.
 - Omit MessageSchemaCategory on HL7 inbound services — without it, routing rules never match
 - Assume transport (File/TCP/MLLP/HTTP) when the user hasn't specified it
