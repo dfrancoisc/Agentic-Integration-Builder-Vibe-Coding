@@ -193,12 +193,12 @@
 <body>
 
 <h1>Agentic Interop for IRIS for Health</h1>
-<p class="subtitle">Architecture diagram — built on the InterSystems %AI Framework (IRIS 2026.2). Updated 2026-05-20.</p>
+<p class="subtitle">Architecture diagram — built on the InterSystems %AI Framework (IRIS 2026.2). Updated 2026-05-23.</p>
 
 <!-- Stats -->
 <div class="stats-bar">
   <div class="stat"><span class="stat-value">64</span><span class="stat-label">Classes</span></div>
-  <div class="stat"><span class="stat-value">42</span><span class="stat-label">LLM Tools</span></div>
+  <div class="stat"><span class="stat-value">47</span><span class="stat-label">LLM Tools</span></div>
   <div class="stat"><span class="stat-value">12</span><span class="stat-label">Skills</span></div>
   <div class="stat"><span class="stat-value">4</span><span class="stat-label">MCP Servers</span></div>
   <div class="stat"><span class="stat-value">2</span><span class="stat-label">RAG Catalogs</span></div>
@@ -324,12 +324,12 @@
           UseSession=0 (stateless). CORS enabled.
           OnPreDispatch: namespace switching, audit logging.
           <hr class="section-divider">
-          Routes to 10 Editor service classes below.
+          Routes to 14 Editor service classes below.
         </div>
       </div>
 
       <div class="card card-ui card-third">
-        <div class="card-title">Editor Services <span class="badge">10 classes</span></div>
+        <div class="card-title">Editor Services <span class="badge">14 classes</span></div>
         <div class="card-extends">all extend %RegisteredObject</div>
         <div class="card-body">
           <ul>
@@ -340,9 +340,13 @@
             <li>ToolService — CRUD individual tools</li>
             <li>ConnectionService — LLM connections</li>
             <li>CatalogService — vector search admin</li>
+            <li>TransformService — field-level mapping catalog</li>
             <li>AuditService — audit log queries</li>
+            <li>CleanupService — production/artifact cleanup</li>
             <li>RegistryService — dropdown listings</li>
             <li>SourceService — compiled source viewer</li>
+            <li>Overlay — merge user overrides on class defaults</li>
+            <li>Util — shared JSON/error/CSV helpers</li>
           </ul>
         </div>
       </div>
@@ -398,7 +402,7 @@
             <li>ChatWithRetry: 30/60/90s exponential backoff on rate limit</li>
             <li>Inter-iteration cooldown: 3-5s to stay under TPM</li>
             <li>Fabrication guard: detects text-only claims, forces tool use</li>
-            <li>Monitor: 300s wall-clock, 100K token budget, SSE keepalives</li>
+            <li>Monitor: 60s wall-clock, 50K token budget, SSE keepalives</li>
           </ul>
         </div>
       </div>
@@ -457,8 +461,8 @@
         <div class="card-body">
           Enforces per-turn resource limits:
           <ul>
-            <li>Wall-clock deadline: 300s</li>
-            <li>Token budget: 100K</li>
+            <li>Wall-clock deadline: 60s</li>
+            <li>Token budget: 50K</li>
             <li>SSE keepalive emission</li>
             <li>Real-time tool_start / tool_result events</li>
             <li>ToolCallTrace for audit</li>
@@ -628,13 +632,13 @@
   <!-- LAYER 4: Tools (the 42 LLM-callable methods) -->
   <!-- ======================================================= -->
   <div class="layer">
-    <div class="layer-label">Tools (%AI.Tool subclasses — 42 LLM-callable ClassMethods, registered directly via UseToolSet)</div>
+    <div class="layer-label">Tools (%AI.Tool subclasses — 47 LLM-callable ClassMethods, registered directly via UseToolSet)</div>
     <div class="layer-content">
 
       <!-- Tool.Production -->
       <div class="card card-fw card-third">
-        <div class="card-title">Tool.Production <span class="badge">10 tools</span></div>
-        <div class="card-extends">extends %AI.Tool &mdash; 4,737 chars</div>
+        <div class="card-title">Tool.Production <span class="badge">13 tools</span></div>
+        <div class="card-extends">extends %AI.Tool</div>
         <div class="tool-pills">
           <span class="tool-pill">ListProductions</span>
           <span class="tool-pill">GetProduction</span>
@@ -645,26 +649,29 @@
           <span class="tool-pill">UpdateBusinessHostSettings</span>
           <span class="tool-pill">StartProduction</span>
           <span class="tool-pill">StopProduction</span>
-          <span class="tool-pill new">PostBuildValidation</span>
+          <span class="tool-pill">PostBuildValidation</span>
+          <span class="tool-pill">ListBusinessRules</span>
+          <span class="tool-pill">CreateRoutingRule</span>
+          <span class="tool-pill">EnsureDirectory</span>
         </div>
       </div>
 
       <!-- Tool.Transform -->
       <div class="card card-fw card-third">
         <div class="card-title">Tool.Transform <span class="badge">14 tools</span></div>
-        <div class="card-extends">extends %AI.Tool &mdash; 9,950 chars</div>
+        <div class="card-extends">extends %AI.Tool</div>
         <div class="tool-pills">
           <span class="tool-pill">ListDTLs</span>
           <span class="tool-pill">CreateDTL</span>
           <span class="tool-pill">UpdateDTL</span>
           <span class="tool-pill">CompileDTL</span>
           <span class="tool-pill">DryRunDTL</span>
+          <span class="tool-pill">BuildDTLXml</span>
           <span class="tool-pill">GetHL7SchemaMap</span>
+          <span class="tool-pill">GetHL7SegmentFields</span>
           <span class="tool-pill">ListLookupTables</span>
           <span class="tool-pill">CreateBPL</span>
           <span class="tool-pill">ValidateBPL</span>
-          <span class="tool-pill">ListBusinessRules</span>
-          <span class="tool-pill">CreateRoutingRule</span>
           <span class="tool-pill">ListSDAFHIRDTLs</span>
           <span class="tool-pill">DescribeTransformationPipeline</span>
           <span class="tool-pill">GetCustomDTLPackage</span>
@@ -673,8 +680,8 @@
 
       <!-- Tool.Testing -->
       <div class="card card-fw card-third">
-        <div class="card-title">Tool.Testing <span class="badge">6 tools</span></div>
-        <div class="card-extends">extends %AI.Tool &mdash; 5,209 chars</div>
+        <div class="card-title">Tool.Testing <span class="badge">8 tools</span></div>
+        <div class="card-extends">extends %AI.Tool</div>
         <div class="tool-pills">
           <span class="tool-pill">ValidateHL7Structure</span>
           <span class="tool-pill">ValidateHL7Semantics</span>
@@ -682,13 +689,15 @@
           <span class="tool-pill">CompareMessages</span>
           <span class="tool-pill">SendHL7</span>
           <span class="tool-pill">SendFHIR</span>
+          <span class="tool-pill">BuildHL7TestMessage</span>
+          <span class="tool-pill">BuildAndSendHL7TestMessage</span>
         </div>
       </div>
 
       <!-- Tool.Catalog -->
       <div class="card card-fw card-half">
         <div class="card-title">Tool.Catalog <span class="badge">7 tools</span></div>
-        <div class="card-extends">extends %AI.Tool &mdash; 4,287 chars</div>
+        <div class="card-extends">extends %AI.Tool</div>
         <div class="tool-pills">
           <span class="tool-pill">GetUserNamespace</span>
           <span class="tool-pill">ListUserAccessibleNamespaces</span>
@@ -703,7 +712,7 @@
       <!-- Tool.Monitoring -->
       <div class="card card-fw card-half">
         <div class="card-title">Tool.Monitoring <span class="badge">5 tools</span></div>
-        <div class="card-extends">extends %AI.Tool &mdash; 3,441 chars</div>
+        <div class="card-extends">extends %AI.Tool</div>
         <div class="tool-pills">
           <span class="tool-pill">QueryEventLog</span>
           <span class="tool-pill">TopErrors</span>
@@ -849,6 +858,16 @@
         </div>
       </div>
 
+      <div class="card card-data card-third">
+        <div class="card-title">Data.FieldMapping <span class="badge">%Persistent</span></div>
+        <div class="card-extends">SQL: AgenticInterop_Data.FieldMapping</div>
+        <div class="card-body">
+          1,538 pre-computed field-level mapping rows joining HL7/FHIR/CDA/X12 fields through SDA3. Built by TransformService.RebuildFieldMappings().
+          <hr class="section-divider">
+          Powers the Transforms tab UI. Rebuilt on demand (~0.2s). Indexed by (SourceFormat, TargetFormat, SdaType).
+        </div>
+      </div>
+
     </div>
   </div>
 
@@ -923,7 +942,7 @@
 <div style="margin-top: 48px; max-width: 1400px; margin-left: auto; margin-right: auto;">
   <h2>%AI Framework Class Map</h2>
   <p style="font-size: 13px; color: var(--text-dim); margin-bottom: 20px;">
-    How our 64 classes extend or wrap the InterSystems %AI Framework (IRIS 2026.2).
+    How our 64 classes extend or wrap the InterSystems %AI Framework (IRIS 2026.2+).
     Bold = framework base class. Regular = our extension.
   </p>
 
@@ -976,9 +995,9 @@
       <div class="card-title" style="font-size: 13px;">%AI.Tool (direct UseToolSet)</div>
       <div class="card-body" style="margin-top: 6px;">
         <ul>
-          <li>Tool.Production (10 methods)</li>
+          <li>Tool.Production (13 methods)</li>
           <li>Tool.Transform (14 methods)</li>
-          <li>Tool.Testing (6 methods)</li>
+          <li>Tool.Testing (8 methods)</li>
           <li>Tool.Catalog (7 methods)</li>
           <li>Tool.Monitoring (5 methods)</li>
         </ul>
@@ -1213,13 +1232,13 @@
 <!-- Footer -->
 <div style="margin-top: 48px; padding: 20px 0; border-top: 1px solid var(--line); max-width: 1400px; margin-left: auto; margin-right: auto;">
   <p style="font-size: 12px; color: var(--text-dim);">
-    Agentic Interop for InterSystems IRIS for Health — 64 classes, 42 tools, 12 skills, 4 MCP servers, 2 policies, 2 RAG catalogs.
-    Built on the %AI Framework (IRIS 2026.2). IPM package: agentic-interop.
+    Agentic Interop for InterSystems IRIS for Health — 64 classes, 47 tools, 12 skills, 4 MCP servers, 2 policies, 2 RAG catalogs, 1,538 field-level mappings.
+    Built on the %AI Framework (IRIS 2026.2+). IPM package: agentic-interop.
     Four personas: Developer (VS Code / IDE) authors Tools, Skills, and Catalogs.
     AI Hub Admin (admin UI) configures Agents, Connections, Catalogs, and role-based ToolSet bindings.
     Interface Engineer (chatbot, dev-time) builds productions, DTLs, BPLs, and routing rules.
     Operator (chatbot, run-time) monitors, triages, and reviews existing integrations.
-    <br>Updated 2026-05-20. Token optimization: tool definitions 15.6K &rarr; 7K, schema maps 30K &rarr; 7K, system prompt 7.2K &rarr; 1.5K.
+    <br>Updated 2026-05-23. Token optimization: tool definitions 15.6K &rarr; 7K, schema maps 30K &rarr; 7K, system prompt 7.2K &rarr; 1.5K.
   </p>
 </div>
 

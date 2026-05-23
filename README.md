@@ -14,19 +14,19 @@ All build phases complete (Phase 0 through Phase 7). The agent operates under th
 |---|---|
 | ObjectScript classes | 64 |
 | Tool classes (%AI.Tool) | 5 (Production, Transform, Testing, Catalog, Monitoring) |
-| Tools (public ClassMethods) | 42 |
+| Tools (public ClassMethods) | 47 |
 | ToolSets (%AI.ToolSet) | 5 |
 | MCP servers | 4 (Production, Transform, Testing, Catalog) |
 | Skills (%AI.Agent.Skill) | 12 |
 | Vector catalogs | 2 (search_ens: 164 classes, search_hs: 58 classes) |
 | Field-level mappings (Transformation and Mapping Catalog) | 1,538 |
-| Persistent data classes | 5 (Connection, AgentOverride, MCPOverride, ToolSetOverride, AuditLog) |
+| Persistent data classes | 6 (Connection, AgentOverride, MCPOverride, ToolSetOverride, AuditLog, FieldMapping) |
 | Git commits | 100+ |
 
 ## Features
 
 - Streaming chat with Server-Sent Events (SSE) -- token-by-token responses with inline tool-call cards
-- 42 tools across 5 domains: Production, Transform, Testing, Catalog, Monitoring
+- 47 tools across 5 domains: Production, Transform, Testing, Catalog, Monitoring
 - 12 domain skills covering Productions, DTL, BPL, Routing Rules, HL7v2, FHIR R4, SDA, REST, ESB, X12/HIPAA, CDA/C-CDA, and Adapters
 - Confirmation gate on every mutating tool -- create, update, delete, compile, start, stop all require explicit user approval before executing
 - Semantic vector search over the IRIS class library (164 Business Hosts, 58 transformation classes) using FastEmbed 384-dimensional embeddings and HNSW index
@@ -179,15 +179,15 @@ Features:
 
 ## Tools
 
-The agent's capabilities are organized into 5 Tool classes (42 tools total). Each Tool class is a `%AI.Tool` subclass where every public ClassMethod is a tool the LLM can call.
+The agent's capabilities are organized into 5 Tool classes (47 tools total). Each Tool class is a `%AI.Tool` subclass where every public ClassMethod is a tool the LLM can call.
 
 | Tool class | Tools | Purpose |
 |---|---|---|
 | Production | 13 | CRUD on productions, business host lifecycle, routing rules, post-build validation |
-| Transform | 13 | CRUD on DTL/BPL, dry-run execution, HL7 schema introspection, SDA-FHIR pipeline tracing |
+| Transform | 14 | CRUD on DTL/BPL, dry-run execution, DTL XML builder, HL7 schema introspection, SDA-FHIR pipeline tracing |
 | Testing | 8 | Send and validate HL7 v2 and FHIR R4 messages, build test messages, compare messages |
-| Catalog | 8 | Vector search over Ens.* and HS.* catalogs, class introspection, namespace utilities, glossary |
-| Monitoring | 6 | Event log search, top-error grouping, message status, throughput summaries, queue depth |
+| Catalog | 7 | Vector search over Ens.* and HS.* catalogs, class introspection, namespace utilities, glossary |
+| Monitoring | 5 | Event log search, top-error grouping, message status, throughput summaries, queue depth |
 
 ## Skills
 
