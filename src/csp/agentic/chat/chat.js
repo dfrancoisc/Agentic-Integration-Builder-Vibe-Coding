@@ -954,7 +954,7 @@ async function send(message) {
         }
         if (res.status === 403) {
             const j = await res.json().catch(() => ({}));
-            throw new Error('Access denied to namespace ' + (j.namespace || '?') + '. Your IRIS user (' + (j.user || $('ns-value').textContent) + ') does not have permission to operate in this namespace.');
+            throw new Error('Access denied to namespace ' + (j.namespace || '?') + '. Your IRIS user (' + (j.user || currentNs()) + ') does not have permission to operate in this namespace.');
         }
         if (res.status === 400) {
             const j = await res.json().catch(() => ({}));
@@ -1106,15 +1106,61 @@ async function resolveDefaultConnection() {
     }
 }
 
+function ensureNsOption(ns) {
+    const sel = $('ns-select');
+    if (!sel || !ns) return;
+    for (let i = 0; i < sel.options.length; i++) { if (sel.options[i].value === ns) return; }
+    const o = document.createElement('option'); o.value = ns; o.textContent = ns; sel.appendChild(o);
+}
+// The namespace the chatbot is operating in (drives X-IRIS-Namespace).
+function currentNs() {
+    if (bridgeNamespace) return bridgeNamespace;
+    const sel = $('ns-select');
+    return (sel && sel.value) ? sel.value : '';
+}
 function setNamespacePill(ns) {
     const pill = $('ns-pill');
+    const sel = $('ns-select');
     if (ns) {
         pill.classList.remove('unknown');
-        $('ns-value').textContent = ns;
+        if (sel) { ensureNsOption(ns); sel.value = ns; }
     } else {
         pill.classList.add('unknown');
-        $('ns-value').textContent = 'unknown';
     }
+}
+// Namespace picker — list the namespaces the user can access and let them
+// choose which one the chatbot operates in. The choice persists per
+// chatbot and is sent as X-IRIS-Namespace on every request. The server
+// access-gates each namespace, so the picker only respects boundaries.
+const NS_KEY = 'AGENTIC_NS_' + (CHATBOT || 'default');
+async function loadNamespaces() {
+    const sel = $('ns-select');
+    if (!sel) return;
+    let list = [], current = '';
+    try {
+        const r = await fetch(API + '/namespaces', { headers: { Authorization: authHeader() } });
+        if (r.ok) { const j = await r.json(); list = j.namespaces || []; current = j.current || ''; }
+    } catch (e) {}
+    sel.innerHTML = '';
+    if (!list.length) {
+        const o = document.createElement('option'); o.value = ''; o.textContent = 'unknown'; sel.appendChild(o);
+    }
+    for (const ns of list) {
+        const o = document.createElement('option'); o.value = ns; o.textContent = ns; sel.appendChild(o);
+    }
+    // Selection precedence: persisted choice > bridge/URL hint > dispatch.
+    let want = '';
+    try { want = localStorage.getItem(NS_KEY) || ''; } catch (e) {}
+    if (want && list.length && list.indexOf(want) < 0) want = '';
+    if (!want && bridgeNamespace) want = bridgeNamespace;
+    if (!want) want = current;
+    if (want) { ensureNsOption(want); sel.value = want; bridgeNamespace = want; }
+    setNamespacePill(bridgeNamespace);
+    sel.addEventListener('change', () => {
+        bridgeNamespace = sel.value || '';
+        try { localStorage.setItem(NS_KEY, bridgeNamespace); } catch (e) {}
+        setNamespacePill(bridgeNamespace);
+    });
 }
 
 $('composer').addEventListener('submit', (e) => {
@@ -1380,7 +1426,7 @@ function cmdClear() {
 }
 
 async function cmdNamespace() {
-    const ns = bridgeNamespace || $('ns-value').textContent || '(unknown)';
+    const ns = bridgeNamespace || currentNs() || '(unknown)';
     let dispatchNs = '?';
     try { const j = await api('/namespace'); dispatchNs = j.namespace || '?'; } catch {}
     appendSystemCard(`
@@ -1736,17 +1782,10 @@ function maybeRunSlashCommand(message) {
     // switching ALWAYS operate on the user's namespace; the pill
     // should mirror that. Only fall back to /namespace if no bridge
     // value was provided (standalone use, no parent SPA, no URL hint).
-    if (bridgeNamespace) {
-        setNamespacePill(bridgeNamespace);
-    } else {
-        try {
-            const r = await fetch(API + '/namespace', { headers: { Authorization: authHeader() } });
-            const j = await r.json();
-            setNamespacePill(j.namespace || '');
-        } catch {
-            setNamespacePill('');
-        }
-    }
+    // Populate the namespace picker (accessible namespaces) and apply the
+    // persisted / bridge / dispatch selection. The chosen namespace is
+    // sent as X-IRIS-Namespace on every request — no silent default.
+    await loadNamespaces();
     // Resolve the default LLM connection up-front so the pill shows
     // the active connection name from page load, not after the first
     // chat reply.

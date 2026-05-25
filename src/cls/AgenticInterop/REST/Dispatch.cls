@@ -24,6 +24,7 @@ XData UrlMap [ XMLNamespace = "http://www.intersystems.com/urlmap" ]
 <Routes>
     <Route Url="/health"             Method="GET"  Call="Health" />
     <Route Url="/namespace"          Method="GET"  Call="Namespace" />
+    <Route Url="/namespaces"         Method="GET"  Call="Namespaces" />
     <Route Url="/whoami"             Method="GET"  Call="WhoAmI" />
     <Route Url="/debug"              Method="GET"  Call="Debug" />
 
@@ -359,6 +360,40 @@ ClassMethod Namespace() As %Status
 {
     Do ..%WriteJSON({"namespace": ($namespace)})
     Quit $$$OK
+}
+
+/// GET /namespaces — the namespaces the authenticated user can actually
+/// access, for the chat header's namespace picker. Each is gated by the
+/// same NamespaceAccessible check used by OnPreDispatch, so the picker
+/// only offers namespaces the user is allowed to operate in (respecting
+/// namespace boundaries). System namespaces are excluded.
+ClassMethod Namespaces() As %Status
+{
+    Set out = {}
+    Set out.current = $namespace
+    Set out.namespaces = []
+    Do ..collectNamespaces(out.namespaces)
+    Do ..%WriteJSON(out)
+    Quit $$$OK
+}
+
+/// Fill pArr with the non-system namespaces the user can access. Runs in
+/// a New'd %SYS frame so the dispatch namespace is restored on return
+/// (before the caller writes JSON / audits in the install namespace).
+ClassMethod collectNamespaces(pArr As %DynamicArray) [ Internal ]
+{
+    New $namespace
+    Set $namespace = "%SYS"
+    Set sysNs = ",%SYS,%ALL,IRISSYS,IRISTEMP,IRISLIB,IRISLOCALDATA,HSLIB,HSSYS,HSSYSLOCALTEMP,DOCBOOK,ENSLIB,"
+    Set list = ""
+    Do List^%SYS.NAMESPACE(.list)
+    Set ns = $order(list(""))
+    While ns '= "" {
+        If sysNs '[ ("," _ $zconvert(ns, "U") _ ",") {
+            If ..NamespaceAccessible(ns) { Do pArr.%Push(ns) }
+        }
+        Set ns = $order(list(ns))
+    }
 }
 
 ClassMethod WhoAmI() As %Status
