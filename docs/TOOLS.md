@@ -1,6 +1,6 @@
 # Agent Tool Catalog
 
-69 tools across 7 `%AI.Tool` subclasses. Each public ClassMethod on a Tool class becomes a tool the LLM can call. Tools are composed into `%AI.ToolSet` subclasses via the framework's `<Include Class="..."/>` directive and registered with the agent at build time by `AgenticInterop.Agent.Manager`.
+71 tools across 7 `%AI.Tool` subclasses. Each public ClassMethod on a Tool class becomes a tool the LLM can call. Tools are composed into `%AI.ToolSet` subclasses via the framework's `<Include Class="..."/>` directive and registered with the agent at build time by `AgenticInterop.Agent.Manager`.
 
 | Tool class | Tools | Domain |
 |---|---|---|
@@ -9,7 +9,7 @@
 | AgenticInterop.Tool.Testing | 6 | HL7/FHIR send, validation, comparison |
 | AgenticInterop.Tool.Catalog | 7 | Vector search, class introspection, namespace utilities, reference lookups |
 | AgenticInterop.Tool.Monitoring | 5 | Event log, error grouping, message status, throughput, queue depth |
-| AgenticInterop.Tool.FHIRServer | 20 | FHIR R4 server discovery, endpoint inspect/config, metadata packages, resource CRUD/search/$validate, CapabilityStatement, bulk load, data reset, guarded provisioning |
+| AgenticInterop.Tool.FHIRServer | 22 | FHIR R4 server discovery, endpoint inspect/config, metadata packages, resource CRUD/search/$validate, CapabilityStatement, ordered async directory load, bulk load, data reset, guarded provisioning |
 | AgenticInterop.Tool.BulkFHIR | 7 | Bulk FHIR Coordinator (BFC): list/get/schema/create/configure configs, start exports, monitor sessions |
 
 Standard output envelope for any non-streaming tool: `{ "ok": true, "data": <result>, "namespace": "<current>" }` on success, `{ "ok": false, "error": { "code": "<code>", "message": "<text>" }, "namespace": "<current>" }` on error. The current namespace is always included so the chatbot can verify the user's expected namespace matches the execution namespace.
@@ -946,6 +946,14 @@ Read-only tools for querying production event logs, message headers, error summa
 ### ResetFHIRServerData
 - Description: Wipe ALL stored resources from the repository while keeping the endpoint, config, and packages (`HS.FHIRServer.Installer.Reset`). Destructive, no undo.
 - Input: `{ url, namespace? }`. Output: `{ ok, message? }`. MUTATING (reset_).
+
+### LoadFHIRDirectory
+- Description: Load a server-side directory of FHIR files into an endpoint IN ORDER (infrastructure bundles — hospitalInformation/practitionerInformation, or Organization/Location/Practitioner files — first, so Synthea patient bundles' conditional references resolve). Runs as a BACKGROUND job; returns a jobId. `dryRun=1` previews the order without loading. Per-file stream-parse + transaction POST (handles multi-MB bundles). MUTATING (load_).
+- Input: `{ url, directory, infraFirst?(1), dryRun?(0), namespace? }`. Output: `{ ok, totalFiles, order:[firstFiles], jobId?, dryRun?, message }`.
+
+### GetFHIRLoadStatus
+- Description: Poll a LoadFHIRDirectory background job until done. Read-only.
+- Input: `{ jobId, namespace? }`. Output: `{ ok, found, status, total, filesDone, filesFailed, current?, done, errors:[...], jobError? }`.
 
 ## ToolSet.BulkFHIR  [BATCH 9 — Bulk FHIR Coordinator MCP]
 

@@ -1520,4 +1520,276 @@ ClassMethod ResetFHIRServerData(url As %String, namespace As %String = "") As %D
     Quit out
 }
 
+/// Load a directory of FHIR files into an endpoint in the CORRECT ORDER,
+/// asynchronously. CALL THIS to ingest a folder of FHIR bundles/resources
+/// (e.g. Synthea output) into a FHIR server. It orders the load so
+/// infrastructure bundles (hospitalInformation / practitionerInformation,
+/// or files referencing Organization/Location/Practitioner) load FIRST,
+/// so per-patient bundles' conditional references resolve — without this
+/// ordering, Synthea patient bundles fail with ConditionalRefNotResolved.
+/// MUTATING (load_ prefix).
+///
+/// The load runs in a BACKGROUND job (a large folder would exceed a chat
+/// turn), so this returns immediately with a jobId. Poll progress with
+/// GetFHIRLoadStatus. Pass dryRun=1 to preview the load order WITHOUT
+/// loading anything.
+///
+/// NOTE: `directory` must be a path the IRIS SERVER can read. A file on
+/// the user's desktop is NOT reachable by IRIS — it must first be copied
+/// onto the server or exposed via a mounted volume.
+///
+/// url:       endpoint cspUrl.
+/// directory: server-side directory of .json/.ndjson FHIR files.
+/// infraFirst: 1 (default) = load infrastructure bundles first.
+/// dryRun:    1 = return the planned order only, do not load.
+/// namespace: optional target namespace.
+///
+/// Returns: { ok, url, directory, totalFiles, order:[firstFiles],
+/// jobId?, dryRun?, message }.
+ClassMethod LoadFHIRDirectory(url As %String, directory As %String, infraFirst As %Boolean = 1, dryRun As %Boolean = 0, namespace As %String = "") As %DynamicObject
+{
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("LoadFHIRDirectory")
+    Set out = {}
+    Set out.tool = "load_fhir_directory"
+    Set targetNs = ..%ResolveNs(namespace)
+    Set out.namespace = targetNs
+    Set out.url = $get(url)
+    Set out.directory = $get(directory)
+    Set out.order = []
+    If ($get(url) = "") || ($get(directory) = "") {
+        Set out.ok = 0
+        Set out.error = "Pass `url` (endpoint cspUrl) and `directory` (server-side path of FHIR files)."
+        Do ##class(AgenticInterop.Agent.Manager).ToolDone("LoadFHIRDirectory", out)
+        Quit out
+    }
+    ; No $namespace switch here — we only read the filesystem (namespace-
+    ; independent) and write the ^AgInt.FHIRLoad progress global in the app
+    ; namespace. The background job switches into the target namespace per
+    ; file (see %LoadOneFile), and GetFHIRLoadStatus reads the global here.
+    Try {
+        If '##class(%Library.File).DirectoryExists(directory) {
+            Set out.ok = 0
+            Set out.error = "Directory not found on the IRIS server: " _ directory _ ". The files must be on a path IRIS can read (copy them onto the server or mount a volume)."
+        } Else {
+            Kill keys
+            Set total = 0
+            Set q = ##class(%ResultSet).%New("%File:FileSet")
+            Do q.Execute(directory, "*.json;*.ndjson")
+            While q.Next() {
+                Set fp = q.Get("Name")
+                If fp = "" { Continue }
+                Set lname = $zconvert($piece(fp, "/", *), "L")
+                Set rank = 2
+                If infraFirst {
+                    If lname [ "hospitalinformation" { Set rank = 0 }
+                    ElseIf lname [ "practitionerinformation" { Set rank = 1 }
+                    ElseIf (lname [ "organization") || (lname [ "location") || (lname [ "practitioner") { Set rank = 1 }
+                }
+                Set total = total + 1
+                ; Sort key: rank, then name, then a counter for stability.
+                Set keys(rank, lname, total) = fp
+            }
+            Set out.totalFiles = total
+            If total = 0 {
+                Set out.ok = 1
+                Set out.message = "No .json/.ndjson files found in " _ directory _ "."
+            } ElseIf +$get(dryRun) {
+                Set n = 0
+                Set r1 = $order(keys(""))
+                While r1 '= "" {
+                    Set n2 = $order(keys(r1, ""))
+                    While n2 '= "" {
+                        Set c = $order(keys(r1, n2, ""))
+                        While c '= "" {
+                            Set n = n + 1
+                            If n <= 25 { Do out.order.%Push($piece(keys(r1, n2, c), "/", *)) }
+                            Set c = $order(keys(r1, n2, c))
+                        }
+                        Set n2 = $order(keys(r1, n2))
+                    }
+                    Set r1 = $order(keys(r1))
+                }
+                Set out.dryRun = 1
+                Set out.ok = 1
+                Set out.message = total _ " file(s) would load in this order (infrastructure bundles first). Showing first " _ $select(total > 25:25, 1:total) _ "."
+            } Else {
+                Set jobId = $zstrip($system.Util.CreateGUID(), "<>W")
+                Set out.jobId = jobId
+                Kill ^AgInt.FHIRLoad(jobId)
+                Set ^AgInt.FHIRLoad(jobId, "total") = total
+                Set ^AgInt.FHIRLoad(jobId, "done") = 0
+                Set ^AgInt.FHIRLoad(jobId, "failed") = 0
+                Set ^AgInt.FHIRLoad(jobId, "status") = "queued"
+                Set ^AgInt.FHIRLoad(jobId, "url") = url
+                Set ^AgInt.FHIRLoad(jobId, "ns") = targetNs
+                Set ^AgInt.FHIRLoad(jobId, "queued") = $zdatetime($horolog, 3, 1)
+                Set seq = 0
+                Set r1 = $order(keys(""))
+                While r1 '= "" {
+                    Set n2 = $order(keys(r1, ""))
+                    While n2 '= "" {
+                        Set c = $order(keys(r1, n2, ""))
+                        While c '= "" {
+                            Set seq = seq + 1
+                            Set ^AgInt.FHIRLoad(jobId, "file", seq) = keys(r1, n2, c)
+                            If seq <= 25 { Do out.order.%Push($piece(keys(r1, n2, c), "/", *)) }
+                            Set c = $order(keys(r1, n2, c))
+                        }
+                        Set n2 = $order(keys(r1, n2))
+                    }
+                    Set r1 = $order(keys(r1))
+                }
+                ; Launch the background loader.
+                Job ##class(AgenticInterop.Tool.FHIRServer).%RunLoadJob(jobId, url, targetNs)
+                Set out.ok = 1
+                Set out.message = "Queued " _ total _ " file(s) for load into " _ url _ " (infrastructure bundles first). Poll GetFHIRLoadStatus with this jobId."
+            }
+        }
+    } Catch ex {
+        Set out.ok = 0
+        Set out.error = $extract(ex.DisplayString(), 1, 400)
+    }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("LoadFHIRDirectory", out)
+    Quit out
+}
+
+/// Check the progress of a background FHIR directory load started by
+/// LoadFHIRDirectory. CALL THIS repeatedly to report progress until done.
+/// Read-only.
+///
+/// jobId:     the id returned by LoadFHIRDirectory.
+/// namespace: optional (unused for the read; kept for signature symmetry).
+///
+/// Returns: { ok, jobId, found, status, total, filesDone, filesFailed,
+/// current?, done, errors:[...], jobError? }.
+ClassMethod GetFHIRLoadStatus(jobId As %String, namespace As %String = "") As %DynamicObject
+{
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("GetFHIRLoadStatus")
+    Set out = {}
+    Set out.tool = "get_fhir_load_status"
+    Set out.jobId = $get(jobId)
+    Set out.errors = []
+    If $get(jobId) = "" {
+        Set out.ok = 0
+        Set out.error = "Pass `jobId` (from LoadFHIRDirectory)."
+        Do ##class(AgenticInterop.Agent.Manager).ToolDone("GetFHIRLoadStatus", out)
+        Quit out
+    }
+    Try {
+        If '$data(^AgInt.FHIRLoad(jobId)) {
+            Set out.ok = 1
+            Set out.found = 0
+            Set out.error = "No load job with id " _ jobId _ "."
+        } Else {
+            Set out.found = 1
+            Set out.status = $get(^AgInt.FHIRLoad(jobId, "status"))
+            Set out.total = +$get(^AgInt.FHIRLoad(jobId, "total"))
+            Set out.filesDone = +$get(^AgInt.FHIRLoad(jobId, "done"))
+            Set out.filesFailed = +$get(^AgInt.FHIRLoad(jobId, "failed"))
+            Set cur = $get(^AgInt.FHIRLoad(jobId, "current"))
+            If cur '= "" { Set out.current = cur }
+            Set out.done = ''((out.status = "completed") || (out.status = "error"))
+            Set en = +$get(^AgInt.FHIRLoad(jobId, "errN"))
+            For j=1:1:en { If $data(^AgInt.FHIRLoad(jobId, "err", j)) { Do out.errors.%Push(^AgInt.FHIRLoad(jobId, "err", j)) } }
+            If $get(^AgInt.FHIRLoad(jobId, "jobError")) '= "" { Set out.jobError = ^AgInt.FHIRLoad(jobId, "jobError") }
+            Set out.ok = 1
+        }
+    } Catch ex {
+        Set out.ok = 0
+        Set out.error = $extract(ex.DisplayString(), 1, 400)
+    }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("GetFHIRLoadStatus", out)
+    Quit out
+}
+
+/// Background runner for LoadFHIRDirectory: loads each queued file in order,
+/// updating the ^AgInt.FHIRLoad(jobId) progress global. JOB'd from
+/// LoadFHIRDirectory (runs in the app namespace; switches per file). Internal.
+ClassMethod %RunLoadJob(pJobId As %String, pUrl As %String, pNs As %String) [ Internal ]
+{
+    Try {
+        Set ^AgInt.FHIRLoad(pJobId, "status") = "running"
+        Set ^AgInt.FHIRLoad(pJobId, "started") = $zdatetime($horolog, 3, 1)
+        Set seq = $order(^AgInt.FHIRLoad(pJobId, "file", ""))
+        While seq '= "" {
+            Set fp = ^AgInt.FHIRLoad(pJobId, "file", seq)
+            Set ^AgInt.FHIRLoad(pJobId, "current") = $piece(fp, "/", *)
+            Set r = ..%LoadOneFile(pUrl, fp, pNs)
+            If $isobject(r), r.ok {
+                Set ^AgInt.FHIRLoad(pJobId, "done") = +$get(^AgInt.FHIRLoad(pJobId, "done")) + 1
+            } Else {
+                Set ^AgInt.FHIRLoad(pJobId, "failed") = +$get(^AgInt.FHIRLoad(pJobId, "failed")) + 1
+                Set ne = +$get(^AgInt.FHIRLoad(pJobId, "errN")) + 1
+                Set ^AgInt.FHIRLoad(pJobId, "errN") = ne
+                If ne <= 25 {
+                    Set etxt = $select($isobject(r) && r.%IsDefined("error"):r.error, 1:"unknown")
+                    Set ^AgInt.FHIRLoad(pJobId, "err", ne) = $piece(fp, "/", *) _ ": " _ etxt
+                }
+            }
+            Set seq = $order(^AgInt.FHIRLoad(pJobId, "file", seq))
+        }
+        Set ^AgInt.FHIRLoad(pJobId, "status") = "completed"
+        Set ^AgInt.FHIRLoad(pJobId, "finished") = $zdatetime($horolog, 3, 1)
+    } Catch ex {
+        Set ^AgInt.FHIRLoad(pJobId, "status") = "error"
+        Set ^AgInt.FHIRLoad(pJobId, "jobError") = $extract(ex.DisplayString(), 1, 300)
+    }
+    Quit
+}
+
+/// Load one FHIR file (Bundle or single resource) into an endpoint via an
+/// in-process transaction/create. Stream-parses the file so multi-MB
+/// bundles do not hit the long-string limit. Switches into the target
+/// namespace internally (restored on return). Internal.
+ClassMethod %LoadOneFile(pUrl As %String, pFilePath As %String, pNs As %String) As %DynamicObject [ Internal ]
+{
+    Set r = {}
+    New $namespace
+    Set nsOk = 1
+    Try { Set $namespace = pNs } Catch  { Set nsOk = 0 }
+    If 'nsOk {
+        Set r.ok = 0
+        Set r.error = "cannot access namespace " _ pNs
+        Quit r
+    }
+    Try {
+        Set fs = ##class(%Stream.FileCharacter).%New()
+        Set sc = fs.LinkToFile(pFilePath)
+        If 'sc {
+            Set r.ok = 0
+            Set r.error = "cannot open file"
+        } Else {
+            Set obj = ##class(%DynamicAbstractObject).%FromJSON(fs)
+            If '$isobject(obj) {
+                Set r.ok = 0
+                Set r.error = "JSON parse failed"
+            } Else {
+                Set svc = ##class(HS.FHIRServer.Service).EnsureInstance(pUrl)
+                Set req = ##class(HS.FHIRServer.API.Data.Request).%New()
+                Set req.RequestMethod = "POST"
+                Set req.Json = obj
+                Set rt = $select(obj.%IsDefined("resourceType"):obj.resourceType, 1:"")
+                ; Bundle -> POST to base (transaction); single resource -> POST to its type.
+                Set req.RequestPath = $select(rt = "Bundle":"", 1:rt)
+                Do svc.DispatchRequest(req, .resp)
+                Set r.httpStatus = +resp.Status
+                Set r.ok = ((+resp.Status >= 200) && (+resp.Status < 300))
+                If 'r.ok {
+                    Set r.error = "HTTP " _ resp.Status
+                    If $isobject(resp.Json), resp.Json.%IsDefined("issue"), $isobject(resp.Json.issue) {
+                        Set it = resp.Json.issue.%GetIterator()
+                        If it.%GetNext(.k, .iss), $isobject(iss), iss.%IsDefined("diagnostics") {
+                            Set r.error = $extract(iss.diagnostics, 1, 200)
+                        }
+                    }
+                }
+            }
+        }
+    } Catch ex {
+        Set r.ok = 0
+        Set r.error = $extract(ex.DisplayString(), 1, 200)
+    }
+    Quit r
+}
+
 }

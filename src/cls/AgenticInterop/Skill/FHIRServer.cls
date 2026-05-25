@@ -57,8 +57,18 @@ Administration:
 - `AddFHIRPackages` — add an implementation guide (e.g., US Core) to an endpoint (mutating).
 - `UpdateFHIREndpointConfig` — change runtime config (debugMode, defaultSearchPageSize, maxSearchResults, resourceValidation, defaultPreferHandling, fhirSessionTimeout, searchFiltering, requiredResource) (mutating).
 - `SetFHIREndpointEnabled` — enable/disable without deleting (mutating).
-- `LoadFHIRData` — bulk-load resources from a server-side directory (.json/.ndjson/.xml) via the DataLoader (mutating).
+- `LoadFHIRDirectory` — RECOMMENDED for loading a FOLDER of FHIR files. Loads a server-side directory IN ORDER (infrastructure bundles first) as a BACKGROUND job and returns a jobId. Use for Synthea output and any multi-file load. (mutating)
+- `GetFHIRLoadStatus` — poll a LoadFHIRDirectory job (status, filesDone, filesFailed, errors) until done. (read-only)
+- `LoadFHIRData` — simple SYNCHRONOUS DataLoader for a single or already-ordered small set. (mutating)
 - `ResetFHIRServerData` — wipe all stored resources, keep the endpoint and config (mutating, DESTRUCTIVE).
+
+## Loading a folder of FHIR files (e.g. Synthea)
+
+Use `LoadFHIRDirectory`, not BFC and not raw POSTs. Critical facts:
+- LOAD ORDER matters: per-patient bundles use conditional references (e.g. `Location?identifier=...`) to Organizations/Locations/Practitioners that Synthea exports in SEPARATE `hospitalInformation*` and `practitionerInformation*` bundles. Those MUST load first or patient bundles fail with `ConditionalRefNotResolved`. `LoadFHIRDirectory` orders infrastructure bundles first automatically (pass `infraFirst=1`, the default). Preview the order with `dryRun=1`.
+- It runs as a BACKGROUND job (a big folder would exceed a chat turn). Report the jobId, then poll `GetFHIRLoadStatus` and surface progress (filesDone/total, failures) until `done`.
+- The `directory` must be a path the IRIS SERVER can read. A user's desktop folder is NOT reachable by IRIS — it must first be copied onto the server or exposed via a mounted volume. If `LoadFHIRDirectory` reports "Directory not found on the IRIS server", that is why — tell the user to place the files on a server path.
+- If the target endpoint has `resourceValidation=always` and bundles fail validation, either fix the data or lower validation with `UpdateFHIREndpointConfig` ({"resourceValidation":"skip"}) for the bulk load, then restore.
 
 Provisioning (only on explicit request):
 - `CreateFHIREndpoint` — install a new endpoint (enables the namespace for FHIR if needed). Guarded against overwriting an existing endpoint.
