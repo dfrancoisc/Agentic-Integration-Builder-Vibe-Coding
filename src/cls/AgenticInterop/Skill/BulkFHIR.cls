@@ -30,7 +30,7 @@ The Bulk FHIR Coordinator (BFC) mediates bulk-data requests between a bulk-data 
 
 BFC is SEPARATE from the FHIR repository: `$export` is NOT a FHIR repository interaction, so the FHIR Server tools do not perform it. The source FHIR endpoint may be InterSystems IRIS for Health, InterSystems Health Connect, HealthShare Unified Care Record (UCR), or any server that returns all resources and supports `Patient/$everything` (for patient/group exports) — or native `$export`.
 
-UI location: Home > Health > <FoundationNamespace> > Bulk FHIR Coordinator. Two surfaces: the BFC home page (enter configurations, initiate exports, view export status, download exported files, view export logs) and a REST client (the full FHIR Bulk Data Export specification).
+UI location — routes INSIDE the FHIR Management app (NOT the legacy Management Portal): create/edit a configuration at `/csp/fhir-management/bfc-config/new-config`; view exports, status, downloads, and logs at `/csp/fhir-management/bfc-exports/list`. Give the user these as direct links. Note: the agent can also do most of this programmatically with the BFC tools (CreateOrUpdateBFCConfig, StartBFCExport, ListBFCExports, GetBFCExportStatus) and should prefer them; the deep links are for the parts a human must do in the UI (OAuth/credential/SSL setup) and for review. The full FHIR Bulk Data Export spec is also reachable via a REST client.
 
 ## Prerequisites (do these first)
 
@@ -40,7 +40,7 @@ UI location: Home > Health > <FoundationNamespace> > Bulk FHIR Coordinator. Two 
 
 ## Configuration (one config = four tiles)
 
-Create via + New Configuration (from scratch or a template); edit with the pencil; Submit to save. Configs are importable/exportable as JSON. Each config exposes two endpoints: a bulk FHIR endpoint (export/status/delete) and a file storage endpoint (downloads).
+Create via the new-config screen at `/csp/fhir-management/bfc-config/new-config` (from scratch or a template), or with the CreateOrUpdateBFCConfig tool; edit with the pencil; Submit to save. Configs are importable/exportable as JSON. Each config exposes two endpoints: a bulk FHIR endpoint (export/status/delete) and a file storage endpoint (downloads).
 
 1. Client Authentication — how export CLIENTS authenticate to BFC: `Basic Authentication` or `OAuth 2.0`.
 2. BFC OAuth (when OAuth) — the Request Token Validation Client (resource-server client). Auto-configure New Client if the OAuth server supports dynamic client registration, else Manually Configure New Client. Optional Introspect (only if the OAuth server has an introspection endpoint). The Clients table: Authorized Client Name = the Application Name; Authentication Method `client_secret_post` or `private_key_jwt`.

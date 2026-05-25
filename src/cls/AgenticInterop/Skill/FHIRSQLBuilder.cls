@@ -28,7 +28,7 @@ Analysis → Transformation Specification → Projection → SQL query. Each obj
 
 ## Access and roles
 
-- Enable the web apps `/csp/fhirsql` and `/csp/fhirsql/api/ui` (System Administration > Security > Applications > Web Applications). They auto-enable when the license key is present at install. Open the UI at `<baseURL>/csp/fhirsql/index.html#/`.
+- The FHIR SQL Builder UI lives INSIDE the FHIR Management app — open it at `/csp/fhir-management/sql-projections/home` (NOT a separate /csp/fhirsql app, and NOT the legacy Management Portal). It is available when the license key is present at install. Give the user this direct link.
 - Roles (403 without them): `FSB_Analyst` (query projections), `FSB_Data_Steward` (run analyses, manage specs, create projections), `FSB_Admin` (also create FHIR Repository connection configs). The repository-connection user must hold `FSB_Admin` AND `Administrator` (cloud FHIR also needs Administrator).
 
 ## 1. Analysis
