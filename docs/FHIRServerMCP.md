@@ -164,6 +164,35 @@ and status. Nothing below is built yet unless marked DONE.
 
 ---
 
+## 5b. Behavior + UI refinements (what + why)
+
+1. **Agent plans before creating an endpoint (prompt).** Symptom: asked to
+   "create a FHIR server", the agent called `CreateFHIREndpoint` with blind
+   defaults (in `HSCUSTOM`, the app namespace) and then rambled about unrelated
+   production tools (`CreateProduction`/`AddBusinessHost`). Fix: FHIRSpecialist
+   INSTRUCTIONS now require a PLAN-and-CLARIFY flow for endpoint creation —
+   discover the foundation namespace, propose `namespace`/`url`/`packages`/
+   `strategy`, ASK for anything unspecified, state the exact parameters, then
+   create only on confirmation; verify with `GetCapabilityStatement`. Also:
+   never invent requirements / unrelated tools, no "I understand your concern"
+   filler. Why: build endpoints correctly, not with guessed defaults.
+2. **MCP chain confirmed (Agent → MCP → ToolSet → Tools + Skills).**
+   `Agent.FHIRSpecialist`: `TOOLBINDING=mcp`; `MCPS=MCP.FHIRServer,MCP.BulkFHIR,
+   MCP.Catalog`; `SKILLS=` 5 skills. `Manager.Build` registers via the MCP path
+   (`bindingMode=mcp` → `MCP.RegisterToAgent` → ToolSet → Tool). The live
+   transcript proves it (the agent called FHIRServer + Catalog tools through the
+   chain). No bypass.
+3. **Audit menu moved to the LEFT NAV.** The first cut put an Audit button in
+   the page header; the request was the LEFT navigation menu. The FHIR
+   Management app is third-party Angular Material (`mat-sidenav` >
+   `mat-nav-list` > `mat-list-item`). CORE/UI note: there is no server-side API
+   to add a nav item to a shipped Angular app, so `inject.js` adds it by DOM
+   injection — `ensureSideNavAudit()` finds the sidenav nav-list, clones an
+   existing `mat-list-item` for styling, relabels it "FHIR Audit", strips its
+   router link, and binds it to open the audit panel. The header button is kept
+   as a fallback entry point. Gated to the `fhir-management` chatbot and hidden
+   on the login screen.
+
 ## 5. Status legend
 - DONE: GetFHIRLoadMetrics, GetFHIRServerStats, /fhir/audit, audit panel,
   CORE refactor (GetAllPackages), FHIRServerBug.md.

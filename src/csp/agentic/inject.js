@@ -40,6 +40,7 @@
     var CONFIG_OVERLAY_ID = 'agentic-config-overlay';
     var CHAT_OVERLAY_ID = 'agentic-chat-overlay';
     var AUD_MARK = 'agentic-hdr-audit';  // mat-toolbar-row audit icon marker
+    var AUD_NAV_MARK = 'agentic-nav-audit';  // left mat-sidenav nav-list item marker
     var AUD_OVERLAY_ID = 'agentic-audit-overlay';  // left-slide audit panel
     var CLEAN_PROD_MARK = 'agentic-clean-prod';
     var CLEAN_ART_MARK  = 'agentic-clean-art';
@@ -265,6 +266,7 @@
             // Login-mode hide
             'body.agentic-login-mode .' + TAB_MARK + ',',
             'body.agentic-login-mode .' + HDR_MARK + ',',
+            'body.agentic-login-mode .' + AUD_NAV_MARK + ',',
             'body.agentic-login-mode .' + CLEAN_PROD_MARK + ',',
             'body.agentic-login-mode .' + CLEAN_ART_MARK + ',',
             'body.agentic-login-mode #' + CONFIG_OVERLAY_ID + ',',
@@ -693,6 +695,48 @@
         return true;
     }
 
+    // FHIR Server Audit — a LEFT-NAV menu item in the FHIR Management
+    // Angular Material sidenav (mat-sidenav > mat-nav-list). Only for the
+    // FHIR Management injection. Clones an existing nav item so it matches
+    // the app's styling, then rebinds it to open the audit panel.
+    function ensureSideNavAudit() {
+        if (CHATBOT_KEY !== 'fhir-management') return false;
+        var navList = document.querySelector('mat-sidenav mat-nav-list')
+                   || document.querySelector('mat-sidenav-container mat-nav-list')
+                   || document.querySelector('mat-nav-list');
+        if (!navList) return false;
+        if (navList.querySelector('.' + AUD_NAV_MARK)) return true;
+        var sample = navList.querySelector('a[mat-list-item], a.mat-mdc-list-item, [mat-list-item], .mat-mdc-list-item, mat-list-item');
+        var item;
+        if (sample) {
+            item = sample.cloneNode(true);
+            // Strip routing so the clone does not navigate the Angular router.
+            item.removeAttribute('href');
+            item.removeAttribute('routerlink');
+            item.removeAttribute('ng-reflect-router-link');
+            item.removeAttribute('ng-reflect-router-link-active');
+            // Replace the visible label text.
+            var txt = item.querySelector('.mdc-list-item__primary-text')
+                   || item.querySelector('.mat-mdc-list-item-unscoped-content')
+                   || item.querySelector('.mdc-list-item__content')
+                   || item;
+            try { txt.textContent = 'FHIR Audit'; } catch (e) {}
+        } else {
+            item = document.createElement('a');
+            item.textContent = 'FHIR Audit';
+            item.style.cssText = 'display:block;padding:12px 16px;color:inherit;text-decoration:none;';
+        }
+        item.classList.add(AUD_NAV_MARK);
+        item.style.cursor = 'pointer';
+        item.setAttribute('title', 'FHIR Server performance and storage audit');
+        item.addEventListener('click', function (e) {
+            e.preventDefault(); e.stopPropagation();
+            openAudit();
+        });
+        navList.appendChild(item);
+        return true;
+    }
+
     /* ---------------- floating launcher (host-agnostic) ---------------- */
 
     function ensureFloatingLauncher() {
@@ -745,6 +789,7 @@
             // top toolbar (no Interop-Editor-specific tabs/cleanup).
             ensureHeaderChat();
             ensureHeaderAudit();
+            ensureSideNavAudit();
         } else {
             ensureTab();
             ensureCleanupButtons();
