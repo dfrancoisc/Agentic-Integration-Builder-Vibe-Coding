@@ -1,6 +1,6 @@
 # Agent Tool Catalog
 
-42 tools across 5 `%AI.Tool` subclasses. Each public ClassMethod on a Tool class becomes a tool the LLM can call. Tools are composed into `%AI.ToolSet` subclasses via the framework's `<Include Class="..."/>` directive and registered with the agent at build time by `AgenticInterop.Agent.Manager`.
+60 tools across 6 `%AI.Tool` subclasses. Each public ClassMethod on a Tool class becomes a tool the LLM can call. Tools are composed into `%AI.ToolSet` subclasses via the framework's `<Include Class="..."/>` directive and registered with the agent at build time by `AgenticInterop.Agent.Manager`.
 
 | Tool class | Tools | Domain |
 |---|---|---|
@@ -9,6 +9,7 @@
 | AgenticInterop.Tool.Testing | 6 | HL7/FHIR send, validation, comparison |
 | AgenticInterop.Tool.Catalog | 7 | Vector search, class introspection, namespace utilities, reference lookups |
 | AgenticInterop.Tool.Monitoring | 5 | Event log, error grouping, message status, throughput, queue depth |
+| AgenticInterop.Tool.FHIRServer | 18 | FHIR R4 server discovery, endpoint inspect/config, metadata packages, resource CRUD/search/$validate, CapabilityStatement, guarded provisioning |
 
 Standard output envelope for any non-streaming tool: `{ "ok": true, "data": <result>, "namespace": "<current>" }` on success, `{ "ok": false, "error": { "code": "<code>", "message": "<text>" }, "namespace": "<current>" }` on error. The current namespace is always included so the chatbot can verify the user's expected namespace matches the execution namespace.
 
@@ -860,3 +861,79 @@ Read-only tools for querying production event logs, message headers, error summa
 - Output schema: `{ ok, namespace, queues: [ { configName, count } ], totalQueued }`.
 - Timeout: 5 seconds.
 - RequiresConfirmation: false (read-only).
+
+## ToolSet.FHIRServer  [BATCH 8 — FHIR Server MCP]
+
+18 tools to build and manage the IRIS for Health FHIR R4 server. Design rule: a foundation namespace already HAS the FHIR Server — discover and manage the existing endpoint first; provisioning refuses to overwrite a live endpoint. Each tool accepts an optional `namespace` argument and otherwise honors the request's `X-IRIS-Namespace`; `ToolStart`/`ToolDone` run in the dispatch namespace and the tool switches into the target namespace only around the `HS.FHIRServer.*` calls (AgenticInterop.* is not mapped into system foundation namespaces). The engine is the in-process direct call `HS.FHIRServer.API.InteractionsStrategy.GetStrategyForEndpoint(url)` → `HS.FHIRServer.Service.EnsureInstance(...)` → `DispatchRequest` (no HTTP, no auth round-trip; `response.Json` is a `%DynamicObject`).
+
+### DiscoverFHIRNamespaces
+- Description: Scan accessible namespaces and report FHIR-enabled foundation namespaces with installed endpoints. CALL FIRST for any FHIR Server task.
+- Output: `{ ok, namespaces: [ { namespace, endpoints:[url], endpointCount } ], total, message? }`. Read-only.
+
+### ListFHIREndpoints
+- Description: List FHIR endpoints in a namespace with enabled state, FHIR version, metadata packages, strategy, and key config.
+- Input: `{ namespace?: string }`. Output: `{ ok, namespace, endpoints:[{url, enabled, instanceId, fhirVersion, metadataPackages, strategy, resourceValidation, debugMode}], total }`. Read-only.
+
+### GetFHIREndpoint
+- Description: Full config for one endpoint (page sizes, max results, validation level, prefer handling, session timeout, packages, strategy).
+- Input: `{ url, namespace? }`. Output: `{ ok, url, exists, enabled?, instanceId?, config?{...} }`. Read-only.
+
+### GetCapabilityStatement
+- Description: Fetch the endpoint's CapabilityStatement (FHIR `metadata`). Summary by default; `full=1` embeds the whole document.
+- Input: `{ url, full?: boolean, namespace? }`. Output: `{ ok, fhirVersion?, software?, resourceTypes:[...], resourceTypeCount, capabilityStatement? }`. Read-only.
+
+### CountFHIRResources
+- Description: Count repository resources by type, or survey common clinical types (uses `_summary=count`).
+- Input: `{ url, resourceType?, namespace? }`. Output single: `{ ok, resourceType, total }`; survey: `{ ok, counts:[{resourceType,count}], totalResources }`. Read-only.
+
+### SearchFHIRResources
+- Description: FHIR `search` against the repository.
+- Input: `{ url, resourceType, query?, count?, namespace? }`. Output: `{ ok, total?, resourceCount, resources:[{resourceType,id}], httpStatus }`. Read-only.
+
+### ReadFHIRResource
+- Description: FHIR `read` — one resource by type + id.
+- Input: `{ url, resourceType, id, namespace? }`. Output: `{ ok, resource?(object), httpStatus, outcome? }`. Read-only.
+
+### CreateFHIRResource
+- Description: FHIR `create` (POST). The resource must include `resourceType`; the server assigns the id.
+- Input: `{ url, resource(object|string), namespace? }`. Output: `{ ok, created, id?, location?, resource?, httpStatus, outcome? }`. MUTATING (create_).
+
+### UpdateFHIRResource
+- Description: FHIR `update` (PUT). Body id is forced to match the URL id.
+- Input: `{ url, resourceType, id, resource, namespace? }`. Output: `{ ok, updated, resource?, httpStatus, outcome? }`. MUTATING (update_).
+
+### DeleteFHIRResource
+- Description: FHIR `delete` (DELETE) one resource.
+- Input: `{ url, resourceType, id, namespace? }`. Output: `{ ok, deleted, httpStatus, outcome? }`. MUTATING (delete_).
+
+### ValidateFHIRResource
+- Description: Run the server's `$validate` (structure + terminology + profile). Stronger than client-side checks.
+- Input: `{ url, resource, profile?, namespace? }`. Output: `{ ok, valid, issues:[{severity,code,diagnostics,location}], outcome?, httpStatus }`. Read-only (nothing stored).
+
+### ExecuteFHIRRequest
+- Description: Escape hatch for any interaction/operation ($everything, $expand, $lastn, history, batch/transaction, conditional ops).
+- Input: `{ url, method, path, query?, body?, namespace? }`. Output: `{ ok, httpStatus, body?(object), location?, etag? }`. Side effects depend on method (GET read-only; POST/PUT/DELETE mutate).
+
+### ListAvailableFHIRPackages
+- Description: List installable FHIR metadata package sources (core versions + implementation guides).
+- Input: `{ namespace? }`. Output: `{ ok, packages:[id], total }`. Read-only.
+
+### AddFHIRPackages
+- Description: Add metadata packages (e.g. US Core) to an endpoint instance.
+- Input: `{ url, packages(csv|array), namespace? }`. Output: `{ ok, requestedPackages, metadataPackages?(after) }`. MUTATING (add_).
+
+### UpdateFHIREndpointConfig
+- Description: Update endpoint runtime config. Recognized keys: debugMode, defaultSearchPageSize, maxSearchPageSize, maxSearchResults, maxConditionalDeleteResults, fhirSessionTimeout, defaultPreferHandling, resourceValidation, searchFiltering, requiredResource.
+- Input: `{ url, settings(object), namespace? }`. Output: `{ ok, applied:[{key,value}], ignored:[key] }`. MUTATING (update_).
+
+### SetFHIREndpointEnabled
+- Description: Enable or disable an endpoint without deleting it (keeps data + config).
+- Input: `{ url, enabled, namespace? }`. Output: `{ ok, enabled }`. MUTATING (set_).
+
+### CreateFHIREndpoint
+- Description: Provision a NEW FHIR R4 endpoint. GUARD: refuses if an endpoint already exists at the URL (never reinstalls). Enables the namespace for FHIR if needed, then installs the instance.
+- Input: `{ url, packages?, strategy?, description?, namespace? }`. Output: `{ ok, created, url, namespace, strategy, packages }`. MUTATING (create_).
+
+### DeleteFHIREndpoint
+- Description: Remove an endpoint. Decommissions by default (keeps data); `deleteData=1` also drops the repository data (destructive).
+- Input: `{ url, deleteData?: boolean, namespace? }`. Output: `{ ok, deleted, dataDeleted }`. MUTATING (delete_).

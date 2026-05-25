@@ -1,9 +1,9 @@
 /// AgenticInterop.Agent.HealthInterop is the router agent for the
 /// agentic_interop chatbot. It extends %AI.Agent with the Daniel persona
-/// (system integrator) system prompt and exposes twelve specialist skills
+/// (system integrator) system prompt and exposes thirteen specialist skills
 /// as sub-agent tools (registered at runtime by AgenticInterop.Agent.SkillLoader).
-/// Skills: Productions, DTL, BPL, RoutingRules, HL7v2, FHIRR4, SDA,
-/// RestInProductions, ESBPattern, X12, CDA, Adapters.
+/// Skills: Productions, DTL, BPL, RoutingRules, HL7v2, FHIRR4, FHIRServer,
+/// SDA, RestInProductions, ESBPattern, X12, CDA, Adapters.
 /// For domain-specific questions, the LLM invokes the matching Skill
 /// rather than answering directly. Cross-cutting tools (namespace, search)
 /// attach directly to this agent's ToolManager.
@@ -24,12 +24,12 @@ Parameter TOOLBINDING = "mcp";
 /// CSV of MCP class names (AgenticInterop.MCP.Base subclasses) that this
 /// agent registers. UI-editable via the admin Editor service. Manager.Build
 /// reads this parameter and calls RegisterToAgent on each MCP.
-Parameter MCPS = "AgenticInterop.MCP.Production,AgenticInterop.MCP.Transform,AgenticInterop.MCP.Testing,AgenticInterop.MCP.Catalog";
+Parameter MCPS = "AgenticInterop.MCP.Production,AgenticInterop.MCP.Transform,AgenticInterop.MCP.Testing,AgenticInterop.MCP.Catalog,AgenticInterop.MCP.FHIRServer";
 
 /// CSV of Skill class names (AgenticInterop.Skill.Base subclasses) that
 /// this agent attaches as sub-agent tools. UI-editable. SkillLoader reads
 /// this parameter (falls back to its own DEFAULTSKILLS for compatibility).
-Parameter SKILLS = "AgenticInterop.Skill.Productions,AgenticInterop.Skill.DTL,AgenticInterop.Skill.BPL,AgenticInterop.Skill.RoutingRules,AgenticInterop.Skill.HL7v2,AgenticInterop.Skill.FHIRR4,AgenticInterop.Skill.SDA,AgenticInterop.Skill.RestInProductions,AgenticInterop.Skill.ESBPattern,AgenticInterop.Skill.X12,AgenticInterop.Skill.CDA,AgenticInterop.Skill.Adapters";
+Parameter SKILLS = "AgenticInterop.Skill.Productions,AgenticInterop.Skill.DTL,AgenticInterop.Skill.BPL,AgenticInterop.Skill.RoutingRules,AgenticInterop.Skill.HL7v2,AgenticInterop.Skill.FHIRR4,AgenticInterop.Skill.FHIRServer,AgenticInterop.Skill.SDA,AgenticInterop.Skill.RestInProductions,AgenticInterop.Skill.ESBPattern,AgenticInterop.Skill.X12,AgenticInterop.Skill.CDA,AgenticInterop.Skill.Adapters";
 
 XData INSTRUCTIONS [ MimeType = "text/markdown" ]
 {
@@ -61,13 +61,14 @@ Example plan component (follow this exact style):
 
 ## Your skills and knowledge
 
-You have 12 specialist skills loaded as sub-agents, each with deep domain knowledge distilled from InterSystems documentation:
+You have 13 specialist skills loaded as sub-agents, each with deep domain knowledge distilled from InterSystems documentation:
 - Productions: production anatomy, lifecycle, settings model, pool sizing, monitoring, deployment
 - DTL: transformation syntax, actions, virtual document paths, lookup tables, create modes
 - BPL: business process orchestration, activities, context, compensation, error handling
 - Routing Rules: rule definitions, constraints, conditions, routing engine wiring
 - HL7 v2: message types, schemas, ACK semantics, MLLP, Z-segments, batches, validation
-- FHIR R4: server configuration, SDA-FHIR transformations, SMART on FHIR, interactions
+- FHIR R4: SDA-FHIR transformations, SMART on FHIR, resource modeling, interactions in productions
+- FHIR Server: build/manage the FHIR R4 server itself — discover the foundation namespace, inspect/configure endpoints, CapabilityStatement, metadata packages, resource search/read/CRUD/$validate, and guarded provisioning
 - SDA: intermediary format, transformation pipelines, built-in DTLs, code tables
 - REST in Productions: REST service/operation patterns, passthrough, JSON posting
 - ESB Pattern: enterprise service bus, service registry, pass-through routing

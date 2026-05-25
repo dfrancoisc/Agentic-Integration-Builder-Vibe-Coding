@@ -12,12 +12,12 @@ All build phases complete (Phase 0 through Phase 7). The agent operates under th
 
 | Metric | Value |
 |---|---|
-| ObjectScript classes | 64 |
-| Tool classes (%AI.Tool) | 5 (Production, Transform, Testing, Catalog, Monitoring) |
-| Tools (public ClassMethods) | 47 |
-| ToolSets (%AI.ToolSet) | 5 |
-| MCP servers | 4 (Production, Transform, Testing, Catalog) |
-| Skills (%AI.Agent.Skill) | 12 |
+| ObjectScript classes | 68 |
+| Tool classes (%AI.Tool) | 6 (Production, Transform, Testing, Catalog, Monitoring, FHIR Server) |
+| Tools (public ClassMethods) | 65 |
+| ToolSets (%AI.ToolSet) | 6 |
+| MCP servers | 5 (Production, Transform, Testing, Catalog, FHIR Server) |
+| Skills (%AI.Agent.Skill) | 13 |
 | Vector catalogs | 2 (search_ens: 164 classes, search_hs: 58 classes) |
 | Field-level mappings (Transformation and Mapping Catalog) | 1,538 |
 | Persistent data classes | 6 (Connection, AgentOverride, MCPOverride, ToolSetOverride, AuditLog, FieldMapping) |
@@ -26,8 +26,8 @@ All build phases complete (Phase 0 through Phase 7). The agent operates under th
 ## Features
 
 - Streaming chat with Server-Sent Events (SSE) -- token-by-token responses with inline tool-call cards
-- 47 tools across 5 domains: Production, Transform, Testing, Catalog, Monitoring
-- 12 domain skills covering Productions, DTL, BPL, Routing Rules, HL7v2, FHIR R4, SDA, REST, ESB, X12/HIPAA, CDA/C-CDA, and Adapters
+- 65 tools across 6 domains: Production, Transform, Testing, Catalog, Monitoring, FHIR Server
+- 13 domain skills covering Productions, DTL, BPL, Routing Rules, HL7v2, FHIR R4, FHIR Server, SDA, REST, ESB, X12/HIPAA, CDA/C-CDA, and Adapters
 - Confirmation gate on every mutating tool -- create, update, delete, compile, start, stop all require explicit user approval before executing
 - Semantic vector search over the IRIS class library (164 Business Hosts, 58 transformation classes) using FastEmbed 384-dimensional embeddings and HNSW index
 - Transformation and Mapping Catalog with 1,538 pre-computed field-level mappings across HL7 v2, SDA3, FHIR R4, CDA, and X12
@@ -107,7 +107,7 @@ Uses the chatbot to monitor, triage, and review existing integrations at run-tim
 
 4. **Extend the MCP layer.** A developer creates a new %AI.MCP.Service subclass to expose a new domain of tools (for example, a Monitoring MCP for production health metrics). The MCP groups related ToolSets and is registered in the agent configuration through the admin UI.
 
-5. **Package and deploy via IPM.** A developer maintains the module.xml that defines the IPM package: ObjectScript classes, seed data, web application definitions, install/uninstall hooks. A single `zpm "load /path/to/agentic_interop"` command installs all 64 classes, two web apps, seed data, and the curated class catalog into any namespace.
+5. **Package and deploy via IPM.** A developer maintains the module.xml that defines the IPM package: ObjectScript classes, seed data, web application definitions, install/uninstall hooks. A single `zpm "load /path/to/agentic_interop"` command installs all 68 classes, two web apps, seed data, and the curated class catalog into any namespace.
 
 ### AI Hub Admin (5 use cases)
 
@@ -179,7 +179,7 @@ Features:
 
 ## Tools
 
-The agent's capabilities are organized into 5 Tool classes (47 tools total). Each Tool class is a `%AI.Tool` subclass where every public ClassMethod is a tool the LLM can call.
+The agent's capabilities are organized into 6 Tool classes (65 tools total). Each Tool class is a `%AI.Tool` subclass where every public ClassMethod is a tool the LLM can call.
 
 | Tool class | Tools | Purpose |
 |---|---|---|
@@ -188,10 +188,11 @@ The agent's capabilities are organized into 5 Tool classes (47 tools total). Eac
 | Testing | 8 | Send and validate HL7 v2 and FHIR R4 messages, build test messages, compare messages |
 | Catalog | 7 | Vector search over Ens.* and HS.* catalogs, class introspection, namespace utilities, glossary |
 | Monitoring | 5 | Event log search, top-error grouping, message status, throughput summaries, queue depth |
+| FHIR Server | 18 | Discover FHIR-enabled foundation namespaces, inspect/configure endpoints, CapabilityStatement, metadata packages, resource search/read/CRUD/$validate, guarded endpoint provisioning |
 
 ## Skills
 
-Twelve domain skills teach the agent IRIS-specific concepts. Each skill is a `%AI.Agent.Skill` subclass with markdown INSTRUCTIONS distilled from InterSystems documentation.
+Thirteen domain skills teach the agent IRIS-specific concepts. Each skill is a `%AI.Agent.Skill` subclass with markdown INSTRUCTIONS distilled from InterSystems documentation.
 
 | Skill | Domain |
 |---|---|
@@ -201,6 +202,7 @@ Twelve domain skills teach the agent IRIS-specific concepts. Each skill is a `%A
 | RoutingRules | Rule sets, constraints, when-conditions, dead-letter handling |
 | HL7v2 | Message types, segments, ACK semantics, schema navigation |
 | FHIRR4 | Resources, references, search parameters, R4 bundles |
+| FHIRServer | FHIR R4 server build/admin: discover foundation namespace, endpoints, config, metadata packages, resource CRUD/search/$validate, CapabilityStatement, guarded provisioning |
 | SDA | SDA3 model as transformation hub, HL7-to-SDA-to-FHIR pipeline |
 | RestInProductions | REST services and operations inside productions |
 | ESBPattern | Using a production as an Enterprise Service Bus |
@@ -257,7 +259,7 @@ ZN "<your-namespace>"
 zpm "load /path/to/agentic_interop"
 ```
 
-The module installs all 64 classes, two web apps (`/agentic/` for the UI, `/api/agentic/` for REST), seed data, and the curated class catalog. To install in multiple namespaces, run the command once per namespace.
+The module installs all 68 classes, two web apps (`/agentic/` for the UI, `/api/agentic/` for REST), seed data, and the curated class catalog. To install in multiple namespaces, run the command once per namespace.
 
 ## After install
 

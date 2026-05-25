@@ -1,0 +1,1391 @@
+/// %AI.Tool source for the FHIR Server toolset — discover, inspect,
+/// operate, configure, and (when explicitly asked) provision the FHIR R4
+/// server that ships with IRIS for Health / Health Connect foundation
+/// namespaces. Each public ClassMethod is auto-discovered by the %AI
+/// framework as a tool — the method name is the tool name the LLM sees.
+/// Composed into AgenticInterop.ToolSet.FHIRServer via
+/// <Include Class="AgenticInterop.Tool.FHIRServer"/> (Pattern 5, ai-hub-tools).
+///
+/// DESIGN RULE (do not violate): a foundation namespace already HAS the
+/// FHIR Server defined. The agent must DISCOVER the existing FHIR-enabled
+/// namespace + endpoint first (DiscoverFHIRNamespaces / ListFHIREndpoints)
+/// and manage what is already there. Provisioning (CreateFHIREndpoint) is
+/// an explicit capability that refuses to touch an endpoint that already
+/// exists — it never reinstalls or duplicates a live server.
+///
+/// Namespace safety: AgenticInterop.* classes are NOT mapped into system
+/// foundation namespaces (e.g. the FHIR namespace), so ToolStart/ToolDone
+/// run in the dispatch namespace and we switch into the target namespace
+/// only around the HS.FHIRServer.* calls, restoring before ToolDone.
+///
+/// Mutating tools use mutating verb prefixes (Create/Update/Delete/Add/
+/// Set) so AgenticInterop.Policy.ConfirmationGate can gate them.
+Class AgenticInterop.Tool.FHIRServer Extends %AI.Tool
+{
+
+/// Resolve the namespace this tool call targets — the X-IRIS-Namespace
+/// header the chat surface attaches, or the dispatch namespace. Internal.
+ClassMethod %TargetNs() As %String [ Internal ]
+{
+    Set ns = ""
+    Try { Set ns = $get(%request.CgiEnvs("HTTP_X_IRIS_NAMESPACE")) } Catch  {}
+    If ns = "" { Set ns = $namespace }
+    Quit ns
+}
+
+/// If an explicit namespace arg was passed, honor it; else fall back to
+/// the chat-scoped namespace. Internal.
+ClassMethod %ResolveNs(namespace As %String = "") As %String [ Internal ]
+{
+    If $get(namespace) '= "" { Quit namespace }
+    Quit ..%TargetNs()
+}
+
+/// Resolve the live FHIR service engine for an endpoint URL in the
+/// CURRENT namespace. Returns "" on success (svc set by reference),
+/// otherwise a human-readable error string. Internal.
+ClassMethod %Service(url As %String, Output svc) As %String [ Internal ]
+{
+    Set svc = ""
+    Set err = ""
+    Try {
+        If '##class(%Dictionary.CompiledClass).%ExistsId("HS.FHIRServer.ServiceAdmin") {
+            Set err = "Namespace " _ $namespace _ " is not FHIR-enabled (HS.FHIRServer not available)."
+            Quit
+        }
+        If '##class(HS.FHIRServer.ServiceAdmin).EndpointExists(url) {
+            Set err = "No FHIR endpoint at '" _ url _ "' in namespace " _ $namespace _ ". Call ListFHIREndpoints / DiscoverFHIRNamespaces first."
+            Quit
+        }
+        Set strat = ##class(HS.FHIRServer.API.InteractionsStrategy).GetStrategyForEndpoint(url)
+        If '$isobject(strat) { Set err = "Could not resolve a FHIR InteractionsStrategy for endpoint: " _ url Quit }
+        Set svc = ##class(HS.FHIRServer.Service).EnsureInstance(strat.InstanceKey)
+        If '$isobject(svc) { Set err = "Could not instantiate the FHIR service for endpoint: " _ url }
+    } Catch ex {
+        Set err = $extract(ex.DisplayString(), 1, 300)
+    }
+    Quit err
+}
+
+/// Execute one FHIR interaction against a local endpoint via the
+/// in-process engine (no HTTP, no auth round-trip). Assumes the caller
+/// has already switched $namespace to the endpoint's namespace. Returns
+/// { ok, httpStatus, resourceType?, body?(object), location?, etag?,
+/// resourceId?, error? }. Internal.
+ClassMethod %Interaction(url As %String, method As %String, path As %String, query As %String = "", bodyObj = "") As %DynamicObject [ Internal ]
+{
+    Set r = {}
+    Set svc = ""
+    Set serr = ..%Service(url, .svc)
+    If serr '= "" { Set r.ok = 0 Set r.error = serr Quit r }
+    Try {
+        Set req = ##class(HS.FHIRServer.API.Data.Request).%New()
+        Set req.RequestMethod = $zconvert(method, "U")
+        Set req.RequestPath = path
+        If $get(query) '= "" { Set req.QueryString = query }
+        Set req.RequestFormatCode = "JSON"
+        Set req.ResponseFormatCode = "JSON"
+        If $isobject(bodyObj) { Set req.Json = bodyObj }
+        Do svc.DispatchRequest(req, .resp)
+        Set r.httpStatus = +resp.Status
+        Set r.ok = ((+resp.Status >= 200) && (+resp.Status < 300))
+        If resp.Location '= "" { Set r.location = resp.Location }
+        If resp.ETag '= "" { Set r.etag = resp.ETag }
+        If resp.Id '= "" { Set r.resourceId = resp.Id }
+        If $isobject(resp.Json) {
+            Set r.body = resp.Json
+            If resp.Json.%IsDefined("resourceType") { Set r.resourceType = resp.Json.resourceType }
+        }
+    } Catch ex {
+        Set r.ok = 0
+        Set r.error = $extract(ex.DisplayString(), 1, 400)
+    }
+    Quit r
+}
+
+/// Parse a resource argument that may arrive as a %DynamicObject or a
+/// JSON string. Uses the class-method %FromJSON form (instance form is
+/// broken on this build). Returns the object or "" on failure. Internal.
+ClassMethod %ParseResource(resource) As %DynamicObject [ Internal ]
+{
+    If $isobject(resource) { Quit resource }
+    If $get(resource) = "" { Quit "" }
+    Set obj = ""
+    Try { Set obj = ##class(%DynamicAbstractObject).%FromJSON(resource) } Catch  {}
+    Quit obj
+}
+
+/// Convert a CSV string or %DynamicArray of package ids into a $LIST.
+/// Internal.
+ClassMethod %ToList(val) As %List [ Internal ]
+{
+    Set out = ""
+    If $isobject(val) {
+        Try {
+            Set it = val.%GetIterator()
+            While it.%GetNext(.k, .v) { If $get(v) '= "" { Set out = out _ $listbuild(v) } }
+        } Catch  {}
+        Quit out
+    }
+    If $get(val) = "" { Quit out }
+    For i=1:1:$length(val, ",") {
+        Set p = $zstrip($piece(val, ",", i), "<>W")
+        If p '= "" { Set out = out _ $listbuild(p) }
+    }
+    Quit out
+}
+
+/// Render a value that might be a %Status into error text, or "" when it
+/// is empty / OK / not a status. Internal.
+ClassMethod %SCErr(sc) As %String [ Internal ]
+{
+    If $get(sc) = "" { Quit "" }
+    If sc = 1 { Quit "" }
+    Set t = ""
+    Try { If $system.Status.IsError(sc) { Set t = $extract($system.Status.GetErrorText(sc), 1, 400) } } Catch  {}
+    Quit t
+}
+
+/// Scan every namespace the user can read and report which are
+/// FHIR-enabled foundation namespaces with at least one installed FHIR
+/// endpoint. CALL THIS FIRST for any FHIR Server task — it locates the
+/// foundation namespace where FHIR is already defined so later tools can
+/// target it. Read-only.
+///
+/// Returns: { ok, namespaces:[{namespace, endpoints:[url], endpointCount}], total, message? }.
+ClassMethod DiscoverFHIRNamespaces() As %DynamicObject
+{
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("DiscoverFHIRNamespaces")
+    Set out = {}
+    Set out.tool = "discover_fhir_namespaces"
+    Set dispNs = $namespace
+    Set out.namespaces = []
+    New $namespace
+    Try {
+        Set list = ""
+        Do List^%SYS.NAMESPACE(.list)
+        Set systemNs = ",%SYS,IRISSYS,IRISTEMP,IRISLIB,IRISLOCALDATA,HSLIB,HSSYS,HSSYSLOCALTEMP,DOCBOOK,ENSLIB,"
+        Set count = 0
+        Set ns = $order(list(""))
+        While ns '= "" {
+            If systemNs '[ ("," _ $zconvert(ns, "U") _ ",") {
+                Set nsOk = 1
+                Try { Set $namespace = ns } Catch  { Set nsOk = 0 }
+                If nsOk {
+                    Set hasFhir = 0
+                    Try { Set hasFhir = ##class(%Dictionary.CompiledClass).%ExistsId("HS.FHIRServer.ServiceAdmin") } Catch  {}
+                    If hasFhir {
+                        Set eps = []
+                        Set epList = ""
+                        Try { Set epList = ##class(HS.FHIRServer.ServiceAdmin).GetEndpointList() } Catch  {}
+                        If $listvalid(epList) {
+                            For ei=1:1:$listlength(epList) { Do eps.%Push($list(epList, ei)) }
+                        }
+                        If eps.%Size() > 0 {
+                            Set entry = {}
+                            Set entry.namespace = ns
+                            Set entry.endpoints = eps
+                            Set entry.endpointCount = eps.%Size()
+                            Do out.namespaces.%Push(entry)
+                            Set count = count + 1
+                        }
+                    }
+                }
+                Set $namespace = dispNs
+            }
+            Set ns = $order(list(ns))
+        }
+        Set out.total = count
+        Set out.ok = 1
+        If count = 0 {
+            Set out.message = "No FHIR-enabled namespace with an installed endpoint was found. A foundation namespace with a FHIR Server is required; CreateFHIREndpoint can provision one if you have privileges."
+        }
+    } Catch ex {
+        Set out.ok = 0
+        Set out.error = $extract(ex.DisplayString(), 1, 400)
+    }
+    Set $namespace = dispNs
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("DiscoverFHIRNamespaces", out)
+    Quit out
+}
+
+/// List the FHIR endpoints installed in a namespace, with each endpoint's
+/// enabled state, FHIR version, metadata packages, strategy, and key
+/// config. CALL THIS to answer "what FHIR servers / endpoints exist
+/// here". Read-only.
+///
+/// namespace: optional target namespace; defaults to the chat namespace.
+///
+/// Returns: { ok, namespace, endpoints:[{url, enabled, instanceId,
+/// fhirVersion, metadataPackages, strategy, resourceValidation, debugMode}], total, message? }.
+ClassMethod ListFHIREndpoints(namespace As %String = "") As %DynamicObject
+{
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("ListFHIREndpoints")
+    Set out = {}
+    Set out.tool = "list_fhir_endpoints"
+    Set dispNs = $namespace
+    Set targetNs = ..%ResolveNs(namespace)
+    Set out.namespace = targetNs
+    Set out.endpoints = []
+    New $namespace
+    Try {
+        Set nsOk = 1
+        Try { Set $namespace = targetNs } Catch  { Set nsOk = 0 }
+        If 'nsOk {
+            Set out.ok = 0
+            Set out.error = "Cannot access namespace: " _ targetNs
+        } ElseIf '##class(%Dictionary.CompiledClass).%ExistsId("HS.FHIRServer.ServiceAdmin") {
+            Set out.ok = 1
+            Set out.total = 0
+            Set out.message = "Namespace " _ targetNs _ " is not FHIR-enabled. Use DiscoverFHIRNamespaces to find a foundation namespace."
+        } Else {
+            Set epList = ##class(HS.FHIRServer.ServiceAdmin).GetEndpointList()
+            Set count = 0
+            If $listvalid(epList) {
+                For ei=1:1:$listlength(epList) {
+                    Set u = $list(epList, ei)
+                    Set ep = {}
+                    Set ep.url = u
+                    Try { Set ep.enabled = ''##class(HS.FHIRServer.ServiceAdmin).IsEndpointEnabled(u) } Catch  { Set ep.enabled = "" }
+                    Set iid = ""
+                    Try { Set iid = ##class(HS.FHIRServer.ServiceAdmin).GetInstanceIdForEndpoint(u) } Catch  {}
+                    Set ep.instanceId = iid
+                    Try {
+                        Set cfg = ##class(HS.FHIRServer.ServiceAdmin).GetInstanceConfigData(iid)
+                        If $isobject(cfg) {
+                            Set ep.fhirVersion = cfg.FHIRVersion
+                            Set ep.metadataPackages = cfg.FHIRMetadataSet
+                            Set ep.strategy = cfg.InteractionsStrategyClass
+                            Set ep.resourceValidation = cfg.ResourceValidation
+                            Set ep.debugMode = cfg.DebugMode
+                        }
+                    } Catch  {}
+                    Do out.endpoints.%Push(ep)
+                    Set count = count + 1
+                }
+            }
+            Set out.total = count
+            Set out.ok = 1
+        }
+    } Catch ex {
+        Set out.ok = 0
+        Set out.error = $extract(ex.DisplayString(), 1, 400)
+    }
+    Set $namespace = dispNs
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("ListFHIREndpoints", out)
+    Quit out
+}
+
+/// Describe one FHIR endpoint in full: enabled state, instance id, and
+/// every configurable setting (FHIR version, metadata packages, strategy,
+/// debug mode, search page sizes, max results, validation level, prefer
+/// handling, session timeout). CALL THIS when the user asks about a
+/// specific endpoint's configuration. Read-only.
+///
+/// url:       the endpoint cspUrl (e.g., "/csp/healthshare/fhir/fhir/r4").
+/// namespace: optional target namespace.
+///
+/// Returns: { ok, namespace, url, exists, enabled?, instanceId?, config?{...} }.
+ClassMethod GetFHIREndpoint(url As %String, namespace As %String = "") As %DynamicObject
+{
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("GetFHIREndpoint")
+    Set out = {}
+    Set out.tool = "get_fhir_endpoint"
+    Set dispNs = $namespace
+    Set targetNs = ..%ResolveNs(namespace)
+    Set out.namespace = targetNs
+    Set out.url = $get(url)
+    If $get(url) = "" {
+        Set out.ok = 0
+        Set out.error = "Pass `url` (endpoint cspUrl). List them with ListFHIREndpoints."
+        Do ##class(AgenticInterop.Agent.Manager).ToolDone("GetFHIREndpoint", out)
+        Quit out
+    }
+    New $namespace
+    Try {
+        Set nsOk = 1
+        Try { Set $namespace = targetNs } Catch  { Set nsOk = 0 }
+        If 'nsOk {
+            Set out.ok = 0
+            Set out.error = "Cannot access namespace: " _ targetNs
+        } ElseIf '##class(%Dictionary.CompiledClass).%ExistsId("HS.FHIRServer.ServiceAdmin") {
+            Set out.ok = 0
+            Set out.error = "Namespace " _ targetNs _ " is not FHIR-enabled."
+        } ElseIf '##class(HS.FHIRServer.ServiceAdmin).EndpointExists(url) {
+            Set out.ok = 1
+            Set out.exists = 0
+            Set out.error = "No endpoint at '" _ url _ "' in namespace " _ targetNs _ "."
+        } Else {
+            Set out.exists = 1
+            Try { Set out.enabled = ''##class(HS.FHIRServer.ServiceAdmin).IsEndpointEnabled(url) } Catch  {}
+            Set iid = ##class(HS.FHIRServer.ServiceAdmin).GetInstanceIdForEndpoint(url)
+            Set out.instanceId = iid
+            Set cfg = ##class(HS.FHIRServer.ServiceAdmin).GetInstanceConfigData(iid)
+            If $isobject(cfg) {
+                Set c = {}
+                Set c.fhirVersion = cfg.FHIRVersion
+                Set c.metadataPackages = cfg.FHIRMetadataSet
+                Set c.strategy = cfg.InteractionsStrategyClass
+                Set c.debugMode = cfg.DebugMode
+                Set c.defaultSearchPageSize = cfg.DefaultSearchPageSize
+                Set c.maxSearchPageSize = cfg.MaxSearchPageSize
+                Set c.maxSearchResults = cfg.MaxSearchResults
+                Set c.maxConditionalDeleteResults = cfg.MaxConditionalDeleteResults
+                Set c.fhirSessionTimeout = cfg.FHIRSessionTimeout
+                Set c.defaultPreferHandling = cfg.DefaultPreferHandling
+                Set c.resourceValidation = cfg.ResourceValidation
+                Set c.searchFiltering = ''cfg.SearchFiltering
+                Set c.requiredResource = cfg.RequiredResource
+                Set out.config = c
+            }
+            Set out.ok = 1
+        }
+    } Catch ex {
+        Set out.ok = 0
+        Set out.error = $extract(ex.DisplayString(), 1, 400)
+    }
+    Set $namespace = dispNs
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("GetFHIREndpoint", out)
+    Quit out
+}
+
+/// Fetch a FHIR endpoint's CapabilityStatement (the FHIR `metadata`
+/// interaction) — the authoritative declaration of what the server
+/// supports. By default returns a summary (FHIR version, software, and
+/// the list of supported resource types); pass full=1 for the entire
+/// CapabilityStatement document. CALL THIS for "what does this FHIR
+/// server support", "what resources / interactions are enabled". Read-only.
+///
+/// url:       endpoint cspUrl.
+/// full:      1 to embed the entire CapabilityStatement (large); default 0.
+/// namespace: optional target namespace.
+///
+/// Returns: { ok, url, fhirVersion?, software?, resourceTypes:[...],
+/// resourceTypeCount, capabilityStatement?, httpStatus?, error? }.
+ClassMethod GetCapabilityStatement(url As %String, full As %Boolean = 0, namespace As %String = "") As %DynamicObject
+{
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("GetCapabilityStatement")
+    Set out = {}
+    Set out.tool = "get_capability_statement"
+    Set dispNs = $namespace
+    Set targetNs = ..%ResolveNs(namespace)
+    Set out.namespace = targetNs
+    Set out.url = $get(url)
+    Set out.resourceTypes = []
+    If $get(url) = "" {
+        Set out.ok = 0
+        Set out.error = "Pass `url` (endpoint cspUrl)."
+        Do ##class(AgenticInterop.Agent.Manager).ToolDone("GetCapabilityStatement", out)
+        Quit out
+    }
+    New $namespace
+    Try {
+        Set nsOk = 1
+        Try { Set $namespace = targetNs } Catch  { Set nsOk = 0 }
+        If 'nsOk {
+            Set out.ok = 0
+            Set out.error = "Cannot access namespace: " _ targetNs
+        } Else {
+            Set r = ..%Interaction(url, "GET", "metadata")
+            Set out.httpStatus = $select(r.%IsDefined("httpStatus"):r.httpStatus, 1:"")
+            If 'r.ok {
+                Set out.ok = 0
+                Set out.error = $select(r.%IsDefined("error"):r.error, 1:"metadata interaction failed (HTTP " _ out.httpStatus _ ")")
+            } Else {
+                Set b = r.body
+                Set out.fhirVersion = $select($isobject(b)&&b.%IsDefined("fhirVersion"):b.fhirVersion, 1:"")
+                If $isobject(b)&&b.%IsDefined("software")&&$isobject(b.software) {
+                    Set out.software = $select(b.software.%IsDefined("name"):b.software.name, 1:"") _ " " _ $select(b.software.%IsDefined("version"):b.software.version, 1:"")
+                }
+                Set rtc = 0
+                If $isobject(b)&&b.%IsDefined("rest")&&$isobject(b.rest) {
+                    Set restIt = b.rest.%GetIterator()
+                    If restIt.%GetNext(.rk, .restEntry) {
+                        If $isobject(restEntry)&&restEntry.%IsDefined("resource")&&$isobject(restEntry.resource) {
+                            Set resIt = restEntry.resource.%GetIterator()
+                            While resIt.%GetNext(.k2, .resEntry) {
+                                If $isobject(resEntry)&&resEntry.%IsDefined("type") {
+                                    Do out.resourceTypes.%Push(resEntry.type)
+                                    Set rtc = rtc + 1
+                                }
+                            }
+                        }
+                    }
+                }
+                Set out.resourceTypeCount = rtc
+                If +$get(full) { Set out.capabilityStatement = b }
+                Set out.ok = 1
+            }
+        }
+    } Catch ex {
+        Set out.ok = 0
+        Set out.error = $extract(ex.DisplayString(), 1, 400)
+    }
+    Set $namespace = dispNs
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("GetCapabilityStatement", out)
+    Quit out
+}
+
+/// Count resources in a FHIR endpoint's repository. Pass a resourceType
+/// for a single count, or omit it to survey a set of common clinical
+/// resource types. Uses the `_summary=count` search so it is cheap.
+/// CALL THIS for "how many Patients are there", "what data is in this
+/// FHIR server". Read-only.
+///
+/// url:          endpoint cspUrl.
+/// resourceType: optional FHIR resource type (e.g., "Patient").
+/// namespace:    optional target namespace.
+///
+/// Returns single: { ok, url, resourceType, total }.
+/// Returns survey: { ok, url, counts:[{resourceType, count}], totalResources }.
+ClassMethod CountFHIRResources(url As %String, resourceType As %String = "", namespace As %String = "") As %DynamicObject
+{
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("CountFHIRResources")
+    Set out = {}
+    Set out.tool = "count_fhir_resources"
+    Set dispNs = $namespace
+    Set targetNs = ..%ResolveNs(namespace)
+    Set out.namespace = targetNs
+    Set out.url = $get(url)
+    If $get(url) = "" {
+        Set out.ok = 0
+        Set out.error = "Pass `url` (endpoint cspUrl)."
+        Do ##class(AgenticInterop.Agent.Manager).ToolDone("CountFHIRResources", out)
+        Quit out
+    }
+    New $namespace
+    Try {
+        Set nsOk = 1
+        Try { Set $namespace = targetNs } Catch  { Set nsOk = 0 }
+        If 'nsOk {
+            Set out.ok = 0
+            Set out.error = "Cannot access namespace: " _ targetNs
+        } ElseIf $get(resourceType) '= "" {
+            Set r = ..%Interaction(url, "GET", resourceType, "_summary=count")
+            Set out.resourceType = resourceType
+            Set out.httpStatus = $select(r.%IsDefined("httpStatus"):r.httpStatus, 1:"")
+            If r.ok && $isobject(r.body) && r.body.%IsDefined("total") {
+                Set out.total = r.body.total
+                Set out.ok = 1
+            } Else {
+                Set out.ok = 0
+                Set out.error = $select(r.%IsDefined("error"):r.error, 1:"count failed (HTTP " _ out.httpStatus _ ")")
+            }
+        } Else {
+            Set out.counts = []
+            Set out.totalResources = 0
+            Set types = $listbuild("Patient", "Encounter", "Observation", "Condition", "MedicationRequest", "Procedure", "AllergyIntolerance", "Immunization", "DiagnosticReport", "DocumentReference", "Organization", "Practitioner")
+            For ti=1:1:$listlength(types) {
+                Set t = $list(types, ti)
+                Set rr = ..%Interaction(url, "GET", t, "_summary=count")
+                If rr.ok && $isobject(rr.body) && rr.body.%IsDefined("total") {
+                    Set n = +rr.body.total
+                    If n > 0 {
+                        Set c = {}
+                        Set c.resourceType = t
+                        Set c.count = n
+                        Do out.counts.%Push(c)
+                        Set out.totalResources = out.totalResources + n
+                    }
+                }
+            }
+            Set out.ok = 1
+        }
+    } Catch ex {
+        Set out.ok = 0
+        Set out.error = $extract(ex.DisplayString(), 1, 400)
+    }
+    Set $namespace = dispNs
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("CountFHIRResources", out)
+    Quit out
+}
+
+/// Search a FHIR endpoint's repository for resources of a given type.
+/// CALL THIS for "find patients named X", "show observations for patient
+/// Y", or any query against stored resources. Read-only.
+///
+/// url:          endpoint cspUrl.
+/// resourceType: FHIR resource type (e.g., "Patient").
+/// query:        FHIR search query string WITHOUT the leading "?"
+///               (e.g., "name=smith&birthdate=ge1980-01-01"). Optional.
+/// count:        page size (_count); default 10.
+/// namespace:    optional target namespace.
+///
+/// Returns: { ok, url, resourceType, total?, resourceCount,
+/// resources:[{resourceType, id}], httpStatus, error? }.
+ClassMethod SearchFHIRResources(url As %String, resourceType As %String, query As %String = "", count As %Integer = 10, namespace As %String = "") As %DynamicObject
+{
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("SearchFHIRResources")
+    Set out = {}
+    Set out.tool = "search_fhir_resources"
+    Set dispNs = $namespace
+    Set targetNs = ..%ResolveNs(namespace)
+    Set out.namespace = targetNs
+    Set out.url = $get(url)
+    Set out.resourceType = $get(resourceType)
+    Set out.resources = []
+    If ($get(url) = "") || ($get(resourceType) = "") {
+        Set out.ok = 0
+        Set out.error = "Pass `url` (endpoint cspUrl) and `resourceType`."
+        Do ##class(AgenticInterop.Agent.Manager).ToolDone("SearchFHIRResources", out)
+        Quit out
+    }
+    New $namespace
+    Try {
+        Set nsOk = 1
+        Try { Set $namespace = targetNs } Catch  { Set nsOk = 0 }
+        If 'nsOk {
+            Set out.ok = 0
+            Set out.error = "Cannot access namespace: " _ targetNs
+        } Else {
+            Set q = $get(query)
+            If +$get(count) > 0 { Set q = q _ $select(q'="":"&", 1:"") _ "_count=" _ (+count) }
+            Set r = ..%Interaction(url, "GET", resourceType, q)
+            Set out.httpStatus = $select(r.%IsDefined("httpStatus"):r.httpStatus, 1:"")
+            If 'r.ok {
+                Set out.ok = 0
+                Set out.error = $select(r.%IsDefined("error"):r.error, 1:"search failed (HTTP " _ out.httpStatus _ ")")
+                If $isobject(r.body) { Set out.outcome = r.body }
+            } Else {
+                Set b = r.body
+                If $isobject(b) && b.%IsDefined("total") { Set out.total = b.total }
+                Set rc = 0
+                If $isobject(b) && b.%IsDefined("entry") && $isobject(b.entry) {
+                    Set it = b.entry.%GetIterator()
+                    While it.%GetNext(.k, .e) {
+                        Set res = $select($isobject(e)&&e.%IsDefined("resource"):e.resource, 1:"")
+                        If $isobject(res) {
+                            Set item = {}
+                            Set item.resourceType = $select(res.%IsDefined("resourceType"):res.resourceType, 1:"")
+                            Set item.id = $select(res.%IsDefined("id"):res.id, 1:"")
+                            Do out.resources.%Push(item)
+                            Set rc = rc + 1
+                        }
+                    }
+                }
+                Set out.resourceCount = rc
+                Set out.ok = 1
+            }
+        }
+    } Catch ex {
+        Set out.ok = 0
+        Set out.error = $extract(ex.DisplayString(), 1, 400)
+    }
+    Set $namespace = dispNs
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("SearchFHIRResources", out)
+    Quit out
+}
+
+/// Read a single FHIR resource by type and id (the FHIR `read`
+/// interaction). CALL THIS for "show me Patient 123", "fetch this
+/// resource". Read-only.
+///
+/// url:          endpoint cspUrl.
+/// resourceType: FHIR resource type.
+/// id:           the resource logical id.
+/// namespace:    optional target namespace.
+///
+/// Returns: { ok, url, resourceType, id, resource?(object), httpStatus, error?, outcome? }.
+ClassMethod ReadFHIRResource(url As %String, resourceType As %String, id As %String, namespace As %String = "") As %DynamicObject
+{
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("ReadFHIRResource")
+    Set out = {}
+    Set out.tool = "read_fhir_resource"
+    Set dispNs = $namespace
+    Set targetNs = ..%ResolveNs(namespace)
+    Set out.namespace = targetNs
+    Set out.url = $get(url)
+    Set out.resourceType = $get(resourceType)
+    Set out.id = $get(id)
+    If ($get(url) = "") || ($get(resourceType) = "") || ($get(id) = "") {
+        Set out.ok = 0
+        Set out.error = "Pass `url`, `resourceType`, and `id`."
+        Do ##class(AgenticInterop.Agent.Manager).ToolDone("ReadFHIRResource", out)
+        Quit out
+    }
+    New $namespace
+    Try {
+        Set nsOk = 1
+        Try { Set $namespace = targetNs } Catch  { Set nsOk = 0 }
+        If 'nsOk {
+            Set out.ok = 0
+            Set out.error = "Cannot access namespace: " _ targetNs
+        } Else {
+            Set r = ..%Interaction(url, "GET", resourceType _ "/" _ id)
+            Set out.httpStatus = $select(r.%IsDefined("httpStatus"):r.httpStatus, 1:"")
+            If r.ok {
+                Set out.resource = r.body
+                Set out.ok = 1
+            } Else {
+                Set out.ok = 0
+                Set out.error = $select(r.%IsDefined("error"):r.error, 1:"read failed (HTTP " _ out.httpStatus _ ")")
+                If $isobject(r.body) { Set out.outcome = r.body }
+            }
+        }
+    } Catch ex {
+        Set out.ok = 0
+        Set out.error = $extract(ex.DisplayString(), 1, 400)
+    }
+    Set $namespace = dispNs
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("ReadFHIRResource", out)
+    Quit out
+}
+
+/// Create a new FHIR resource in the endpoint's repository (the FHIR
+/// `create` interaction — HTTP POST). MUTATING (create_ prefix). The
+/// resource must include a `resourceType`; the server assigns the id.
+///
+/// url:       endpoint cspUrl.
+/// resource:  the FHIR R4 resource as a JSON object or string.
+/// namespace: optional target namespace.
+///
+/// Returns: { ok, created, url, resourceType, id?, location?, resource?(object), httpStatus, error?, outcome? }.
+ClassMethod CreateFHIRResource(url As %String, resource, namespace As %String = "") As %DynamicObject
+{
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("CreateFHIRResource")
+    Set out = {}
+    Set out.tool = "create_fhir_resource"
+    Set dispNs = $namespace
+    Set targetNs = ..%ResolveNs(namespace)
+    Set out.namespace = targetNs
+    Set out.url = $get(url)
+    Set obj = ..%ParseResource(resource)
+    If $get(url) = "" {
+        Set out.ok = 0
+        Set out.error = "Pass `url` (endpoint cspUrl)."
+        Do ##class(AgenticInterop.Agent.Manager).ToolDone("CreateFHIRResource", out)
+        Quit out
+    }
+    If '$isobject(obj) {
+        Set out.ok = 0
+        Set out.error = "Pass `resource` as a FHIR R4 JSON object or string with a resourceType."
+        Do ##class(AgenticInterop.Agent.Manager).ToolDone("CreateFHIRResource", out)
+        Quit out
+    }
+    Set rt = $select(obj.%IsDefined("resourceType"):obj.resourceType, 1:"")
+    If rt = "" {
+        Set out.ok = 0
+        Set out.error = "Resource is missing required `resourceType`."
+        Do ##class(AgenticInterop.Agent.Manager).ToolDone("CreateFHIRResource", out)
+        Quit out
+    }
+    Set out.resourceType = rt
+    New $namespace
+    Try {
+        Set nsOk = 1
+        Try { Set $namespace = targetNs } Catch  { Set nsOk = 0 }
+        If 'nsOk {
+            Set out.ok = 0
+            Set out.error = "Cannot access namespace: " _ targetNs
+        } Else {
+            Set r = ..%Interaction(url, "POST", rt, "", obj)
+            Set out.httpStatus = $select(r.%IsDefined("httpStatus"):r.httpStatus, 1:"")
+            If r.ok {
+                Set out.created = 1
+                Set out.id = $select(r.%IsDefined("resourceId"):r.resourceId, 1:"")
+                If r.%IsDefined("location") { Set out.location = r.location }
+                If $isobject(r.body) { Set out.resource = r.body }
+                Set out.ok = 1
+            } Else {
+                Set out.created = 0
+                Set out.ok = 0
+                Set out.error = $select(r.%IsDefined("error"):r.error, 1:"create failed (HTTP " _ out.httpStatus _ ")")
+                If $isobject(r.body) { Set out.outcome = r.body }
+            }
+        }
+    } Catch ex {
+        Set out.ok = 0
+        Set out.error = $extract(ex.DisplayString(), 1, 400)
+    }
+    Set $namespace = dispNs
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("CreateFHIRResource", out)
+    Quit out
+}
+
+/// Update (replace) an existing FHIR resource by id (the FHIR `update`
+/// interaction — HTTP PUT). MUTATING (update_ prefix). The resource
+/// body's id is forced to match the id argument.
+///
+/// url:          endpoint cspUrl.
+/// resourceType: FHIR resource type.
+/// id:           the resource logical id to replace.
+/// resource:     the full updated FHIR resource (JSON object or string).
+/// namespace:    optional target namespace.
+///
+/// Returns: { ok, updated, url, resourceType, id, resource?(object), httpStatus, error?, outcome? }.
+ClassMethod UpdateFHIRResource(url As %String, resourceType As %String, id As %String, resource, namespace As %String = "") As %DynamicObject
+{
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("UpdateFHIRResource")
+    Set out = {}
+    Set out.tool = "update_fhir_resource"
+    Set dispNs = $namespace
+    Set targetNs = ..%ResolveNs(namespace)
+    Set out.namespace = targetNs
+    Set out.url = $get(url)
+    Set out.resourceType = $get(resourceType)
+    Set out.id = $get(id)
+    Set obj = ..%ParseResource(resource)
+    If ($get(url) = "") || ($get(resourceType) = "") || ($get(id) = "") {
+        Set out.ok = 0
+        Set out.error = "Pass `url`, `resourceType`, `id`, and `resource`."
+        Do ##class(AgenticInterop.Agent.Manager).ToolDone("UpdateFHIRResource", out)
+        Quit out
+    }
+    If '$isobject(obj) {
+        Set out.ok = 0
+        Set out.error = "Pass `resource` as a FHIR R4 JSON object or string."
+        Do ##class(AgenticInterop.Agent.Manager).ToolDone("UpdateFHIRResource", out)
+        Quit out
+    }
+    ; FHIR update requires body id to match the URL id.
+    Set obj.id = id
+    If 'obj.%IsDefined("resourceType") { Set obj.resourceType = resourceType }
+    New $namespace
+    Try {
+        Set nsOk = 1
+        Try { Set $namespace = targetNs } Catch  { Set nsOk = 0 }
+        If 'nsOk {
+            Set out.ok = 0
+            Set out.error = "Cannot access namespace: " _ targetNs
+        } Else {
+            Set r = ..%Interaction(url, "PUT", resourceType _ "/" _ id, "", obj)
+            Set out.httpStatus = $select(r.%IsDefined("httpStatus"):r.httpStatus, 1:"")
+            If r.ok {
+                Set out.updated = 1
+                If $isobject(r.body) { Set out.resource = r.body }
+                Set out.ok = 1
+            } Else {
+                Set out.updated = 0
+                Set out.ok = 0
+                Set out.error = $select(r.%IsDefined("error"):r.error, 1:"update failed (HTTP " _ out.httpStatus _ ")")
+                If $isobject(r.body) { Set out.outcome = r.body }
+            }
+        }
+    } Catch ex {
+        Set out.ok = 0
+        Set out.error = $extract(ex.DisplayString(), 1, 400)
+    }
+    Set $namespace = dispNs
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("UpdateFHIRResource", out)
+    Quit out
+}
+
+/// Delete a FHIR resource by id (the FHIR `delete` interaction — HTTP
+/// DELETE). MUTATING (delete_ prefix). Removes the resource from the
+/// repository.
+///
+/// url:          endpoint cspUrl.
+/// resourceType: FHIR resource type.
+/// id:           the resource logical id to delete.
+/// namespace:    optional target namespace.
+///
+/// Returns: { ok, deleted, url, resourceType, id, httpStatus, error?, outcome? }.
+ClassMethod DeleteFHIRResource(url As %String, resourceType As %String, id As %String, namespace As %String = "") As %DynamicObject
+{
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("DeleteFHIRResource")
+    Set out = {}
+    Set out.tool = "delete_fhir_resource"
+    Set dispNs = $namespace
+    Set targetNs = ..%ResolveNs(namespace)
+    Set out.namespace = targetNs
+    Set out.url = $get(url)
+    Set out.resourceType = $get(resourceType)
+    Set out.id = $get(id)
+    If ($get(url) = "") || ($get(resourceType) = "") || ($get(id) = "") {
+        Set out.ok = 0
+        Set out.error = "Pass `url`, `resourceType`, and `id`."
+        Do ##class(AgenticInterop.Agent.Manager).ToolDone("DeleteFHIRResource", out)
+        Quit out
+    }
+    New $namespace
+    Try {
+        Set nsOk = 1
+        Try { Set $namespace = targetNs } Catch  { Set nsOk = 0 }
+        If 'nsOk {
+            Set out.ok = 0
+            Set out.error = "Cannot access namespace: " _ targetNs
+        } Else {
+            Set r = ..%Interaction(url, "DELETE", resourceType _ "/" _ id)
+            Set out.httpStatus = $select(r.%IsDefined("httpStatus"):r.httpStatus, 1:"")
+            If r.ok {
+                Set out.deleted = 1
+                Set out.ok = 1
+            } Else {
+                Set out.deleted = 0
+                Set out.ok = 0
+                Set out.error = $select(r.%IsDefined("error"):r.error, 1:"delete failed (HTTP " _ out.httpStatus _ ")")
+                If $isobject(r.body) { Set out.outcome = r.body }
+            }
+        }
+    } Catch ex {
+        Set out.ok = 0
+        Set out.error = $extract(ex.DisplayString(), 1, 400)
+    }
+    Set $namespace = dispNs
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("DeleteFHIRResource", out)
+    Quit out
+}
+
+/// Validate a FHIR resource against the server using the `$validate`
+/// operation — runs the endpoint's real validator (structure, cardinality,
+/// terminology, and profiles). This is stronger than client-side
+/// structural checks. CALL THIS for "is this resource valid for this
+/// server", "validate against US Core". Read-only (no resource is stored).
+///
+/// url:       endpoint cspUrl.
+/// resource:  FHIR R4 resource (JSON object or string) to validate.
+/// profile:   optional canonical profile URL to validate against.
+/// namespace: optional target namespace.
+///
+/// Returns: { ok, valid, url, resourceType, issues:[{severity, code,
+/// diagnostics, location}], httpStatus, outcome?(object), error? }.
+ClassMethod ValidateFHIRResource(url As %String, resource, profile As %String = "", namespace As %String = "") As %DynamicObject
+{
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("ValidateFHIRResource")
+    Set out = {}
+    Set out.tool = "validate_fhir_resource"
+    Set dispNs = $namespace
+    Set targetNs = ..%ResolveNs(namespace)
+    Set out.namespace = targetNs
+    Set out.url = $get(url)
+    Set out.issues = []
+    Set obj = ..%ParseResource(resource)
+    If $get(url) = "" {
+        Set out.ok = 0
+        Set out.error = "Pass `url` (endpoint cspUrl)."
+        Do ##class(AgenticInterop.Agent.Manager).ToolDone("ValidateFHIRResource", out)
+        Quit out
+    }
+    If '$isobject(obj) {
+        Set out.ok = 0
+        Set out.error = "Pass `resource` as a FHIR R4 JSON object or string."
+        Do ##class(AgenticInterop.Agent.Manager).ToolDone("ValidateFHIRResource", out)
+        Quit out
+    }
+    Set rt = $select(obj.%IsDefined("resourceType"):obj.resourceType, 1:"")
+    Set out.resourceType = rt
+    If rt = "" {
+        Set out.ok = 0
+        Set out.error = "Resource is missing required `resourceType`."
+        Do ##class(AgenticInterop.Agent.Manager).ToolDone("ValidateFHIRResource", out)
+        Quit out
+    }
+    New $namespace
+    Try {
+        Set nsOk = 1
+        Try { Set $namespace = targetNs } Catch  { Set nsOk = 0 }
+        If 'nsOk {
+            Set out.ok = 0
+            Set out.error = "Cannot access namespace: " _ targetNs
+        } Else {
+            Set q = $select($get(profile)'="":"profile=" _ profile, 1:"")
+            Set r = ..%Interaction(url, "POST", rt _ "/$validate", q, obj)
+            Set out.httpStatus = $select(r.%IsDefined("httpStatus"):r.httpStatus, 1:"")
+            Set b = r.body
+            If $isobject(b) { Set out.outcome = b }
+            ; $validate returns an OperationOutcome. valid = no error/fatal issues.
+            Set hasError = 0
+            If $isobject(b) && b.%IsDefined("issue") && $isobject(b.issue) {
+                Set it = b.issue.%GetIterator()
+                While it.%GetNext(.k, .iss) {
+                    If '$isobject(iss) { Continue }
+                    Set sev = $select(iss.%IsDefined("severity"):iss.severity, 1:"")
+                    If (sev = "error") || (sev = "fatal") { Set hasError = 1 }
+                    Set io = {}
+                    Set io.severity = sev
+                    Set io.code = $select(iss.%IsDefined("code"):iss.code, 1:"")
+                    Set io.diagnostics = $select(iss.%IsDefined("diagnostics"):$extract(iss.diagnostics, 1, 400), 1:"")
+                    If iss.%IsDefined("expression") && $isobject(iss.expression) {
+                        Try { Set io.location = iss.expression.%Get(0) } Catch  {}
+                    }
+                    Do out.issues.%Push(io)
+                }
+            }
+            Set out.valid = 'hasError
+            Set out.ok = 1
+        }
+    } Catch ex {
+        Set out.ok = 0
+        Set out.error = $extract(ex.DisplayString(), 1, 400)
+    }
+    Set $namespace = dispNs
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("ValidateFHIRResource", out)
+    Quit out
+}
+
+/// Execute an arbitrary FHIR interaction or operation against a local
+/// endpoint — the escape hatch for anything the specific tools do not
+/// cover ($everything, $expand, $lastn, history, batch/transaction
+/// bundles, conditional ops, etc.). CALL THIS for advanced or
+/// less-common FHIR requests. Side effects depend on the method/path
+/// (GET is read-only; POST/PUT/DELETE mutate).
+///
+/// url:       endpoint cspUrl.
+/// method:    HTTP verb — GET / POST / PUT / DELETE.
+/// path:      request path relative to the endpoint, no leading slash
+///            (e.g., "Patient/123/$everything", "metadata", "" for a
+///            system batch).
+/// query:     query string without leading "?" (optional).
+/// body:      request body as a FHIR JSON object or string (optional;
+///            used for POST/PUT and operations with a Parameters input).
+/// namespace: optional target namespace.
+///
+/// Returns: { ok, url, method, path, httpStatus, body?(object),
+/// location?, etag?, error? }.
+ClassMethod ExecuteFHIRRequest(url As %String, method As %String, path As %String, query As %String = "", body = "", namespace As %String = "") As %DynamicObject
+{
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("ExecuteFHIRRequest")
+    Set out = {}
+    Set out.tool = "execute_fhir_request"
+    Set dispNs = $namespace
+    Set targetNs = ..%ResolveNs(namespace)
+    Set out.namespace = targetNs
+    Set out.url = $get(url)
+    Set out.method = $zconvert($get(method), "U")
+    Set out.path = $get(path)
+    If ($get(url) = "") || ($get(method) = "") {
+        Set out.ok = 0
+        Set out.error = "Pass `url`, `method` (GET/POST/PUT/DELETE), and `path`."
+        Do ##class(AgenticInterop.Agent.Manager).ToolDone("ExecuteFHIRRequest", out)
+        Quit out
+    }
+    New $namespace
+    Try {
+        Set nsOk = 1
+        Try { Set $namespace = targetNs } Catch  { Set nsOk = 0 }
+        If 'nsOk {
+            Set out.ok = 0
+            Set out.error = "Cannot access namespace: " _ targetNs
+        } Else {
+            Set bodyObj = ""
+            If $get(body) '= "" { Set bodyObj = ..%ParseResource(body) }
+            Set r = ..%Interaction(url, out.method, $get(path), $get(query), bodyObj)
+            Set out.httpStatus = $select(r.%IsDefined("httpStatus"):r.httpStatus, 1:"")
+            Set out.ok = ''r.ok
+            If r.%IsDefined("location") { Set out.location = r.location }
+            If r.%IsDefined("etag") { Set out.etag = r.etag }
+            If $isobject(r.body) { Set out.body = r.body }
+            If 'r.ok && r.%IsDefined("error") { Set out.error = r.error }
+        }
+    } Catch ex {
+        Set out.ok = 0
+        Set out.error = $extract(ex.DisplayString(), 1, 400)
+    }
+    Set $namespace = dispNs
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("ExecuteFHIRRequest", out)
+    Quit out
+}
+
+/// List the FHIR metadata package sources available to install on this
+/// instance (FHIR core versions plus implementation guides such as
+/// US Core). CALL THIS before AddFHIRPackages to see valid package ids.
+/// Read-only.
+///
+/// namespace: optional target namespace.
+///
+/// Returns: { ok, namespace, packages:[id], total }.
+ClassMethod ListAvailableFHIRPackages(namespace As %String = "") As %DynamicObject
+{
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("ListAvailableFHIRPackages")
+    Set out = {}
+    Set out.tool = "list_available_fhir_packages"
+    Set dispNs = $namespace
+    Set targetNs = ..%ResolveNs(namespace)
+    Set out.namespace = targetNs
+    Set out.packages = []
+    New $namespace
+    Try {
+        Set nsOk = 1
+        Try { Set $namespace = targetNs } Catch  { Set nsOk = 0 }
+        If 'nsOk {
+            Set out.ok = 0
+            Set out.error = "Cannot access namespace: " _ targetNs
+        } ElseIf '##class(%Dictionary.CompiledClass).%ExistsId("HS.FHIRServer.Installer") {
+            Set out.ok = 0
+            Set out.error = "Namespace " _ targetNs _ " is not FHIR-enabled."
+        } Else {
+            Set pk = ##class(HS.FHIRServer.Installer).GetAllPackageSources()
+            If $listvalid(pk) {
+                For pi=1:1:$listlength(pk) { Do out.packages.%Push($list(pk, pi)) }
+            } ElseIf $isobject(pk) {
+                Set it = pk.%GetIterator()
+                While it.%GetNext(.k, .v) { Do out.packages.%Push($select($isobject(v)&&v.%IsDefined("id"):v.id, 1:v)) }
+            } ElseIf $get(pk) '= "" {
+                For pi=1:1:$length(pk, ",") { Set p = $zstrip($piece(pk, ",", pi), "<>W") If p '= "" { Do out.packages.%Push(p) } }
+            }
+            Set out.total = out.packages.%Size()
+            Set out.ok = 1
+        }
+    } Catch ex {
+        Set out.ok = 0
+        Set out.error = $extract(ex.DisplayString(), 1, 400)
+    }
+    Set $namespace = dispNs
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("ListAvailableFHIRPackages", out)
+    Quit out
+}
+
+/// Add one or more FHIR metadata packages (implementation guides /
+/// profiles) to an existing endpoint's instance — e.g. add US Core to a
+/// core-only server. MUTATING (add_ prefix). Verify ids first with
+/// ListAvailableFHIRPackages.
+///
+/// url:       endpoint cspUrl.
+/// packages:  package ids as a CSV string (e.g.,
+///            "hl7.fhir.us.core@5.0.1") or a JSON array of ids.
+/// namespace: optional target namespace.
+///
+/// Returns: { ok, url, requestedPackages, metadataPackages?(after), error? }.
+ClassMethod AddFHIRPackages(url As %String, packages, namespace As %String = "") As %DynamicObject
+{
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("AddFHIRPackages")
+    Set out = {}
+    Set out.tool = "add_fhir_packages"
+    Set dispNs = $namespace
+    Set targetNs = ..%ResolveNs(namespace)
+    Set out.namespace = targetNs
+    Set out.url = $get(url)
+    If $get(url) = "" {
+        Set out.ok = 0
+        Set out.error = "Pass `url` and `packages`."
+        Do ##class(AgenticInterop.Agent.Manager).ToolDone("AddFHIRPackages", out)
+        Quit out
+    }
+    Set plist = ..%ToList(packages)
+    If plist = "" {
+        Set out.ok = 0
+        Set out.error = "Pass `packages` as a CSV string or JSON array of package ids."
+        Do ##class(AgenticInterop.Agent.Manager).ToolDone("AddFHIRPackages", out)
+        Quit out
+    }
+    Set out.requestedPackages = $listtostring(plist, ",")
+    New $namespace
+    Try {
+        Set nsOk = 1
+        Try { Set $namespace = targetNs } Catch  { Set nsOk = 0 }
+        If 'nsOk {
+            Set out.ok = 0
+            Set out.error = "Cannot access namespace: " _ targetNs
+        } ElseIf '##class(HS.FHIRServer.ServiceAdmin).EndpointExists(url) {
+            Set out.ok = 0
+            Set out.error = "No endpoint at '" _ url _ "' in namespace " _ targetNs _ "."
+        } Else {
+            Set iid = ##class(HS.FHIRServer.ServiceAdmin).GetInstanceIdForEndpoint(url)
+            Set sc = $$$OK
+            Set sc = ##class(HS.FHIRServer.Installer).AddPackagesToInstance(iid, plist)
+            Set scErr = ..%SCErr(sc)
+            If scErr '= "" {
+                Set out.ok = 0
+                Set out.error = scErr
+            } Else {
+                Try {
+                    Set cfg = ##class(HS.FHIRServer.ServiceAdmin).GetInstanceConfigData(iid)
+                    If $isobject(cfg) { Set out.metadataPackages = cfg.FHIRMetadataSet }
+                } Catch  {}
+                Set out.ok = 1
+                Set out.message = "Packages added to endpoint " _ url _ "."
+            }
+        }
+    } Catch ex {
+        Set out.ok = 0
+        Set out.error = $extract(ex.DisplayString(), 1, 400)
+    }
+    Set $namespace = dispNs
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("AddFHIRPackages", out)
+    Quit out
+}
+
+/// Update the runtime configuration of an existing FHIR endpoint.
+/// MUTATING (update_ prefix). Reads the current config, applies the
+/// supplied settings, and saves. Only recognized keys are applied.
+///
+/// url:       endpoint cspUrl.
+/// settings:  JSON object of config keys to change. Recognized keys:
+///            debugMode (0/1/2), defaultSearchPageSize, maxSearchPageSize,
+///            maxSearchResults, maxConditionalDeleteResults,
+///            fhirSessionTimeout, defaultPreferHandling
+///            ("lenient"/"strict"), resourceValidation
+///            ("always"/"never"/...), searchFiltering (0/1),
+///            requiredResource.
+/// namespace: optional target namespace.
+///
+/// Returns: { ok, url, applied:[{key, value}], ignored:[key], error? }.
+ClassMethod UpdateFHIREndpointConfig(url As %String, settings As %DynamicObject, namespace As %String = "") As %DynamicObject
+{
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("UpdateFHIREndpointConfig")
+    Set out = {}
+    Set out.tool = "update_fhir_endpoint_config"
+    Set dispNs = $namespace
+    Set targetNs = ..%ResolveNs(namespace)
+    Set out.namespace = targetNs
+    Set out.url = $get(url)
+    Set out.applied = []
+    Set out.ignored = []
+    If $get(url) = "" {
+        Set out.ok = 0
+        Set out.error = "Pass `url` and a `settings` object."
+        Do ##class(AgenticInterop.Agent.Manager).ToolDone("UpdateFHIREndpointConfig", out)
+        Quit out
+    }
+    If '$isobject(settings) {
+        Set out.ok = 0
+        Set out.error = "Pass `settings` as a JSON object of config keys to change."
+        Do ##class(AgenticInterop.Agent.Manager).ToolDone("UpdateFHIREndpointConfig", out)
+        Quit out
+    }
+    New $namespace
+    Try {
+        Set nsOk = 1
+        Try { Set $namespace = targetNs } Catch  { Set nsOk = 0 }
+        If 'nsOk {
+            Set out.ok = 0
+            Set out.error = "Cannot access namespace: " _ targetNs
+        } ElseIf '##class(HS.FHIRServer.ServiceAdmin).EndpointExists(url) {
+            Set out.ok = 0
+            Set out.error = "No endpoint at '" _ url _ "' in namespace " _ targetNs _ "."
+        } Else {
+            Set iid = ##class(HS.FHIRServer.ServiceAdmin).GetInstanceIdForEndpoint(url)
+            Set cfg = ##class(HS.FHIRServer.ServiceAdmin).GetInstanceConfigData(iid)
+            ; Map known JSON keys -> ConfigData property names.
+            Set map("debugmode") = "DebugMode"
+            Set map("defaultsearchpagesize") = "DefaultSearchPageSize"
+            Set map("maxsearchpagesize") = "MaxSearchPageSize"
+            Set map("maxsearchresults") = "MaxSearchResults"
+            Set map("maxconditionaldeleteresults") = "MaxConditionalDeleteResults"
+            Set map("fhirsessiontimeout") = "FHIRSessionTimeout"
+            Set map("defaultpreferhandling") = "DefaultPreferHandling"
+            Set map("resourcevalidation") = "ResourceValidation"
+            Set map("searchfiltering") = "SearchFiltering"
+            Set map("requiredresource") = "RequiredResource"
+            Set it = settings.%GetIterator()
+            While it.%GetNext(.k, .v) {
+                Set prop = $get(map($zconvert(k, "L")))
+                If prop = "" {
+                    Do out.ignored.%Push(k)
+                } Else {
+                    Set $property(cfg, prop) = v
+                    Set a = {}
+                    Set a.key = prop
+                    Set a.value = v
+                    Do out.applied.%Push(a)
+                }
+            }
+            If out.applied.%Size() = 0 {
+                Set out.ok = 0
+                Set out.error = "No recognized config keys in `settings`. See the tool description for valid keys."
+            } Else {
+                Set sc = ##class(HS.FHIRServer.ServiceAdmin).SetInstanceConfigData(iid, cfg)
+                Set scErr = ..%SCErr(sc)
+                If scErr '= "" {
+                    Set out.ok = 0
+                    Set out.error = scErr
+                } Else {
+                    Set out.ok = 1
+                    Set out.message = "Updated " _ out.applied.%Size() _ " config setting(s) on " _ url _ "."
+                }
+            }
+        }
+    } Catch ex {
+        Set out.ok = 0
+        Set out.error = $extract(ex.DisplayString(), 1, 400)
+    }
+    Set $namespace = dispNs
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("UpdateFHIREndpointConfig", out)
+    Quit out
+}
+
+/// Enable or disable a FHIR endpoint without deleting it. MUTATING
+/// (set_ prefix). A disabled endpoint rejects requests but keeps its
+/// data and configuration.
+///
+/// url:       endpoint cspUrl.
+/// enabled:   1 to enable, 0 to disable.
+/// namespace: optional target namespace.
+///
+/// Returns: { ok, url, enabled, error? }.
+ClassMethod SetFHIREndpointEnabled(url As %String, enabled As %Boolean, namespace As %String = "") As %DynamicObject
+{
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("SetFHIREndpointEnabled")
+    Set out = {}
+    Set out.tool = "set_fhir_endpoint_enabled"
+    Set dispNs = $namespace
+    Set targetNs = ..%ResolveNs(namespace)
+    Set out.namespace = targetNs
+    Set out.url = $get(url)
+    If ($get(url) = "") || ($get(enabled) = "") {
+        Set out.ok = 0
+        Set out.error = "Pass `url` and `enabled` (1 or 0)."
+        Do ##class(AgenticInterop.Agent.Manager).ToolDone("SetFHIREndpointEnabled", out)
+        Quit out
+    }
+    New $namespace
+    Try {
+        Set nsOk = 1
+        Try { Set $namespace = targetNs } Catch  { Set nsOk = 0 }
+        If 'nsOk {
+            Set out.ok = 0
+            Set out.error = "Cannot access namespace: " _ targetNs
+        } ElseIf '##class(HS.FHIRServer.ServiceAdmin).EndpointExists(url) {
+            Set out.ok = 0
+            Set out.error = "No endpoint at '" _ url _ "' in namespace " _ targetNs _ "."
+        } Else {
+            Set sc = ##class(HS.FHIRServer.ServiceAdmin).SetEndpointEnabled(url, ''(+enabled))
+            Set scErr = ..%SCErr(sc)
+            If scErr '= "" {
+                Set out.ok = 0
+                Set out.error = scErr
+            } Else {
+                Set out.enabled = ''(+enabled)
+                Set out.ok = 1
+                Set out.message = "Endpoint " _ url _ " " _ $select(+enabled:"enabled", 1:"disabled") _ "."
+            }
+        }
+    } Catch ex {
+        Set out.ok = 0
+        Set out.error = $extract(ex.DisplayString(), 1, 400)
+    }
+    Set $namespace = dispNs
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("SetFHIREndpointEnabled", out)
+    Quit out
+}
+
+/// Provision a NEW FHIR R4 endpoint in a namespace. MUTATING (create_
+/// prefix). GUARD: refuses if an endpoint already exists at the URL —
+/// it never reinstalls or duplicates a live server. Prefer managing the
+/// existing foundation-namespace endpoint; only call this when the user
+/// explicitly wants a new endpoint. Enables the namespace for FHIR if
+/// needed, then installs the instance.
+///
+/// url:         the new endpoint cspUrl (e.g., "/csp/healthshare/myns/fhir/r4").
+/// packages:    metadata packages CSV; default "hl7.fhir.r4.core@4.0.1".
+/// strategy:    InteractionsStrategy class; default
+///              "HS.FHIRServer.Storage.JsonAdvSQL.InteractionsStrategy".
+/// description: optional display description.
+/// namespace:   optional target namespace.
+///
+/// Returns: { ok, created, url, namespace, strategy, packages, error? }.
+ClassMethod CreateFHIREndpoint(url As %String, packages As %String = "hl7.fhir.r4.core@4.0.1", strategy As %String = "HS.FHIRServer.Storage.JsonAdvSQL.InteractionsStrategy", description As %String = "", namespace As %String = "") As %DynamicObject
+{
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("CreateFHIREndpoint")
+    Set out = {}
+    Set out.tool = "create_fhir_endpoint"
+    Set dispNs = $namespace
+    Set targetNs = ..%ResolveNs(namespace)
+    Set out.namespace = targetNs
+    Set out.url = $get(url)
+    Set out.strategy = strategy
+    Set out.packages = packages
+    If $get(url) = "" {
+        Set out.ok = 0
+        Set out.error = "Pass `url` (the new endpoint cspUrl)."
+        Do ##class(AgenticInterop.Agent.Manager).ToolDone("CreateFHIREndpoint", out)
+        Quit out
+    }
+    New $namespace
+    Try {
+        Set nsOk = 1
+        Try { Set $namespace = targetNs } Catch  { Set nsOk = 0 }
+        If 'nsOk {
+            Set out.ok = 0
+            Set out.error = "Cannot access namespace: " _ targetNs
+        } ElseIf '##class(%Dictionary.CompiledClass).%ExistsId("HS.FHIRServer.Installer") {
+            Set out.ok = 0
+            Set out.error = "Namespace " _ targetNs _ " is not HealthShare/FHIR-capable; cannot install a FHIR endpoint here."
+        } ElseIf ##class(HS.FHIRServer.ServiceAdmin).EndpointExists(url) {
+            Set out.ok = 0
+            Set out.created = 0
+            Set out.error = "An endpoint already exists at '" _ url _ "'. Refusing to reinstall. Inspect it with GetFHIREndpoint or manage it with the other tools."
+        } Else {
+            ; Ensure the namespace is FHIR-enabled (idempotent).
+            Try { Do ##class(HS.FHIRServer.Installer).InstallNamespace(targetNs) } Catch  {}
+            Set sc = $$$OK
+            Set sc = ##class(HS.FHIRServer.Installer).InstallInstance(url, strategy, packages, "", description)
+            Set scErr = ..%SCErr(sc)
+            Set out.created = ''##class(HS.FHIRServer.ServiceAdmin).EndpointExists(url)
+            If 'out.created {
+                Set out.ok = 0
+                Set out.error = $select(scErr'="":scErr, 1:"InstallInstance completed but the endpoint was not created.")
+            } Else {
+                Set out.ok = 1
+                Set out.message = "FHIR endpoint created at " _ url _ " in namespace " _ targetNs _ "."
+            }
+        }
+    } Catch ex {
+        Set out.ok = 0
+        Set out.error = $extract(ex.DisplayString(), 1, 400)
+    }
+    Set $namespace = dispNs
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("CreateFHIREndpoint", out)
+    Quit out
+}
+
+/// Remove a FHIR endpoint. MUTATING (delete_ prefix). By default this
+/// decommissions the endpoint (stops serving it) while PRESERVING the
+/// stored resource data. Pass deleteData=1 to also drop the repository
+/// data — destructive and irreversible.
+///
+/// url:        endpoint cspUrl.
+/// deleteData: 0 = decommission only (default, keeps data); 1 = also
+///             delete all stored FHIR data.
+/// namespace:  optional target namespace.
+///
+/// Returns: { ok, deleted, dataDeleted, url, error? }.
+ClassMethod DeleteFHIREndpoint(url As %String, deleteData As %Boolean = 0, namespace As %String = "") As %DynamicObject
+{
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("DeleteFHIREndpoint")
+    Set out = {}
+    Set out.tool = "delete_fhir_endpoint"
+    Set dispNs = $namespace
+    Set targetNs = ..%ResolveNs(namespace)
+    Set out.namespace = targetNs
+    Set out.url = $get(url)
+    If $get(url) = "" {
+        Set out.ok = 0
+        Set out.error = "Pass `url` (endpoint cspUrl)."
+        Do ##class(AgenticInterop.Agent.Manager).ToolDone("DeleteFHIREndpoint", out)
+        Quit out
+    }
+    New $namespace
+    Try {
+        Set nsOk = 1
+        Try { Set $namespace = targetNs } Catch  { Set nsOk = 0 }
+        If 'nsOk {
+            Set out.ok = 0
+            Set out.error = "Cannot access namespace: " _ targetNs
+        } ElseIf '##class(HS.FHIRServer.ServiceAdmin).EndpointExists(url) {
+            Set out.ok = 1
+            Set out.deleted = 0
+            Set out.error = "No endpoint at '" _ url _ "' in namespace " _ targetNs _ "."
+        } Else {
+            Set iid = ##class(HS.FHIRServer.ServiceAdmin).GetInstanceIdForEndpoint(url)
+            Set sc = $$$OK
+            If +$get(deleteData) {
+                Set sc = ##class(HS.FHIRServer.Installer).UninstallInstance(url, 1)
+                Set out.dataDeleted = 1
+            } Else {
+                Set sc = ##class(HS.FHIRServer.ServiceAdmin).DecommissionInstance(iid)
+                Set out.dataDeleted = 0
+            }
+            Set scErr = ..%SCErr(sc)
+            Set stillExists = 0
+            Try { Set stillExists = ##class(HS.FHIRServer.ServiceAdmin).EndpointExists(url) } Catch  {}
+            If (scErr '= "") && stillExists {
+                Set out.ok = 0
+                Set out.deleted = 0
+                Set out.error = scErr
+            } Else {
+                Set out.ok = 1
+                Set out.deleted = 1
+                Set out.message = "Endpoint " _ url _ " " _ $select(+$get(deleteData):"uninstalled (data deleted)", 1:"decommissioned (data preserved)") _ "."
+            }
+        }
+    } Catch ex {
+        Set out.ok = 0
+        Set out.error = $extract(ex.DisplayString(), 1, 400)
+    }
+    Set $namespace = dispNs
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("DeleteFHIREndpoint", out)
+    Quit out
+}
+
+}

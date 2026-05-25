@@ -70,7 +70,7 @@ ClassMethod Build(pProvider As %AI.Provider, Output pAgent As %AI.Agent, pAgentC
             }
         } Else {
             Do ..Trace("Bypass mode — registering tools directly (no MCP)")
-            Set tools = "AgenticInterop.Tool.Production,AgenticInterop.Tool.Transform,AgenticInterop.Tool.Testing,AgenticInterop.Tool.Catalog,AgenticInterop.Tool.Monitoring"
+            Set tools = "AgenticInterop.Tool.Production,AgenticInterop.Tool.Transform,AgenticInterop.Tool.Testing,AgenticInterop.Tool.Catalog,AgenticInterop.Tool.Monitoring,AgenticInterop.Tool.FHIRServer"
             For i=1:1:$LENGTH(tools, ",") {
                 Set cls = $PIECE(tools, ",", i)
                 Do ..Trace("Registering ToolSet: " _ cls)
