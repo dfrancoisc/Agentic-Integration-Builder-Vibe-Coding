@@ -57,9 +57,9 @@ ClassMethod %Service(url As %String, Output svc) As %String [ Internal ]
             Set err = "No FHIR endpoint at '" _ url _ "' in namespace " _ $namespace _ ". Call ListFHIREndpoints / DiscoverFHIRNamespaces first."
             Quit
         }
-        Set strat = ##class(HS.FHIRServer.API.InteractionsStrategy).GetStrategyForEndpoint(url)
-        If '$isobject(strat) { Set err = "Could not resolve a FHIR InteractionsStrategy for endpoint: " _ url Quit }
-        Set svc = ##class(HS.FHIRServer.Service).EnsureInstance(strat.InstanceKey)
+        ; Documented in-process entry point: EnsureInstance(endpointUrl).
+        ; Safe to call before every request; returns the singleton service.
+        Set svc = ##class(HS.FHIRServer.Service).EnsureInstance(url)
         If '$isobject(svc) { Set err = "Could not instantiate the FHIR service for endpoint: " _ url }
     } Catch ex {
         Set err = $extract(ex.DisplayString(), 1, 300)
@@ -1004,14 +1004,25 @@ ClassMethod ListAvailableFHIRPackages(namespace As %String = "") As %DynamicObje
             Set out.ok = 0
             Set out.error = "Namespace " _ targetNs _ " is not FHIR-enabled."
         } Else {
-            Set pk = ##class(HS.FHIRServer.Installer).GetAllPackageSources()
-            If $listvalid(pk) {
-                For pi=1:1:$listlength(pk) { Do out.packages.%Push($list(pk, pi)) }
-            } ElseIf $isobject(pk) {
-                Set it = pk.%GetIterator()
-                While it.%GetNext(.k, .v) { Do out.packages.%Push($select($isobject(v)&&v.%IsDefined("id"):v.id, 1:v)) }
-            } ElseIf $get(pk) '= "" {
-                For pi=1:1:$length(pk, ",") { Set p = $zstrip($piece(pk, ",", pi), "<>W") If p '= "" { Do out.packages.%Push(p) } }
+            ; Preferred source: the FHIR metadata repository lists loaded
+            ; packages as name@version ids (HS.FHIRMeta.Storage.Package is
+            ; a %ListOfObjects, each item has an .id like
+            ; "hl7.fhir.us.core@5.0.1").
+            Set got = 0
+            Try {
+                Set pk = ##class(HS.FHIRMeta.Storage.Package).GetAllPackages()
+                If $isobject(pk) {
+                    For pi=1:1:pk.Count() {
+                        Set o = pk.GetAt(pi)
+                        If $isobject(o) { Do out.packages.%Push(o.id) Set got = 1 }
+                    }
+                }
+            } Catch  {}
+            ; Fallback: installable package source directories.
+            If 'got {
+                Set src = ""
+                Try { Set src = ##class(HS.FHIRServer.Installer).GetAllPackageSources() } Catch  {}
+                If $listvalid(src) { For pi=1:1:$listlength(src) { Do out.packages.%Push($list(src, pi)) } }
             }
             Set out.total = out.packages.%Size()
             Set out.ok = 1
@@ -1104,9 +1115,12 @@ ClassMethod AddFHIRPackages(url As %String, packages, namespace As %String = "")
 ///            debugMode (0/1/2), defaultSearchPageSize, maxSearchPageSize,
 ///            maxSearchResults, maxConditionalDeleteResults,
 ///            fhirSessionTimeout, defaultPreferHandling
-///            ("lenient"/"strict"), resourceValidation
-///            ("always"/"never"/...), searchFiltering (0/1),
-///            requiredResource.
+///            ("lenient" | "strict"), resourceValidation
+///            ("always" | "if header" | "skip"), searchFiltering (0/1),
+///            requiredResource. debugMode is a bit-flag: 1=include
+///            traceback in error OperationOutcome, 2=new service instance
+///            per request (so 3=both). FHIR version and the interactions
+///            strategy are read-only after install and cannot be set here.
 /// namespace: optional target namespace.
 ///
 /// Returns: { ok, url, applied:[{key, value}], ignored:[key], error? }.
@@ -1385,6 +1399,124 @@ ClassMethod DeleteFHIREndpoint(url As %String, deleteData As %Boolean = 0, names
     }
     Set $namespace = dispNs
     Do ##class(AgenticInterop.Agent.Manager).ToolDone("DeleteFHIREndpoint", out)
+    Quit out
+}
+
+/// Bulk-load FHIR resources into an endpoint's repository from a directory
+/// on the IRIS server filesystem (.json, .ndjson, or .xml files) using
+/// HS.FHIRServer.Tools.DataLoader (in-process, no HTTP). CALL THIS to seed
+/// or import a data set into the FHIR server. MUTATING (load_ prefix).
+///
+/// url:       endpoint cspUrl.
+/// directory: server-side directory containing FHIR resource files.
+/// namespace: optional target namespace.
+///
+/// Returns: { ok, url, directory, result?, message?, error? }.
+ClassMethod LoadFHIRData(url As %String, directory As %String, namespace As %String = "") As %DynamicObject
+{
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("LoadFHIRData")
+    Set out = {}
+    Set out.tool = "load_fhir_data"
+    Set dispNs = $namespace
+    Set targetNs = ..%ResolveNs(namespace)
+    Set out.namespace = targetNs
+    Set out.url = $get(url)
+    Set out.directory = $get(directory)
+    If ($get(url) = "") || ($get(directory) = "") {
+        Set out.ok = 0
+        Set out.error = "Pass `url` (endpoint cspUrl) and `directory` (server-side path with .json/.ndjson/.xml files)."
+        Do ##class(AgenticInterop.Agent.Manager).ToolDone("LoadFHIRData", out)
+        Quit out
+    }
+    New $namespace
+    Try {
+        Set nsOk = 1
+        Try { Set $namespace = targetNs } Catch  { Set nsOk = 0 }
+        If 'nsOk {
+            Set out.ok = 0
+            Set out.error = "Cannot access namespace: " _ targetNs
+        } ElseIf '##class(HS.FHIRServer.ServiceAdmin).EndpointExists(url) {
+            Set out.ok = 0
+            Set out.error = "No endpoint at '" _ url _ "' in namespace " _ targetNs _ "."
+        } ElseIf '##class(%Library.File).DirectoryExists(directory) {
+            Set out.ok = 0
+            Set out.error = "Directory not found on the IRIS server: " _ directory
+        } Else {
+            ; SubmitResourceFiles(dir, serviceType, serviceName, displayProgress)
+            ; serviceType "FHIRServer" loads directly into the local repo.
+            Set res = ##class(HS.FHIRServer.Tools.DataLoader).SubmitResourceFiles(directory, "FHIRServer", url, 0)
+            Set scErr = ..%SCErr(res)
+            If scErr '= "" {
+                Set out.ok = 0
+                Set out.error = scErr
+            } Else {
+                If $isvalidnum(res) { Set out.result = res }
+                Set out.ok = 1
+                Set out.message = "Submitted FHIR resource files from " _ directory _ " to endpoint " _ url _ "."
+            }
+        }
+    } Catch ex {
+        Set out.ok = 0
+        Set out.error = $extract(ex.DisplayString(), 1, 400)
+    }
+    Set $namespace = dispNs
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("LoadFHIRData", out)
+    Quit out
+}
+
+/// Wipe ALL stored FHIR resources from an endpoint's repository while
+/// keeping the endpoint, its configuration, and metadata packages intact.
+/// Uses HS.FHIRServer.Installer.Reset. MUTATING and DESTRUCTIVE (reset_
+/// prefix) — there is no undo. Use to return a dev/test server to empty.
+///
+/// url:       endpoint cspUrl.
+/// namespace: optional target namespace.
+///
+/// Returns: { ok, url, message?, error? }.
+ClassMethod ResetFHIRServerData(url As %String, namespace As %String = "") As %DynamicObject
+{
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("ResetFHIRServerData")
+    Set out = {}
+    Set out.tool = "reset_fhir_server_data"
+    Set dispNs = $namespace
+    Set targetNs = ..%ResolveNs(namespace)
+    Set out.namespace = targetNs
+    Set out.url = $get(url)
+    If $get(url) = "" {
+        Set out.ok = 0
+        Set out.error = "Pass `url` (endpoint cspUrl)."
+        Do ##class(AgenticInterop.Agent.Manager).ToolDone("ResetFHIRServerData", out)
+        Quit out
+    }
+    New $namespace
+    Try {
+        Set nsOk = 1
+        Try { Set $namespace = targetNs } Catch  { Set nsOk = 0 }
+        If 'nsOk {
+            Set out.ok = 0
+            Set out.error = "Cannot access namespace: " _ targetNs
+        } ElseIf '##class(HS.FHIRServer.ServiceAdmin).EndpointExists(url) {
+            Set out.ok = 0
+            Set out.error = "No endpoint at '" _ url _ "' in namespace " _ targetNs _ "."
+        } Else {
+            Set iid = ##class(HS.FHIRServer.ServiceAdmin).GetInstanceIdForEndpoint(url)
+            Set sc = $$$OK
+            Set sc = ##class(HS.FHIRServer.Installer).Reset(iid, url)
+            Set scErr = ..%SCErr(sc)
+            If scErr '= "" {
+                Set out.ok = 0
+                Set out.error = scErr
+            } Else {
+                Set out.ok = 1
+                Set out.message = "All FHIR resource data cleared from endpoint " _ url _ " (endpoint and config preserved)."
+            }
+        }
+    } Catch ex {
+        Set out.ok = 0
+        Set out.error = $extract(ex.DisplayString(), 1, 400)
+    }
+    Set $namespace = dispNs
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("ResetFHIRServerData", out)
     Quit out
 }
 

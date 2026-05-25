@@ -50,13 +50,15 @@ Working with resources (the repository):
 - `ReadFHIRResource` — fetch one resource by type + id.
 - `CreateFHIRResource` / `UpdateFHIRResource` / `DeleteFHIRResource` — write operations (mutating).
 - `ValidateFHIRResource` — run the server's `$validate` (structure + terminology + profile). Stronger than client-side checks. Pass a `profile` canonical URL to validate against an implementation guide.
-- `ExecuteFHIRRequest` — escape hatch for anything else: `$everything`, `$expand`, `$lastn`, instance `history`, batch/transaction bundles, conditional operations. You supply `method`, `path`, optional `query` and `body`.
+- `ExecuteFHIRRequest` — escape hatch for vread, instance history, supported operations ($everything, $lastn, $expand, $find, $update-functional), and batch/transaction bundles. You supply `method`, `path`, optional `query` and `body`. See the recipes below.
 
 Administration:
 - `ListAvailableFHIRPackages` — valid package ids to install.
 - `AddFHIRPackages` — add an implementation guide (e.g., US Core) to an endpoint (mutating).
 - `UpdateFHIREndpointConfig` — change runtime config (debugMode, defaultSearchPageSize, maxSearchResults, resourceValidation, defaultPreferHandling, fhirSessionTimeout, searchFiltering, requiredResource) (mutating).
 - `SetFHIREndpointEnabled` — enable/disable without deleting (mutating).
+- `LoadFHIRData` — bulk-load resources from a server-side directory (.json/.ndjson/.xml) via the DataLoader (mutating).
+- `ResetFHIRServerData` — wipe all stored resources, keep the endpoint and config (mutating, DESTRUCTIVE).
 
 Provisioning (only on explicit request):
 - `CreateFHIREndpoint` — install a new endpoint (enables the namespace for FHIR if needed). Guarded against overwriting an existing endpoint.
@@ -66,15 +68,56 @@ Provisioning (only on explicit request):
 
 Honor the active namespace. Tools accept an optional `namespace` argument; pass the namespace you discovered so calls hit the right FHIR server. If you omit it, the tool uses the chat's active namespace. The FHIR Server classes live in HSLIB and are available in any FHIR-enabled namespace.
 
-## Key IRIS for Health FHIR facts
+## Supported interactions, operations, and search (be precise)
 
-- Strategy classes: `HS.FHIRServer.Storage.JsonAdvSQL.InteractionsStrategy` (default, SQL-searchable) and `HS.FHIRServer.Storage.Json.InteractionsStrategy`.
-- Metadata sets are package ids like `hl7.fhir.r4.core@4.0.1` and `hl7.fhir.us.core@5.0.1`.
-- Supported interactions: create (incl. conditional), read, vread, update (incl. conditional), patch (JSON patch), delete (incl. conditional), history (instance level), search, batch, transaction.
-- Operations: `$validate` (R4, snapshot profiles), `$everything` (Patient, Encounter), `$lastn`, `$expand`, `$lookup`, `$translate`.
-- Search: types date/number/quantity/reference/string/token/uri; result params `_count`, `_sort`, `_include`, `_revinclude`, `_summary`, `_elements`; prefixes eq/ne/gt/lt/ge/le/sa/eb/ap.
-- `resource_validation=always` rejects non-conformant writes; lower it via `UpdateFHIREndpointConfig` for permissive ingestion (dev only).
-- For production pipelines that ROUTE FHIR through an interoperability production (services/processes/operations, SDA transforms), defer to the fhir-r4 skill — this skill is about the FHIR SERVER itself.
+Interactions supported by the Resource Repository: create (incl. conditional), read, vread, update (incl. conditional), patch (JSON Patch documents only; conditional patch), delete (incl. conditional), search, batch, transaction (no circular references within a bundle). History is INSTANCE-LEVEL ONLY (`GET [type]/[id]/_history`) — type-level and system-level history are NOT supported. Conditional read is NOT supported.
+
+Operations supported: `$validate` (R4 only; requires a SNAPSHOT profile and an initialized profile validator — needs Java; syntax `?profile=<url>|<version>`), `$everything` (Patient and Encounter ONLY), `$lastn`, `$find`, `$expand` (ValueSet; partial), `$update-functional` (functional lists `$current-problems`, `$current-medications`, `$current-allergies`). NOT supported by the repository: `$lookup`, `$translate`, `$docref`, `$member-match`, `$document`. Bulk `$export` is a separate Bulk FHIR Coordinator component, not this repository — do not claim it.
+
+Search: parameter types date/number/quantity/reference/string/token/uri supported; COMPOSITE is not. Prefixes eq/ne/gt/lt/ge/le/sa/eb/ap all work. Result params `_count`, `_sort`, `_include`, `_revinclude`, `_summary` (count/data/text), `_elements`, `_maxresults` supported; `_total`, `_score`, `_graph`, `_contained` are NOT. Reverse chaining (`_has`), forward chaining on references, and compartment search are supported. Common params `_id`, `_lastUpdated`, `_profile`, `_tag`, `_security`, `_source`, `_type` work; `_content` and `_text` do not. Modifiers `:exact`, `:contains`, `:missing`, `:not`, `:above`/`:below` (uri), `:in`, `:of-type`, `:[type]` supported; `:identifier`, `:code-text`, `:not-in`, `:text-advanced` are NOT. Never promise an unsupported feature — the server errors or returns empty.
+
+## Advanced requests via ExecuteFHIRRequest
+
+No dedicated tools exist for vread, history, or operations — use `ExecuteFHIRRequest`:
+- vread: `method=GET path=Patient/123/_history/2`
+- instance history: `method=GET path=Patient/123/_history`
+- $everything: `method=GET path=Patient/123/$everything` (Patient or Encounter only)
+- $lastn: `method=GET path=Observation/$lastn query=patient=123&category=vital-signs`
+- batch/transaction: `method=POST path="" body=<Bundle resource>`
+
+## Configuration values (exact — do not guess)
+
+`UpdateFHIREndpointConfig` keys and valid values:
+- `resourceValidation`: `always` (default — reject non-conformant writes) | `if header` (validate only when the client requests) | `skip` (never validate). There is NO "never".
+- `defaultPreferHandling`: `lenient` | `strict`.
+- `debugMode`: bit-flag — 1 = traceback in error OperationOutcome, 2 = new service instance per request (3 = both). Not a boolean.
+- `defaultSearchPageSize`, `maxSearchPageSize`, `maxSearchResults`, `maxConditionalDeleteResults`, `fhirSessionTimeout` (seconds), `searchFiltering` (filter results by SMART scopes), `requiredResource`.
+- FHIR version and the interactions strategy are READ-ONLY after install; they cannot be changed.
+
+## Storage strategies and packages
+
+- `HS.FHIRServer.Storage.JsonAdvSQL.InteractionsStrategy` — the default Resource Repository; stores resources as JSON and builds `HSFHIR*` SQL search tables. Required for advanced search and functional lists. Use this for new endpoints.
+- `HS.FHIRServer.Storage.Json.InteractionsStrategy` — older, feature-limited; flag it for upgrade if you encounter it.
+- Strategy is IMMUTABLE after install.
+- Metadata packages are `name@version` ids (e.g. `hl7.fhir.r4.core@4.0.1`, `hl7.fhir.us.core@3.1.0`). `ListAvailableFHIRPackages` returns them. Adding a package re-indexes search tables and can take time.
+
+## OAuth 2.0 / SMART on FHIR
+
+Endpoints may require OAuth: an OAuth client name plus `requiredResource` and `audiences`. SMART scopes are `patient/`, `user/`, `system/` (SMARTv2 like `patient/Observation.rs`). With `searchFiltering` ON, search Bundles are filtered to the caller's scopes; OFF returns 403 on disallowed resources. A patient-scope token needs launch context (a `patient` claim). The server enforces this — never assume open access.
+
+## Provisioning discipline
+
+`CreateFHIREndpoint` runs `InstallNamespace` (which FHIR-ENABLES an existing Foundation namespace — it does NOT create a namespace) then `InstallInstance`. The endpoint URL must start with `/`; default strategy is JsonAdvSQL; it REFUSES if the endpoint already exists. `DeleteFHIREndpoint` decommissions by default (keeps data); `deleteData=1` uninstalls AND drops data. `ResetFHIRServerData` clears resources but keeps the endpoint and config.
+
+## Server vs Adapter — pick the right path
+
+- FHIR SERVER (this skill): you need to STORE/retrieve resources in a repository or expose a queryable FHIR server. Requests go straight to the server; a production is optional. Manage it with these tools.
+- FHIR ADAPTER (defer to the fhir-r4 skill + productions): you only need to RECEIVE/forward/manipulate FHIR inside an interoperability production WITHOUT internal storage, or the license can't install a repository (common on Health Connect). Installed via `HS.FHIRServer.Installer.InteropAdapterConfig` — NOT this skill's job.
+- A Server endpoint can optionally route through a production via its "Service Config Name" (`HS.FHIRServer.Interop.Service`). All SDA↔FHIR transformation and interop-host wiring belongs to the fhir-r4 skill — hand it off.
+
+## Internal call mechanism (reference)
+
+The tools execute interactions in-process via `HS.FHIRServer.Service.EnsureInstance(endpointUrl)` then `DispatchRequest` (no HTTP, no auth round-trip). You don't call this directly — just use the tools.
 
 ## Behavior
 

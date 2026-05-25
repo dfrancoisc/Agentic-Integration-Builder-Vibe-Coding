@@ -1,6 +1,6 @@
 # Agent Tool Catalog
 
-60 tools across 6 `%AI.Tool` subclasses. Each public ClassMethod on a Tool class becomes a tool the LLM can call. Tools are composed into `%AI.ToolSet` subclasses via the framework's `<Include Class="..."/>` directive and registered with the agent at build time by `AgenticInterop.Agent.Manager`.
+62 tools across 6 `%AI.Tool` subclasses. Each public ClassMethod on a Tool class becomes a tool the LLM can call. Tools are composed into `%AI.ToolSet` subclasses via the framework's `<Include Class="..."/>` directive and registered with the agent at build time by `AgenticInterop.Agent.Manager`.
 
 | Tool class | Tools | Domain |
 |---|---|---|
@@ -9,7 +9,7 @@
 | AgenticInterop.Tool.Testing | 6 | HL7/FHIR send, validation, comparison |
 | AgenticInterop.Tool.Catalog | 7 | Vector search, class introspection, namespace utilities, reference lookups |
 | AgenticInterop.Tool.Monitoring | 5 | Event log, error grouping, message status, throughput, queue depth |
-| AgenticInterop.Tool.FHIRServer | 18 | FHIR R4 server discovery, endpoint inspect/config, metadata packages, resource CRUD/search/$validate, CapabilityStatement, guarded provisioning |
+| AgenticInterop.Tool.FHIRServer | 20 | FHIR R4 server discovery, endpoint inspect/config, metadata packages, resource CRUD/search/$validate, CapabilityStatement, bulk load, data reset, guarded provisioning |
 
 Standard output envelope for any non-streaming tool: `{ "ok": true, "data": <result>, "namespace": "<current>" }` on success, `{ "ok": false, "error": { "code": "<code>", "message": "<text>" }, "namespace": "<current>" }` on error. The current namespace is always included so the chatbot can verify the user's expected namespace matches the execution namespace.
 
@@ -864,7 +864,7 @@ Read-only tools for querying production event logs, message headers, error summa
 
 ## ToolSet.FHIRServer  [BATCH 8 — FHIR Server MCP]
 
-18 tools to build and manage the IRIS for Health FHIR R4 server. Design rule: a foundation namespace already HAS the FHIR Server — discover and manage the existing endpoint first; provisioning refuses to overwrite a live endpoint. Each tool accepts an optional `namespace` argument and otherwise honors the request's `X-IRIS-Namespace`; `ToolStart`/`ToolDone` run in the dispatch namespace and the tool switches into the target namespace only around the `HS.FHIRServer.*` calls (AgenticInterop.* is not mapped into system foundation namespaces). The engine is the in-process direct call `HS.FHIRServer.API.InteractionsStrategy.GetStrategyForEndpoint(url)` → `HS.FHIRServer.Service.EnsureInstance(...)` → `DispatchRequest` (no HTTP, no auth round-trip; `response.Json` is a `%DynamicObject`).
+20 tools to build and manage the IRIS for Health FHIR R4 server. Design rule: a foundation namespace already HAS the FHIR Server — discover and manage the existing endpoint first; provisioning refuses to overwrite a live endpoint. Each tool accepts an optional `namespace` argument and otherwise honors the request's `X-IRIS-Namespace`; `ToolStart`/`ToolDone` run in the dispatch namespace and the tool switches into the target namespace only around the `HS.FHIRServer.*` calls (AgenticInterop.* is not mapped into system foundation namespaces). The engine is the in-process direct call `HS.FHIRServer.API.InteractionsStrategy.GetStrategyForEndpoint(url)` → `HS.FHIRServer.Service.EnsureInstance(...)` → `DispatchRequest` (no HTTP, no auth round-trip; `response.Json` is a `%DynamicObject`).
 
 ### DiscoverFHIRNamespaces
 - Description: Scan accessible namespaces and report FHIR-enabled foundation namespaces with installed endpoints. CALL FIRST for any FHIR Server task.
@@ -937,3 +937,11 @@ Read-only tools for querying production event logs, message headers, error summa
 ### DeleteFHIREndpoint
 - Description: Remove an endpoint. Decommissions by default (keeps data); `deleteData=1` also drops the repository data (destructive).
 - Input: `{ url, deleteData?: boolean, namespace? }`. Output: `{ ok, deleted, dataDeleted }`. MUTATING (delete_).
+
+### LoadFHIRData
+- Description: Bulk-load FHIR resources into the repository from a server-side directory (.json/.ndjson/.xml) via `HS.FHIRServer.Tools.DataLoader.SubmitResourceFiles(dir, "FHIRServer", url, 0)`. For seeding/import.
+- Input: `{ url, directory, namespace? }`. Output: `{ ok, directory, result?, message? }`. MUTATING (load_).
+
+### ResetFHIRServerData
+- Description: Wipe ALL stored resources from the repository while keeping the endpoint, config, and packages (`HS.FHIRServer.Installer.Reset`). Destructive, no undo.
+- Input: `{ url, namespace? }`. Output: `{ ok, message? }`. MUTATING (reset_).

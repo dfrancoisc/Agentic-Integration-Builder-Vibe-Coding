@@ -14,7 +14,7 @@ All build phases complete (Phase 0 through Phase 7). The agent operates under th
 |---|---|
 | ObjectScript classes | 68 |
 | Tool classes (%AI.Tool) | 6 (Production, Transform, Testing, Catalog, Monitoring, FHIR Server) |
-| Tools (public ClassMethods) | 65 |
+| Tools (public ClassMethods) | 67 |
 | ToolSets (%AI.ToolSet) | 6 |
 | MCP servers | 5 (Production, Transform, Testing, Catalog, FHIR Server) |
 | Skills (%AI.Agent.Skill) | 13 |
@@ -26,7 +26,7 @@ All build phases complete (Phase 0 through Phase 7). The agent operates under th
 ## Features
 
 - Streaming chat with Server-Sent Events (SSE) -- token-by-token responses with inline tool-call cards
-- 65 tools across 6 domains: Production, Transform, Testing, Catalog, Monitoring, FHIR Server
+- 67 tools across 6 domains: Production, Transform, Testing, Catalog, Monitoring, FHIR Server
 - 13 domain skills covering Productions, DTL, BPL, Routing Rules, HL7v2, FHIR R4, FHIR Server, SDA, REST, ESB, X12/HIPAA, CDA/C-CDA, and Adapters
 - Confirmation gate on every mutating tool -- create, update, delete, compile, start, stop all require explicit user approval before executing
 - Semantic vector search over the IRIS class library (164 Business Hosts, 58 transformation classes) using FastEmbed 384-dimensional embeddings and HNSW index
@@ -179,7 +179,7 @@ Features:
 
 ## Tools
 
-The agent's capabilities are organized into 6 Tool classes (65 tools total). Each Tool class is a `%AI.Tool` subclass where every public ClassMethod is a tool the LLM can call.
+The agent's capabilities are organized into 6 Tool classes (67 tools total). Each Tool class is a `%AI.Tool` subclass where every public ClassMethod is a tool the LLM can call.
 
 | Tool class | Tools | Purpose |
 |---|---|---|
@@ -188,7 +188,7 @@ The agent's capabilities are organized into 6 Tool classes (65 tools total). Eac
 | Testing | 8 | Send and validate HL7 v2 and FHIR R4 messages, build test messages, compare messages |
 | Catalog | 7 | Vector search over Ens.* and HS.* catalogs, class introspection, namespace utilities, glossary |
 | Monitoring | 5 | Event log search, top-error grouping, message status, throughput summaries, queue depth |
-| FHIR Server | 18 | Discover FHIR-enabled foundation namespaces, inspect/configure endpoints, CapabilityStatement, metadata packages, resource search/read/CRUD/$validate, guarded endpoint provisioning |
+| FHIR Server | 20 | Discover FHIR-enabled foundation namespaces, inspect/configure endpoints, CapabilityStatement, metadata packages, resource search/read/CRUD/$validate, bulk load, data reset, guarded endpoint provisioning |
 
 ## Skills
 
