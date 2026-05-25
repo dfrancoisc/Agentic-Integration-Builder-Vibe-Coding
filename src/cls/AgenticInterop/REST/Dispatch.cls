@@ -435,12 +435,18 @@ ClassMethod IsFhirNamespace(pName As %String) As %Boolean [ Internal ]
         New $namespace
         Set $namespace = pName
         If ##class(%Dictionary.CompiledClass).%ExistsId("HS.FHIRServer.ServiceAdmin") {
-            ; Primary (durable): registered FHIR metadata packages.
+            ; Primary (durable): registered FHIR metadata packages, via the
+            ; CORE method HS.FHIRMeta.Storage.Package.GetAllPackages() (NOT raw
+            ; SQL on the storage table). A foundation namespace has >=1
+            ; registered package; an app namespace like HSCUSTOM has the package
+            ; files on disk but none registered.
             Try {
-                Set rs = ##class(%SQL.Statement).%ExecDirect(, "SELECT COUNT(*) c FROM HS_FHIRMeta_Storage.Package")
-                If rs.%Next(), (+rs.%GetData(1) > 0) { Set ok = 1 }
+                If ##class(%Dictionary.CompiledClass).%ExistsId("HS.FHIRMeta.Storage.Package") {
+                    Set pkgs = ##class(HS.FHIRMeta.Storage.Package).GetAllPackages()
+                    If $isobject(pkgs), (pkgs.Count() > 0) { Set ok = 1 }
+                }
             } Catch  {}
-            ; Fallback: an installed endpoint also marks a FHIR namespace.
+            ; Fallback: an installed endpoint also marks a FHIR namespace (CORE).
             If 'ok {
                 Set el = ##class(HS.FHIRServer.ServiceAdmin).GetEndpointList()
                 If $listvalid(el), $listlength(el) > 0 { Set ok = 1 }

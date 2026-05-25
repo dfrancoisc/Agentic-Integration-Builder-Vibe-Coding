@@ -1,6 +1,6 @@
 # Agent Tool Catalog
 
-82 tools across 7 `%AI.Tool` subclasses. Each public ClassMethod on a Tool class becomes a tool the LLM can call. Tools are composed into `%AI.ToolSet` subclasses via the framework's `<Include Class="..."/>` directive and registered with the agent at build time by `AgenticInterop.Agent.Manager`.
+84 tools across 7 `%AI.Tool` subclasses. Each public ClassMethod on a Tool class becomes a tool the LLM can call. Tools are composed into `%AI.ToolSet` subclasses via the framework's `<Include Class="..."/>` directive and registered with the agent at build time by `AgenticInterop.Agent.Manager`.
 
 | Tool class | Tools | Domain |
 |---|---|---|
@@ -9,7 +9,7 @@
 | AgenticInterop.Tool.Testing | 8 | HL7/FHIR send, validation, comparison |
 | AgenticInterop.Tool.Catalog | 7 | Vector search, class introspection, namespace utilities, reference lookups |
 | AgenticInterop.Tool.Monitoring | 5 | Event log, error grouping, message status, throughput, queue depth |
-| AgenticInterop.Tool.FHIRServer | 22 | FHIR R4 server discovery, endpoint inspect/config, metadata packages, resource CRUD/search/$validate, CapabilityStatement, ordered async directory load, bulk load, data reset, guarded provisioning |
+| AgenticInterop.Tool.FHIRServer | 24 | FHIR R4 server discovery, endpoint inspect/config, metadata packages, resource CRUD/search/$validate, CapabilityStatement, ordered async directory load (+ ingestion metrics), bulk load, data reset, storage/performance audit, guarded provisioning |
 | AgenticInterop.Tool.BulkFHIR | 13 | Bulk FHIR Coordinator (BFC): list/get/schema/create/configure/activate/delete configs, start exports, monitor sessions, provision prerequisites (storage dir, SSL, credential, OAuth) |
 
 Standard output envelope for any non-streaming tool: `{ "ok": true, "data": <result>, "namespace": "<current>" }` on success, `{ "ok": false, "error": { "code": "<code>", "message": "<text>" }, "namespace": "<current>" }` on error. The current namespace is always included so the chatbot can verify the user's expected namespace matches the execution namespace.
@@ -954,6 +954,14 @@ Read-only tools for querying production event logs, message headers, error summa
 ### GetFHIRLoadStatus
 - Description: Poll a LoadFHIRDirectory background job until done. Read-only.
 - Input: `{ jobId, namespace? }`. Output: `{ ok, found, status, total, filesDone, filesFailed, current?, done, errors:[...], jobError? }`.
+
+### GetFHIRLoadMetrics
+- Description: ingestion PERFORMANCE for a LoadFHIRDirectory job — duration, throughput (resources/sec, MB/sec), and BOTTLENECKS (slowest files). Answers "how long did ingestion take / how many resources per second / what was slow". Computed from the job's recorded per-file timing (the load tracks start/end + entry count + bytes per file). Read-only.
+- Input: `{ jobId?, namespace? }` (jobId defaults to the most recent job). Output: `{ ok, found, jobId, status, durationSec, totalFiles, filesDone, filesFailed, totalResources, resourcesPerSecond, filesPerSecond, avgFileSec, totalMB, mbPerSecond, bottlenecks:[{file, seconds, resources, mb, ok}], message }`.
+
+### GetFHIRServerStats
+- Description: FHIR Server storage + performance AUDIT — resource counts by type (CORE FHIR `_summary=count` search) and database storage sizes for the namespace (CORE `SYS.Database`). For capacity/health review. Read-only. Per-type counts cover a common clinical set or the supplied `resourceTypes`; storage matches the namespace's databases by name (the namespace DB + its FHIR repo DBs).
+- Input: `{ url?, resourceTypes?, namespace? }`. Output: `{ ok, namespace, endpoint?{url,enabled,fhirVersion,metadataPackages,resourceValidation}, counts:[{resourceType,count}], totalResources, storage:{databases:[{name,directory,sizeMB}], totalMB}, message }`.
 
 ## ToolSet.BulkFHIR  [BATCH 9 — Bulk FHIR Coordinator MCP]
 

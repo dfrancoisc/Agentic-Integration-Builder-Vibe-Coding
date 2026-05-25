@@ -59,6 +59,8 @@ Administration:
 - `SetFHIREndpointEnabled` — enable/disable without deleting (mutating).
 - `LoadFHIRDirectory` — RECOMMENDED for loading a FOLDER of FHIR files. Loads a server-side directory IN ORDER (infrastructure bundles first) as a BACKGROUND job and returns a jobId. Use for Synthea output and any multi-file load. (mutating)
 - `GetFHIRLoadStatus` — poll a LoadFHIRDirectory job (status, filesDone, filesFailed, errors) until done. (read-only)
+- `GetFHIRLoadMetrics` — ingestion PERFORMANCE for a load job: total duration, throughput (resources/sec, MB/sec), and the BOTTLENECKS (slowest files). Use to answer "how long did ingestion take / how many resources per second / what was slow". (read-only)
+- `GetFHIRServerStats` — storage + performance AUDIT: resource counts by type (CORE FHIR `_summary=count`) and database storage sizes for the namespace (CORE SYS.Database). Use for capacity/health review. (read-only)
 - `LoadFHIRData` — simple SYNCHRONOUS DataLoader for a single or already-ordered small set. (mutating)
 - `ResetFHIRServerData` — wipe all stored resources, keep the endpoint and config (mutating, DESTRUCTIVE).
 

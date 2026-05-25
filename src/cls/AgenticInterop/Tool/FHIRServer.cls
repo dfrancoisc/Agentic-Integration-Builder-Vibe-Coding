@@ -1699,6 +1699,195 @@ ClassMethod GetFHIRLoadStatus(jobId As %String, namespace As %String = "") As %D
     Quit out
 }
 
+/// Ingestion performance metrics for a LoadFHIRDirectory job: how long it
+/// took, throughput (resources/sec), and the bottlenecks (slowest files).
+/// Read-only. Computed from the load job's recorded per-file timing.
+///
+/// jobId:     the LoadFHIRDirectory jobId. If omitted, the most recent job.
+/// namespace: optional (the metrics global is dispatch-namespace scoped).
+///
+/// Returns: { ok, found, jobId, status, startedAt, finishedAt, durationSec,
+/// totalFiles, filesDone, filesFailed, totalResources, resourcesPerSecond,
+/// filesPerSecond, avgFileSec, totalMB, mbPerSecond,
+/// bottlenecks:[{file, seconds, resources, mb, ok}], message }.
+ClassMethod GetFHIRLoadMetrics(jobId As %String = "", namespace As %String = "") As %DynamicObject
+{
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("GetFHIRLoadMetrics")
+    Set out = {}
+    Set out.tool = "get_fhir_load_metrics"
+    Try {
+        Set jid = $get(jobId)
+        ; Default to the most recently started job.
+        If jid = "" {
+            Set best = "", bestH = -1, k = ""
+            For  { Set k = $order(^AgInt.FHIRLoad(k)) Quit:k=""  Set sh = +$get(^AgInt.FHIRLoad(k, "startH")) If sh > bestH { Set best = k, bestH = sh } }
+            Set jid = best
+        }
+        Set out.jobId = jid
+        If (jid = "") || ('$data(^AgInt.FHIRLoad(jid))) {
+            Set out.ok = 1
+            Set out.found = 0
+            Set out.message = "No load job metrics found" _ $select($get(jobId)'="":" for id " _ jobId, 1:"") _ "."
+        } Else {
+            Set out.found = 1
+            Set out.status = $get(^AgInt.FHIRLoad(jid, "status"))
+            Set out.startedAt = $get(^AgInt.FHIRLoad(jid, "started"))
+            Set out.finishedAt = $get(^AgInt.FHIRLoad(jid, "finished"))
+            Set startH = +$get(^AgInt.FHIRLoad(jid, "startH"))
+            Set finishH = +$get(^AgInt.FHIRLoad(jid, "finishedH"))
+            If finishH = 0 { Set finishH = $zhorolog }
+            Set dur = finishH - startH
+            If dur < 0 { Set dur = dur + 86400 }
+            Set out.durationSec = $normalize(dur, 2)
+            Set out.totalFiles = +$get(^AgInt.FHIRLoad(jid, "total"))
+            Set out.filesDone = +$get(^AgInt.FHIRLoad(jid, "done"))
+            Set out.filesFailed = +$get(^AgInt.FHIRLoad(jid, "failed"))
+            Set totalRes = +$get(^AgInt.FHIRLoad(jid, "resources"))
+            Set out.totalResources = totalRes
+            Set out.resourcesPerSecond = $select(dur > 0:$normalize(totalRes / dur, 1), 1:0)
+            Set out.filesPerSecond = $select(dur > 0:$normalize(out.filesDone / dur, 2), 1:0)
+            ; Per-file timing -> averages + bottlenecks (top 10 slowest).
+            Set totalBytes = 0, sumSec = 0, nFiles = 0
+            Kill srt
+            Set seq = $order(^AgInt.FHIRLoad(jid, "metric", ""))
+            While seq '= "" {
+                Set m = ^AgInt.FHIRLoad(jid, "metric", seq)
+                Set sumSec = sumSec + (+$listget(m, 2)), totalBytes = totalBytes + (+$listget(m, 5)), nFiles = nFiles + 1
+                Set srt(+$listget(m, 2), seq) = m
+                Set seq = $order(^AgInt.FHIRLoad(jid, "metric", seq))
+            }
+            Set out.avgFileSec = $select(nFiles > 0:$normalize(sumSec / nFiles, 2), 1:0)
+            Set out.totalMB = $normalize(totalBytes / 1048576, 1)
+            Set out.mbPerSecond = $select(dur > 0:$normalize((totalBytes / 1048576) / dur, 2), 1:0)
+            Set out.bottlenecks = []
+            Set cnt = 0, d = $order(srt(""), -1)
+            While (d '= "") && (cnt < 10) {
+                Set s2 = $order(srt(d, ""), -1)
+                While (s2 '= "") && (cnt < 10) {
+                    Set m = srt(d, s2), b = {}
+                    Set b.file = $listget(m, 1)
+                    Set b.seconds = $normalize(+$listget(m, 2), 2)
+                    Set b.resources = +$listget(m, 3)
+                    Set b.ok = ''$listget(m, 4)
+                    Set b.mb = $normalize((+$listget(m, 5)) / 1048576, 2)
+                    Do out.bottlenecks.%Push(b)
+                    Set cnt = cnt + 1
+                    Set s2 = $order(srt(d, s2), -1)
+                }
+                Set d = $order(srt(d), -1)
+            }
+            Set out.message = "Ingested " _ totalRes _ " resources from " _ out.filesDone _ " file(s) in " _ out.durationSec _ "s (" _ out.resourcesPerSecond _ " resources/sec, " _ out.mbPerSecond _ " MB/sec). The `bottlenecks` list is the slowest files."
+            Set out.ok = 1
+        }
+    } Catch ex {
+        Set out.ok = 0
+        Set out.error = $extract(ex.DisplayString(), 1, 400)
+    }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("GetFHIRLoadMetrics", out)
+    Quit out
+}
+
+/// FHIR Server storage + performance audit. For an endpoint: configuration
+/// (CORE GetInstanceConfigData), resource counts by type (CORE FHIR
+/// `_summary=count` search), and database storage sizes for the namespace
+/// (CORE SYS.Database). Read-only. The per-type counts cover a common
+/// clinical set (or the supplied resourceTypes) via CORE FHIR search.
+///
+/// url:           endpoint cspUrl (optional — omit for storage-only audit).
+/// resourceTypes: optional CSV of resource types to count (default common set).
+/// namespace:     optional target namespace.
+///
+/// Returns: { ok, namespace, endpoint?{url,enabled,fhirVersion,...},
+/// counts:[{resourceType,count}], totalResources,
+/// storage:{databases:[{name,directory,sizeMB}], totalMB}, message }.
+ClassMethod GetFHIRServerStats(url As %String = "", resourceTypes As %String = "", namespace As %String = "") As %DynamicObject
+{
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("GetFHIRServerStats")
+    Set out = {}
+    Set out.tool = "get_fhir_server_stats"
+    Set dispNs = $namespace
+    Set targetNs = ..%ResolveNs(namespace)
+    Set out.namespace = targetNs
+    New $namespace
+    Try {
+        Set nsOk = 1
+        Try { Set $namespace = targetNs } Catch  { Set nsOk = 0 }
+        If 'nsOk {
+            Set out.ok = 0
+            Set out.error = "Cannot access namespace: " _ targetNs
+        } Else {
+            Set out.counts = []
+            Set out.totalResources = 0
+            ; --- Endpoint config + per-type resource counts (CORE) ---
+            If ($get(url) '= "") && ##class(HS.FHIRServer.ServiceAdmin).EndpointExists(url) {
+                Set ep = {}
+                Set ep.url = url
+                Try { Set ep.enabled = ''##class(HS.FHIRServer.ServiceAdmin).IsEndpointEnabled(url) } Catch  {}
+                Try {
+                    Set iid = ##class(HS.FHIRServer.ServiceAdmin).GetInstanceIdForEndpoint(url)
+                    Set cfg = ##class(HS.FHIRServer.ServiceAdmin).GetInstanceConfigData(iid)
+                    If $isobject(cfg) {
+                        Set ep.instanceId = iid
+                        Set ep.fhirVersion = cfg.FHIRVersion
+                        Set ep.metadataPackages = cfg.FHIRMetadataSet
+                        Set ep.resourceValidation = cfg.ResourceValidation
+                    }
+                } Catch  {}
+                Set out.endpoint = ep
+                Set types = $listbuild("Patient", "Encounter", "Observation", "Condition", "Procedure", "MedicationRequest", "DiagnosticReport", "Immunization", "AllergyIntolerance", "CarePlan", "Claim", "ExplanationOfBenefit", "DocumentReference", "Organization", "Practitioner", "Location")
+                If $get(resourceTypes) '= "" {
+                    Set types = ""
+                    For ti=1:1:$length(resourceTypes, ",") { Set t = $zstrip($piece(resourceTypes, ",", ti), "<>W") If t '= "" { Set types = types _ $listbuild(t) } }
+                }
+                For ti=1:1:$listlength(types) {
+                    Set t = $list(types, ti)
+                    Set rr = ..%Interaction(url, "GET", t, "_summary=count")
+                    If $isobject(rr), rr.ok, $isobject(rr.body), rr.body.%IsDefined("total") {
+                        Set n = +rr.body.total
+                        Set c = {}
+                        Set c.resourceType = t
+                        Set c.count = n
+                        Do out.counts.%Push(c)
+                        Set out.totalResources = out.totalResources + n
+                    }
+                }
+            }
+            ; --- Database storage sizes (CORE SYS.Database) ---
+            Set st = {}
+            Set st.databases = []
+            Set st.totalMB = 0
+            Set $namespace = "%SYS"
+            Set nsU = $zconvert(targetNs, "U")
+            Set rs = ##class(%ResultSet).%New("Config.Databases:List")
+            Do rs.Execute()
+            While rs.Next() {
+                Set dbName = rs.GetData(1), dbDir = rs.GetData(2)
+                ; Heuristic: databases whose NAME contains the namespace name
+                ; (the namespace DB + its FHIR repo DBs, e.g. FHIR, FHIRX0007R).
+                If $zconvert(dbName, "U") [ nsU {
+                    Set sz = ""
+                    Try { Set dbo = ##class(SYS.Database).%OpenId(dbDir) If $isobject(dbo) { Set sz = dbo.Size } } Catch  {}
+                    Set d = {}
+                    Set d.name = dbName
+                    Set d.directory = dbDir
+                    Set d.sizeMB = +sz
+                    Do st.databases.%Push(d)
+                    Set st.totalMB = st.totalMB + (+sz)
+                }
+            }
+            Set out.storage = st
+            Set out.ok = 1
+            Set out.message = "FHIR audit for " _ targetNs _ ": " _ out.totalResources _ " resources (counted types), " _ st.totalMB _ " MB across " _ st.databases.%Size() _ " database(s)."
+        }
+    } Catch ex {
+        Set out.ok = 0
+        Set out.error = $extract(ex.DisplayString(), 1, 400)
+    }
+    Set $namespace = dispNs
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("GetFHIRServerStats", out)
+    Quit out
+}
+
 /// Background runner for LoadFHIRDirectory: loads each queued file in order,
 /// updating the ^AgInt.FHIRLoad(jobId) progress global. JOB'd from
 /// LoadFHIRDirectory (runs in the app namespace; switches per file). Internal.
@@ -1707,13 +1896,26 @@ ClassMethod %RunLoadJob(pJobId As %String, pUrl As %String, pNs As %String) [ In
     Try {
         Set ^AgInt.FHIRLoad(pJobId, "status") = "running"
         Set ^AgInt.FHIRLoad(pJobId, "started") = $zdatetime($horolog, 3, 1)
+        ; High-precision start markers for throughput/bottleneck metrics.
+        Set ^AgInt.FHIRLoad(pJobId, "startH") = $zhorolog
+        Set totalRes = 0
         Set seq = $order(^AgInt.FHIRLoad(pJobId, "file", ""))
         While seq '= "" {
             Set fp = ^AgInt.FHIRLoad(pJobId, "file", seq)
             Set ^AgInt.FHIRLoad(pJobId, "current") = $piece(fp, "/", *)
+            Set fStart = $zhorolog
             Set r = ..%LoadOneFile(pUrl, fp, pNs)
-            If $isobject(r), r.ok {
+            Set fDur = $zhorolog - fStart
+            If fDur < 0 { Set fDur = fDur + 86400 }
+            Set rcount = $select($isobject(r) && r.%IsDefined("resourceCount"):+r.resourceCount, 1:0)
+            Set ok = ($isobject(r) && r.ok)
+            ; Per-file metrics: filename, seconds, resourceCount, ok, bytes.
+            Set bytes = "" Try { Set bytes = ##class(%Library.File).GetFileSize(fp) } Catch  {}
+            Set ^AgInt.FHIRLoad(pJobId, "metric", seq) = $listbuild($piece(fp, "/", *), fDur, rcount, +ok, bytes)
+            If ok {
                 Set ^AgInt.FHIRLoad(pJobId, "done") = +$get(^AgInt.FHIRLoad(pJobId, "done")) + 1
+                Set totalRes = totalRes + rcount
+                Set ^AgInt.FHIRLoad(pJobId, "resources") = totalRes
             } Else {
                 Set ^AgInt.FHIRLoad(pJobId, "failed") = +$get(^AgInt.FHIRLoad(pJobId, "failed")) + 1
                 Set ne = +$get(^AgInt.FHIRLoad(pJobId, "errN")) + 1
@@ -1727,9 +1929,11 @@ ClassMethod %RunLoadJob(pJobId As %String, pUrl As %String, pNs As %String) [ In
         }
         Set ^AgInt.FHIRLoad(pJobId, "status") = "completed"
         Set ^AgInt.FHIRLoad(pJobId, "finished") = $zdatetime($horolog, 3, 1)
+        Set ^AgInt.FHIRLoad(pJobId, "finishedH") = $zhorolog
     } Catch ex {
         Set ^AgInt.FHIRLoad(pJobId, "status") = "error"
         Set ^AgInt.FHIRLoad(pJobId, "jobError") = $extract(ex.DisplayString(), 1, 300)
+        Set ^AgInt.FHIRLoad(pJobId, "finishedH") = $zhorolog
     }
     Quit
 }
@@ -1766,6 +1970,9 @@ ClassMethod %LoadOneFile(pUrl As %String, pFilePath As %String, pNs As %String) 
                 Set req.RequestMethod = "POST"
                 Set req.Json = obj
                 Set rt = $select(obj.%IsDefined("resourceType"):obj.resourceType, 1:"")
+                ; Resource count for throughput metrics: a Bundle ingests one
+                ; resource per entry; a single resource counts as 1.
+                Set r.resourceCount = $select((rt = "Bundle") && obj.%IsDefined("entry") && $isobject(obj.entry):obj.entry.%Size(), 1:1)
                 ; Bundle -> POST to base (transaction); single resource -> POST to its type.
                 Set req.RequestPath = $select(rt = "Bundle":"", 1:rt)
                 Do svc.DispatchRequest(req, .resp)
