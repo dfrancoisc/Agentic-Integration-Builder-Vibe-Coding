@@ -17,7 +17,7 @@ Class AgenticInterop.Install.FHIRManagementPatch Extends %RegisteredObject
 
 Parameter PAGEHTML = "/usr/irissys/csp/hslib/ui/isc-fhir/index.html";
 
-Parameter SCRIPTSRC = "/agentic/inject.js?chatbot=fhir-management&mode=floating&title=FHIR%20Assistant";
+Parameter SCRIPTSRC = "/agentic/inject.js?chatbot=fhir-management&mode=header&title=FHIR%20Assistant";
 
 Parameter MARKER = "agentic/inject.js";
 

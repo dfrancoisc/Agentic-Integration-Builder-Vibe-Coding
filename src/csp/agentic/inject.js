@@ -565,7 +565,9 @@
     /* ---------------- inject chat icon into mat-toolbar-row ---------------- */
 
     function ensureHeaderChat() {
-        var row = document.querySelector('mat-toolbar mat-toolbar-row');
+        var row = document.querySelector('mat-toolbar mat-toolbar-row')
+               || document.querySelector('mat-toolbar-row')
+               || document.querySelector('mat-toolbar');
         if (!row) return false;
         for (var i = 0; i < row.children.length; i++) {
             if (row.children[i].classList.contains(HDR_MARK)) return true;
@@ -619,7 +621,7 @@
 
     function refreshLoginMode() {
         var onLogin;
-        if (INJECT_MODE === 'floating') {
+        if (INJECT_MODE === 'floating' || INJECT_MODE === 'header') {
             // Host-agnostic pages have no .dashboard; only the visible
             // password field of the login screen means "not logged in".
             onLogin = !!document.querySelector('input[type="password"]:not([hidden])');
@@ -641,6 +643,10 @@
     function tick() {
         if (INJECT_MODE === 'floating') {
             ensureFloatingLauncher();
+        } else if (INJECT_MODE === 'header') {
+            // Host-agnostic: just splice the chat icon into the page's
+            // top toolbar (no Interop-Editor-specific tabs/cleanup).
+            ensureHeaderChat();
         } else {
             ensureTab();
             ensureCleanupButtons();
