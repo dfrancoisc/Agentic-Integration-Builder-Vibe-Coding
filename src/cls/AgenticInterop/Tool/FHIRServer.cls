@@ -1313,12 +1313,23 @@ ClassMethod CreateFHIREndpoint(url As %String, packages As %String = "hl7.fhir.r
             ; Ensure the namespace is FHIR-enabled (idempotent).
             Try { Do ##class(HS.FHIRServer.Installer).InstallNamespace(targetNs) } Catch  {}
             Set sc = $$$OK
-            Set sc = ##class(HS.FHIRServer.Installer).InstallInstance(url, strategy, packages, "", description)
-            Set scErr = ..%SCErr(sc)
+            ; HS.FHIRServer.Installer.InstallInstance -> AddInstanceToRepo ->
+            ; HS.FHIRMeta.Storage.Package.ResolvePackageList expects a %List
+            ; ($listbuild). A bare string is treated as ONE package id, so a
+            ; comma-separated list of multiple packages must be split here.
+            Set pkgList = ""
+            For pi=1:1:$length(packages, ",") {
+                Set onePkg = $zstrip($piece(packages, ",", pi), "<>W")
+                If onePkg '= "" { Set pkgList = pkgList _ $listbuild(onePkg) }
+            }
+            ; InstallInstance is a VOID method (no return value) — call with
+            ; Do, not Set (Set triggers <COMMAND> "Function must return a
+            ; value"). It throws on failure, which the outer Catch handles.
+            Do ##class(HS.FHIRServer.Installer).InstallInstance(url, strategy, pkgList, "", description)
             Set out.created = ''##class(HS.FHIRServer.ServiceAdmin).EndpointExists(url)
             If 'out.created {
                 Set out.ok = 0
-                Set out.error = $select(scErr'="":scErr, 1:"InstallInstance completed but the endpoint was not created.")
+                Set out.error = "InstallInstance completed but the endpoint was not created."
             } Else {
                 Set out.ok = 1
                 Set out.message = "FHIR endpoint created at " _ url _ " in namespace " _ targetNs _ "."
