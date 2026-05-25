@@ -1383,21 +1383,23 @@ ClassMethod DeleteFHIREndpoint(url As %String, deleteData As %Boolean = 0, names
             Set out.error = "No endpoint at '" _ url _ "' in namespace " _ targetNs _ "."
         } Else {
             Set iid = ##class(HS.FHIRServer.ServiceAdmin).GetInstanceIdForEndpoint(url)
-            Set sc = $$$OK
+            ; UninstallInstance / DecommissionInstance are VOID methods — call
+            ; with Do, not Set (Set raises <COMMAND> "Function must return a
+            ; value" after the work has already run). They throw on real
+            ; failure, which the outer Catch handles.
             If +$get(deleteData) {
-                Set sc = ##class(HS.FHIRServer.Installer).UninstallInstance(url, 1)
+                Do ##class(HS.FHIRServer.Installer).UninstallInstance(url, 1)
                 Set out.dataDeleted = 1
             } Else {
-                Set sc = ##class(HS.FHIRServer.ServiceAdmin).DecommissionInstance(iid)
+                Do ##class(HS.FHIRServer.ServiceAdmin).DecommissionInstance(iid)
                 Set out.dataDeleted = 0
             }
-            Set scErr = ..%SCErr(sc)
             Set stillExists = 0
             Try { Set stillExists = ##class(HS.FHIRServer.ServiceAdmin).EndpointExists(url) } Catch  {}
-            If (scErr '= "") && stillExists {
+            If stillExists {
                 Set out.ok = 0
                 Set out.deleted = 0
-                Set out.error = scErr
+                Set out.error = "Endpoint still present after the delete call."
             } Else {
                 Set out.ok = 1
                 Set out.deleted = 1
@@ -1511,16 +1513,12 @@ ClassMethod ResetFHIRServerData(url As %String, namespace As %String = "") As %D
             Set out.error = "No endpoint at '" _ url _ "' in namespace " _ targetNs _ "."
         } Else {
             Set iid = ##class(HS.FHIRServer.ServiceAdmin).GetInstanceIdForEndpoint(url)
-            Set sc = $$$OK
-            Set sc = ##class(HS.FHIRServer.Installer).Reset(iid, url)
-            Set scErr = ..%SCErr(sc)
-            If scErr '= "" {
-                Set out.ok = 0
-                Set out.error = scErr
-            } Else {
-                Set out.ok = 1
-                Set out.message = "All FHIR resource data cleared from endpoint " _ url _ " (endpoint and config preserved)."
-            }
+            ; Reset is a VOID method — call with Do, not Set (Set raises
+            ; <COMMAND> "Function must return a value" after the reset runs).
+            ; It throws on failure, which the outer Catch handles.
+            Do ##class(HS.FHIRServer.Installer).Reset(iid, url)
+            Set out.ok = 1
+            Set out.message = "All FHIR resource data cleared from endpoint " _ url _ " (endpoint and config preserved)."
         }
     } Catch ex {
         Set out.ok = 0
