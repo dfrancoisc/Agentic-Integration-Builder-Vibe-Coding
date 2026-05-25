@@ -976,7 +976,7 @@ Read-only tools for querying production event logs, message headers, error summa
 - Input: `{ config(object/string: name + endpoint_url + fetch_adapter/fetch_config + storage_adapter/storage_config + auth_adapter/auth_config), namespace? }`. Output: `{ ok, name, endpoint, active, savedInactive, message }`.
 
 ### StartBFCExport
-- Description: start an export for an active BFC endpoint (`HS.BulkFHIR.Installer.Export`). MUTATING (start_).
+- Description: verify a BFC config exists and is ACTIVE, then return the exact REST `$export` kickoff the bulk-data client must issue (system/Patient/Group paths, Accept header, scopes, poll URL). A Bulk FHIR export is initiated by the client over REST by design — there is no server-side start method (`HS.BulkFHIR.Installer.Export` only returns the config). MUTATING (start_).
 - Input: `{ endpoint, namespace? }`. Output: `{ ok, result?, message? }`.
 
 ### ListBFCExports

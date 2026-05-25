@@ -1082,20 +1082,16 @@ ClassMethod AddFHIRPackages(url As %String, packages, namespace As %String = "")
             Set out.error = "No endpoint at '" _ url _ "' in namespace " _ targetNs _ "."
         } Else {
             Set iid = ##class(HS.FHIRServer.ServiceAdmin).GetInstanceIdForEndpoint(url)
-            Set sc = $$$OK
-            Set sc = ##class(HS.FHIRServer.Installer).AddPackagesToInstance(iid, plist)
-            Set scErr = ..%SCErr(sc)
-            If scErr '= "" {
-                Set out.ok = 0
-                Set out.error = scErr
-            } Else {
-                Try {
-                    Set cfg = ##class(HS.FHIRServer.ServiceAdmin).GetInstanceConfigData(iid)
-                    If $isobject(cfg) { Set out.metadataPackages = cfg.FHIRMetadataSet }
-                } Catch  {}
-                Set out.ok = 1
-                Set out.message = "Packages added to endpoint " _ url _ "."
-            }
+            ; AddPackagesToInstance is VOID — call with Do, not Set (Set raises
+            ; <COMMAND> "Function must return a value"). It throws on failure,
+            ; which the outer Catch handles.
+            Do ##class(HS.FHIRServer.Installer).AddPackagesToInstance(iid, plist)
+            Try {
+                Set cfg = ##class(HS.FHIRServer.ServiceAdmin).GetInstanceConfigData(iid)
+                If $isobject(cfg) { Set out.metadataPackages = cfg.FHIRMetadataSet }
+            } Catch  {}
+            Set out.ok = 1
+            Set out.message = "Packages added to endpoint " _ url _ "."
         }
     } Catch ex {
         Set out.ok = 0
@@ -1188,15 +1184,11 @@ ClassMethod UpdateFHIREndpointConfig(url As %String, settings As %DynamicObject,
                 Set out.ok = 0
                 Set out.error = "No recognized config keys in `settings`. See the tool description for valid keys."
             } Else {
-                Set sc = ##class(HS.FHIRServer.ServiceAdmin).SetInstanceConfigData(iid, cfg)
-                Set scErr = ..%SCErr(sc)
-                If scErr '= "" {
-                    Set out.ok = 0
-                    Set out.error = scErr
-                } Else {
-                    Set out.ok = 1
-                    Set out.message = "Updated " _ out.applied.%Size() _ " config setting(s) on " _ url _ "."
-                }
+                ; SetInstanceConfigData is VOID — call with Do, not Set (Set
+                ; raises <COMMAND>). It throws on failure (outer Catch handles).
+                Do ##class(HS.FHIRServer.ServiceAdmin).SetInstanceConfigData(iid, cfg)
+                Set out.ok = 1
+                Set out.message = "Updated " _ out.applied.%Size() _ " config setting(s) on " _ url _ "."
             }
         }
     } Catch ex {
@@ -1243,16 +1235,12 @@ ClassMethod SetFHIREndpointEnabled(url As %String, enabled As %Boolean, namespac
             Set out.ok = 0
             Set out.error = "No endpoint at '" _ url _ "' in namespace " _ targetNs _ "."
         } Else {
-            Set sc = ##class(HS.FHIRServer.ServiceAdmin).SetEndpointEnabled(url, ''(+enabled))
-            Set scErr = ..%SCErr(sc)
-            If scErr '= "" {
-                Set out.ok = 0
-                Set out.error = scErr
-            } Else {
-                Set out.enabled = ''(+enabled)
-                Set out.ok = 1
-                Set out.message = "Endpoint " _ url _ " " _ $select(+enabled:"enabled", 1:"disabled") _ "."
-            }
+            ; SetEndpointEnabled is VOID — call with Do, not Set (Set raises
+            ; <COMMAND>). It throws on failure (outer Catch handles).
+            Do ##class(HS.FHIRServer.ServiceAdmin).SetEndpointEnabled(url, ''(+enabled))
+            Set out.enabled = ''(+enabled)
+            Set out.ok = 1
+            Set out.message = "Endpoint " _ url _ " " _ $select(+enabled:"enabled", 1:"disabled") _ "."
         }
     } Catch ex {
         Set out.ok = 0

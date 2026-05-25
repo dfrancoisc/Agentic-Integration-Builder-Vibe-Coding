@@ -399,15 +399,21 @@ ClassMethod CreateOrUpdateBFCConfig(config, namespace As %String = "") As %Dynam
     Quit out
 }
 
-/// Start a Bulk FHIR export for a configured BFC endpoint. MUTATING
-/// (start_ prefix). The config must already exist and be active. BFC
-/// fetches from the configured source FHIR endpoint and writes to the
-/// configured storage (ndjson files or ingestion into the target server).
+/// Prepare/kick off a Bulk FHIR export for a configured BFC endpoint.
+/// Verifies the config exists and is ACTIVE, then returns the exact REST
+/// `$export` kickoff the bulk-data client must issue — because a Bulk FHIR
+/// export is initiated by the client over REST ($export) by design; there
+/// is no server-side "start" class method (HS.BulkFHIR.Installer.Export only
+/// returns the config). On success BFC fetches from the configured source
+/// FHIR endpoint and writes to the configured storage (ndjson files, or
+/// ingestion into the target server). Monitor with ListBFCExports /
+/// GetBFCExportStatus.
 ///
-/// endpoint:  the BFC endpoint_url of an existing active config.
+/// endpoint:  the BFC endpoint_url (or config name) of an active config.
 /// namespace: optional target namespace.
 ///
-/// Returns: { ok, endpoint, result?, message?, error? }.
+/// Returns: { ok, endpoint, active, kickoff:{system,patient,group,...},
+/// message, error? }.
 ClassMethod StartBFCExport(endpoint As %String, namespace As %String = "") As %DynamicObject
 {
     Do ##class(AgenticInterop.Agent.Manager).ToolStart("StartBFCExport")
@@ -434,17 +440,42 @@ ClassMethod StartBFCExport(endpoint As %String, namespace As %String = "") As %D
             Set out.ok = 0
             Set out.error = "Bulk FHIR Coordinator is not available in namespace " _ targetNs _ "."
         } Else {
-            Set res = ##class(HS.BulkFHIR.Installer).Export(endpoint)
-            Set scErr = ..%SCErr(res)
-            If scErr '= "" {
+            ; Resolve + verify the config (accept endpoint_url or name).
+            Set cfg = ##class(HS.BulkFHIR.Configuration).GetConfiguration(endpoint)
+            If '$isobject(cfg) {
+                Set rs = ##class(%SQL.Statement).%ExecDirect(, "SELECT BFCEndpoint FROM HS_BulkFHIR.Configuration WHERE Name = ?", endpoint)
+                If rs.%Next() { Set endpoint = rs.%Get("BFCEndpoint"), out.endpoint = endpoint, cfg = ##class(HS.BulkFHIR.Configuration).GetConfiguration(endpoint) }
+            }
+            If '$isobject(cfg) {
                 Set out.ok = 0
-                Set out.error = scErr
+                Set out.error = "No BFC config for '" _ endpoint _ "' in namespace " _ targetNs _ ". Create one with CreateOrUpdateBFCConfig."
             } Else {
-                If $isvalidnum(res) { Set out.result = res }
-                ElseIf $isobject(res) { Try { Set out.result = res.%ToJSON() } Catch  {} }
-                ElseIf $get(res) '= "", res '= 1 { Set out.result = res }
-                Set out.ok = 1
-                Set out.message = "Export started for BFC endpoint " _ endpoint _ ". Use ListBFCExports / GetBFCExportStatus to monitor."
+                Set inactive = 0
+                Try { If $isobject(cfg.Configuration), cfg.Configuration.%IsDefined("is_inactive") { Set inactive = ''cfg.Configuration.is_inactive } } Catch  {}
+                If inactive {
+                    Set out.ok = 0
+                    Set out.active = 0
+                    Set out.error = "BFC config '" _ endpoint _ "' is INACTIVE — activate it with SetBFCConfigActive (and ensure its prerequisites exist) before exporting."
+                } Else {
+                    ; A Bulk FHIR export is INITIATED BY THE BULK-DATA CLIENT over
+                    ; REST ($export) — that is the IG design. There is no server-
+                    ; side "start" class method (HS.BulkFHIR.Installer.Export just
+                    ; returns the config). So we verify the config is active and
+                    ; hand back the exact kickoff the client must issue.
+                    Set out.ok = 1
+                    Set out.active = 1
+                    Set k = {}
+                    Set k.method = "GET or POST"
+                    Set k.system = endpoint _ "/$export"
+                    Set k.patient = endpoint _ "/Patient/$export"
+                    Set k.group = endpoint _ "/Group/<groupId>/$export"
+                    Set k.acceptHeader = "application/fhir+json"
+                    Set k.optionalParams = "_type=<CSV resource types>, _since=<FHIR instant>, _outputFormat=application/fhir+ndjson"
+                    Set k.oauthScopeMin = "system/Patient.rs  (system/*.rs = everything); get a token from <issuer>/token first when the config uses OAuth client auth"
+                    Set k.poll = "kickoff response Content-Location header = " _ endpoint _ "/status/<sessionNumber>; GET it (202 in-progress / 200 done with file URLs), or use GetBFCExportStatus here"
+                    Set out.kickoff = k
+                    Set out.message = "Config '" _ endpoint _ "' is active and ready. Bulk FHIR exports are kicked off by the bulk-data client via REST $export (prepend the BFC base host to the relative paths in `kickoff`). Then monitor with ListBFCExports / GetBFCExportStatus."
+                }
             }
         }
     } Catch ex {
@@ -822,15 +853,11 @@ ClassMethod DeleteBFCConfig(nameOrEndpoint As %String, namespace As %String = ""
                 Set out.ok = 0
                 Set out.error = "No BFC config named or endpointed '" _ nameOrEndpoint _ "' in namespace " _ targetNs _ "."
             } Else {
-                Set sc = ##class(HS.BulkFHIR.Installer).Delete(cfgName)
-                Set scErr = ..%SCErr(sc)
-                If scErr '= "" {
-                    Set out.ok = 0
-                    Set out.error = scErr
-                } Else {
-                    Set out.ok = 1
-                    Set out.message = "Deleted BFC config '" _ cfgName _ "' in " _ targetNs _ "."
-                }
+                ; HS.BulkFHIR.Installer.Delete is VOID — call with Do, not Set
+                ; (Set raises <COMMAND>). It throws on failure (outer Catch).
+                Do ##class(HS.BulkFHIR.Installer).Delete(cfgName)
+                Set out.ok = 1
+                Set out.message = "Deleted BFC config '" _ cfgName _ "' in " _ targetNs _ "."
             }
         }
     } Catch ex {
