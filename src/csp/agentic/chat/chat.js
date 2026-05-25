@@ -1138,7 +1138,7 @@ async function loadNamespaces() {
     if (!sel) return;
     let list = [], current = '';
     try {
-        const r = await fetch(API + '/namespaces', { headers: { Authorization: authHeader() } });
+        const r = await fetch(API + '/namespaces' + (CHATBOT ? '?chatbot=' + encodeURIComponent(CHATBOT) : ''), { headers: { Authorization: authHeader() } });
         if (r.ok) { const j = await r.json(); list = j.namespaces || []; current = j.current || ''; }
     } catch (e) {}
     sel.innerHTML = '';

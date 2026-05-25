@@ -372,15 +372,32 @@ ClassMethod Namespaces() As %Status
     Set out = {}
     Set out.current = $namespace
     Set out.namespaces = []
-    Do ..collectNamespaces(out.namespaces)
+    ; If the requesting chatbot's agent uses the FHIR Server MCP, restrict
+    ; the picker to namespaces that actually have a FHIR Server installed
+    ; (FHIR-enabled foundation namespaces). Other chatbots see all the
+    ; namespaces the user can access.
+    Set fhirOnly = 0
+    Set ck = ""
+    Try { Set ck = %request.Get("chatbot", "") } Catch  {}
+    If ck '= "" {
+        Set cb = ##class(AgenticInterop.Data.Chatbot).GetByKey(ck)
+        If $isobject(cb), cb.AgentClass '= "" {
+            Set mcps = ""
+            Try { Set mcps = ##class(AgenticInterop.Editor.Overlay).GetEffectiveMCPS(cb.AgentClass) } Catch  {}
+            If mcps [ "AgenticInterop.MCP.FHIRServer" { Set fhirOnly = 1 }
+        }
+    }
+    Set out.fhirOnly = ''fhirOnly
+    Do ..collectNamespaces(out.namespaces, fhirOnly)
     Do ..%WriteJSON(out)
     Quit $$$OK
 }
 
-/// Fill pArr with the non-system namespaces the user can access. Runs in
-/// a New'd %SYS frame so the dispatch namespace is restored on return
-/// (before the caller writes JSON / audits in the install namespace).
-ClassMethod collectNamespaces(pArr As %DynamicArray) [ Internal ]
+/// Fill pArr with the non-system namespaces the user can access. When
+/// pFhirOnly, only namespaces with a FHIR Server installed are included.
+/// Runs in a New'd %SYS frame so the dispatch namespace is restored on
+/// return (before the caller writes JSON / audits in the install namespace).
+ClassMethod collectNamespaces(pArr As %DynamicArray, pFhirOnly As %Boolean = 0) [ Internal ]
 {
     New $namespace
     Set $namespace = "%SYS"
@@ -390,10 +407,34 @@ ClassMethod collectNamespaces(pArr As %DynamicArray) [ Internal ]
     Set ns = $order(list(""))
     While ns '= "" {
         If sysNs '[ ("," _ $zconvert(ns, "U") _ ",") {
-            If ..NamespaceAccessible(ns) { Do pArr.%Push(ns) }
+            If ..NamespaceAccessible(ns) {
+                If 'pFhirOnly {
+                    Do pArr.%Push(ns)
+                } ElseIf ..IsFhirNamespace(ns) {
+                    Do pArr.%Push(ns)
+                }
+            }
         }
         Set ns = $order(list(ns))
     }
+}
+
+/// True iff the namespace has a FHIR Server installed — i.e. it is
+/// FHIR-enabled (HS.FHIRServer available) AND has at least one endpoint.
+/// This is the "foundation namespace" filter for the FHIR chatbot's
+/// namespace picker (mirrors Tool.FHIRServer.DiscoverFHIRNamespaces).
+ClassMethod IsFhirNamespace(pName As %String) As %Boolean [ Internal ]
+{
+    Set ok = 0
+    Try {
+        New $namespace
+        Set $namespace = pName
+        If ##class(%Dictionary.CompiledClass).%ExistsId("HS.FHIRServer.ServiceAdmin") {
+            Set el = ##class(HS.FHIRServer.ServiceAdmin).GetEndpointList()
+            If $listvalid(el), $listlength(el) > 0 { Set ok = 1 }
+        }
+    } Catch  { Set ok = 0 }
+    Quit ok
 }
 
 ClassMethod WhoAmI() As %Status
