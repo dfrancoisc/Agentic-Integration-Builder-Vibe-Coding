@@ -419,10 +419,15 @@ ClassMethod collectNamespaces(pArr As %DynamicArray, pFhirOnly As %Boolean = 0) 
     }
 }
 
-/// True iff the namespace has a FHIR Server installed — i.e. it is
-/// FHIR-enabled (HS.FHIRServer available) AND has at least one endpoint.
-/// This is the "foundation namespace" filter for the FHIR chatbot's
-/// namespace picker (mirrors Tool.FHIRServer.DiscoverFHIRNamespaces).
+/// True iff the namespace is a FHIR FOUNDATION namespace — i.e. it is
+/// FHIR-enabled (HS.FHIRServer available) AND has REGISTERED FHIR metadata
+/// packages (HS.FHIRMeta.Storage.Package). Registered packages are the
+/// DURABLE foundation signal: it survives endpoint churn (endpoints are
+/// created/deleted, but a foundation namespace stays a foundation namespace),
+/// and it correctly excludes app namespaces like HSCUSTOM that merely have
+/// the package FILES on disk but none registered. An existing endpoint also
+/// counts (fallback). This is the filter for the FHIR chatbot's namespace
+/// picker. See Tool.FHIRServer.DiscoverFHIRNamespaces for endpoint listing.
 ClassMethod IsFhirNamespace(pName As %String) As %Boolean [ Internal ]
 {
     Set ok = 0
@@ -430,8 +435,16 @@ ClassMethod IsFhirNamespace(pName As %String) As %Boolean [ Internal ]
         New $namespace
         Set $namespace = pName
         If ##class(%Dictionary.CompiledClass).%ExistsId("HS.FHIRServer.ServiceAdmin") {
-            Set el = ##class(HS.FHIRServer.ServiceAdmin).GetEndpointList()
-            If $listvalid(el), $listlength(el) > 0 { Set ok = 1 }
+            ; Primary (durable): registered FHIR metadata packages.
+            Try {
+                Set rs = ##class(%SQL.Statement).%ExecDirect(, "SELECT COUNT(*) c FROM HS_FHIRMeta_Storage.Package")
+                If rs.%Next(), (+rs.%GetData(1) > 0) { Set ok = 1 }
+            } Catch  {}
+            ; Fallback: an installed endpoint also marks a FHIR namespace.
+            If 'ok {
+                Set el = ##class(HS.FHIRServer.ServiceAdmin).GetEndpointList()
+                If $listvalid(el), $listlength(el) > 0 { Set ok = 1 }
+            }
         }
     } Catch  { Set ok = 0 }
     Quit ok

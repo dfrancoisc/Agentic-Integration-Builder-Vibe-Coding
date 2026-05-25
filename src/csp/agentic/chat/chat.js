@@ -1136,24 +1136,32 @@ const NS_KEY = 'AGENTIC_NS_' + (CHATBOT || 'default');
 async function loadNamespaces() {
     const sel = $('ns-select');
     if (!sel) return;
-    let list = [], current = '';
+    let list = [], current = '', fhirOnly = false;
     try {
         const r = await fetch(API + '/namespaces' + (CHATBOT ? '?chatbot=' + encodeURIComponent(CHATBOT) : ''), { headers: { Authorization: authHeader() } });
-        if (r.ok) { const j = await r.json(); list = j.namespaces || []; current = j.current || ''; }
+        if (r.ok) { const j = await r.json(); list = j.namespaces || []; current = j.current || ''; fhirOnly = !!j.fhirOnly; }
     } catch (e) {}
     sel.innerHTML = '';
     if (!list.length) {
-        const o = document.createElement('option'); o.value = ''; o.textContent = 'unknown'; sel.appendChild(o);
+        // Empty list. For a FHIR-only picker this means no FHIR foundation
+        // namespace exists — do NOT fall back to the dispatch namespace
+        // (e.g. HSCUSTOM is not a FHIR namespace) or show a bogus "unknown".
+        const o = document.createElement('option'); o.value = '';
+        o.textContent = fhirOnly ? 'No FHIR server found' : 'unknown';
+        o.disabled = true; sel.appendChild(o);
     }
     for (const ns of list) {
         const o = document.createElement('option'); o.value = ns; o.textContent = ns; sel.appendChild(o);
     }
     // Selection precedence: persisted choice > bridge/URL hint > dispatch.
+    // For a FHIR-only picker, only select namespaces that are actually in the
+    // FHIR list — never auto-select the dispatch namespace (HSCUSTOM).
     let want = '';
     try { want = localStorage.getItem(NS_KEY) || ''; } catch (e) {}
     if (want && list.length && list.indexOf(want) < 0) want = '';
-    if (!want && bridgeNamespace) want = bridgeNamespace;
-    if (!want) want = current;
+    if (!want && bridgeNamespace && (!fhirOnly || list.indexOf(bridgeNamespace) >= 0)) want = bridgeNamespace;
+    if (!want && (!fhirOnly || list.indexOf(current) >= 0)) want = current;
+    if (!want && fhirOnly && list.length) want = list[0];
     if (want) { ensureNsOption(want); sel.value = want; bridgeNamespace = want; }
     setNamespacePill(bridgeNamespace);
     sel.addEventListener('change', () => {
