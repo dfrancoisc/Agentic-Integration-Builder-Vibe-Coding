@@ -465,9 +465,30 @@ ClassMethod IsFhirNamespace(pName As %String) As %Boolean [ Internal ]
 ClassMethod FHIRAudit() As %Status
 {
     Set out = {}
-    Set ns = $get(%request.CgiEnvs("HTTP_X_IRIS_NAMESPACE"))
-    If ns = "" { Set ns = $namespace }
+    Set reqNs = $get(%request.CgiEnvs("HTTP_X_IRIS_NAMESPACE"))
+    ; The FHIR Server lives in a FHIR FOUNDATION namespace (e.g. FHIR), never
+    ; the dispatch/app namespace (HSCUSTOM). Resolve the audit target to a FHIR
+    ; namespace regardless of what the picker/dispatch passes:
+    ;   1. honor the requested namespace only if it is itself a FHIR namespace;
+    ;   2. else prefer a namespace that actually has a FHIR endpoint;
+    ;   3. else any FHIR foundation namespace (registered metadata packages);
+    ;   4. last resort, the requested/dispatch namespace.
+    Set ns = ""
+    If (reqNs '= ""), ..IsFhirNamespace(reqNs) { Set ns = reqNs }
+    If ns = "" {
+        Try {
+            Set disc = ##class(AgenticInterop.Tool.FHIRServer).DiscoverFHIRNamespaces()
+            If $isobject(disc), $isobject(disc.namespaces), (disc.namespaces.%Size() > 0) { Set ns = disc.namespaces.%Get(0).namespace }
+        } Catch  {}
+    }
+    If ns = "" {
+        Set cand = []
+        Do ..collectNamespaces(cand, 1)
+        If cand.%Size() > 0 { Set ns = cand.%Get(0) }
+    }
+    If ns = "" { Set ns = $select(reqNs '= "":reqNs, 1:$namespace) }
     Set out.namespace = ns
+    Set out.requestedNamespace = reqNs
     Set out.endpoints = []
     Set url = ""
     Try {

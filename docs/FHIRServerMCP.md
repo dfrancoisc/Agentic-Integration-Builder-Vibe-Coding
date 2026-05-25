@@ -192,6 +192,15 @@ and status. Nothing below is built yet unless marked DONE.
    router link, and binds it to open the audit panel. The header button is kept
    as a fallback entry point. Gated to the `fhir-management` chatbot and hidden
    on the login screen.
+4. **Audit always targets the FHIR foundation namespace, never HSCUSTOM.** The
+   `/fhir/audit` handler resolves the target server-side: honor the requested
+   namespace only if it is itself a FHIR namespace; else prefer one with a FHIR
+   endpoint (`DiscoverFHIRNamespaces`); else any FHIR foundation namespace
+   (`collectNamespaces(fhirOnly)`); only then fall back. So even when the
+   picker/dispatch namespace is `HSCUSTOM`, the audit reports the `FHIR`
+   namespace where the server lives (verified: requested HSCUSTOM -> audited
+   FHIR, storage shows the FHIR database). The response carries both `namespace`
+   (audited) and `requestedNamespace`.
 
 ## 5. Status legend
 - DONE: GetFHIRLoadMetrics, GetFHIRServerStats, /fhir/audit, audit panel,
