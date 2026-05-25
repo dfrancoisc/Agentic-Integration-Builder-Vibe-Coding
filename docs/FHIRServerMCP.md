@@ -41,7 +41,7 @@ User ──▶ FHIR Assistant chatbot  (Data.Chatbot key = "fhir-management")
 ### MCP / ToolSet / Tool
 | MCP | ToolSet | Tool class | Tools |
 |---|---|---|---|
-| `MCP.FHIRServer` | `ToolSet.FHIRServer` | `Tool.FHIRServer` | 24 |
+| `MCP.FHIRServer` | `ToolSet.FHIRServer` | `Tool.FHIRServer` | 26 |
 | `MCP.BulkFHIR` | `ToolSet.BulkFHIR` | `Tool.BulkFHIR` | 13 |
 
 ### Skills (attached to `Agent.FHIRSpecialist`)
@@ -122,13 +122,27 @@ and status. Nothing below is built yet unless marked DONE.
 - **Why:** show storage growth over time in the panel.
 - **Artifact:** Data class + 1–2 tools (+ optional task).
 
-### C-alt (decision needed). Capture ingestion for ALL paths
-- **Option:** a CORE-sanctioned hook so any ingestion (REST/BFC/UI) is counted,
-  not just `LoadFHIRDirectory`. Likely a thin subclass/observer of the
-  InteractionsStrategy, or reading the FHIR server's own counters if exposed.
-- **Trade-off:** more invasive; needs research into whether CORE exposes a
-  supported ingestion counter/event. **Recommend: research-and-document first**
-  (it may be that point-in-time `GetFHIRServerStats` + run log is enough).
+### C-alt (researched — NOT building). Capture ingestion for ALL paths
+- **Question:** is there a CORE-sanctioned hook/counter so any ingestion
+  (REST/BFC/UI), not just `LoadFHIRDirectory`, is timed/counted?
+- **Research finding (introspected in the FHIR namespace):** NO supported
+  ingestion event or per-load counter exists.
+  - `HS.FHIRServer.Storage.JsonAdvSQL.InteractionsStrategy` exposes only
+    framework internals (`%IncrementCount`, `%AddToSaveSet`, `%OnAddToSaveSet`)
+    and config methods (`SaveServiceConfigData`, `Update`) — no create/update
+    ingestion hook.
+  - `HS.FHIRServer.Storage.JsonAdvSQL.Interactions` has `SearchMatchCount`,
+    `isSelectCountAllowed`, `GetPatientStatus` — search/count helpers, not an
+    ingestion counter or event.
+- **Conclusion:** capturing all-path ingestion timing would require subclassing
+  / overriding the InteractionsStrategy's interaction handling — invasive,
+  version-fragile, and not a supported extension point for metrics. **Decision:
+  do NOT build it.** Instead:
+  - path-INDEPENDENT state (counts, storage size) is already covered by
+    `GetFHIRServerStats` (point-in-time, CORE);
+  - loader-based throughput/bottlenecks are covered by `GetFHIRLoadMetrics` +
+    the `FHIRLoadRun` history (item A).
+  This limitation is stated in `FHIRServerBug.md` (ENV) and in the skill.
 
 ### D. Audit panel enhancements (UI)
 - **What:** add a load-history table (from A), a storage-trend mini-chart (from
@@ -153,4 +167,9 @@ and status. Nothing below is built yet unless marked DONE.
 ## 5. Status legend
 - DONE: GetFHIRLoadMetrics, GetFHIRServerStats, /fhir/audit, audit panel,
   CORE refactor (GetAllPackages), FHIRServerBug.md.
-- TO BUILD (awaiting approval): A, B, C, C-alt (research), D, E.
+- DONE (approved build): A (Data.FHIRLoadRun + ListFHIRLoadRuns + loader hook),
+  B (GetFHIRQueryPerformance), E (skill metrics workflow).
+- RESEARCHED — not building: C-alt (no supported CORE ingestion hook; see above).
+- DEFERRED (not approved this round): C (storage-growth history), D (audit-panel
+  history table / trend chart).
+- Tool count: FHIRServer 26, BulkFHIR 13 (86 total).

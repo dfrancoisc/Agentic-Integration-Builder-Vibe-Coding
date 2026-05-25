@@ -88,6 +88,20 @@ Severity: 🔴 CORE API bug · 🟠 CORE API quirk (works, but trap) · 🟡 our
   `practitionerInformation*` bundles, which must load **first** (else `ConditionalRefNotResolved`).
   `LoadFHIRDirectory` orders infrastructure bundles first.
 
+## ⚪ ENV-3 — No CORE ingestion event/counter (ingestion timing is loader-only)
+
+The IRIS FHIR Server has no supported hook or counter to time/count resource
+ingestion across paths. Introspection (FHIR namespace):
+`HS.FHIRServer.Storage.JsonAdvSQL.InteractionsStrategy` exposes only framework
+internals (`%IncrementCount`, `%AddToSaveSet`) + config methods; `Interactions`
+has `SearchMatchCount` / `GetPatientStatus` (search helpers), not an ingestion
+counter. So ingestion throughput/bottleneck metrics (`GetFHIRLoadMetrics`,
+`Data.FHIRLoadRun`) are captured ONLY for loads done via `LoadFHIRDirectory`.
+Data ingested via REST / BFC / the FHIR Management UI is not timed — use
+`GetFHIRServerStats` (path-independent point-in-time counts + storage size) for
+those. Capturing all paths would require subclassing the InteractionsStrategy
+(invasive, version-fragile) — deliberately NOT done. See `FHIRServerMCP.md` §4 C-alt.
+
 ## 🟡 OUR-1 — `%AI.ToolSet.%Discover()` is baked at compile time
 
 - **Symptom:** a newly added tool method is invisible to the agent even after recompiling

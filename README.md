@@ -12,22 +12,22 @@ All build phases complete (Phase 0 through Phase 7). The agent operates under th
 
 | Metric | Value |
 |---|---|
-| ObjectScript classes | 77 |
+| ObjectScript classes | 78 |
 | Agents (%AI.Agent) | 2 (Health Interop generalist, FHIR Specialist) |
 | Tool classes (%AI.Tool) | 7 (Production, Transform, Testing, Catalog, Monitoring, FHIR Server, Bulk FHIR) |
-| Tools (public ClassMethods) | 76 |
+| Tools (public ClassMethods) | 86 |
 | ToolSets (%AI.ToolSet) | 7 |
 | MCP servers | 6 (Production, Transform, Testing, Catalog, FHIR Server, Bulk FHIR) |
 | Skills (%AI.Agent.Skill) | 15 |
 | Vector catalogs | 2 (search_ens: 164 classes, search_hs: 58 classes) |
 | Field-level mappings (Transformation and Mapping Catalog) | 1,538 |
-| Persistent data classes | 6 (Connection, AgentOverride, MCPOverride, ToolSetOverride, AuditLog, FieldMapping) |
+| Persistent data classes | 8 (Connection, AgentOverride, MCPOverride, ToolSetOverride, AuditLog, FieldMapping, Chatbot, FHIRLoadRun) |
 | Git commits | 100+ |
 
 ## Features
 
 - Streaming chat with Server-Sent Events (SSE) -- token-by-token responses with inline tool-call cards
-- 84 tools across 7 domains: Production, Transform, Testing, Catalog, Monitoring, FHIR Server, Bulk FHIR
+- 86 tools across 7 domains: Production, Transform, Testing, Catalog, Monitoring, FHIR Server, Bulk FHIR
 - FHIR Server Audit panel: a left slide-in panel injected into the FHIR Management header showing storage (database sizes via CORE `SYS.Database`), resource counts by type (CORE FHIR `_summary=count`), and ingestion performance (duration, resources/sec, bottlenecks) — backed by `GET /api/agentic/fhir/audit`
 - 15 domain skills covering Productions, DTL, BPL, Routing Rules, HL7v2, FHIR R4, FHIR Server, Bulk FHIR, FHIR SQL Builder, SDA, REST, ESB, X12/HIPAA, CDA/C-CDA, and Adapters
 - FHIR Specialist agent: a dedicated FHIR platform agent (FHIR Server MCP + Bulk FHIR MCP + Catalog, with the FHIR Server / FHIR R4 / SDA / Bulk FHIR / FHIR SQL Builder skills) alongside the generalist Health Interop agent
@@ -184,7 +184,7 @@ Features:
 
 ## Tools
 
-The agent's capabilities are organized into 7 Tool classes (84 tools total). Each Tool class is a `%AI.Tool` subclass where every public ClassMethod is a tool the LLM can call.
+The agent's capabilities are organized into 7 Tool classes (86 tools total). Each Tool class is a `%AI.Tool` subclass where every public ClassMethod is a tool the LLM can call.
 
 | Tool class | Tools | Purpose |
 |---|---|---|
@@ -193,7 +193,7 @@ The agent's capabilities are organized into 7 Tool classes (84 tools total). Eac
 | Testing | 8 | Send and validate HL7 v2 and FHIR R4 messages, build test messages, compare messages |
 | Catalog | 7 | Vector search over Ens.* and HS.* catalogs, class introspection, namespace utilities, glossary |
 | Monitoring | 5 | Event log search, top-error grouping, message status, throughput summaries, queue depth |
-| FHIR Server | 24 | Discover FHIR-enabled foundation namespaces, inspect/configure endpoints, CapabilityStatement, metadata packages, resource search/read/CRUD/$validate, ordered async directory load (+ status + ingestion metrics), bulk load, data reset, storage/performance audit, guarded endpoint provisioning |
+| FHIR Server | 26 | Discover FHIR-enabled foundation namespaces, inspect/configure endpoints, CapabilityStatement, metadata packages, resource search/read/CRUD/$validate, ordered async directory load (+ status + ingestion metrics + durable run history), bulk load, data reset, storage/performance audit, query-performance probe, guarded endpoint provisioning |
 | Bulk FHIR | 13 | Bulk FHIR Coordinator (BFC): list/get/schema/create/configure/activate/delete configs, start exports, monitor sessions, and provision prerequisites end to end (storage directory, SSL/TLS config, interop credential, SMART-backend OAuth server + client) — fetch from a source FHIR endpoint to ndjson or ingest into a target FHIR server |
 
 ## Skills

@@ -1903,6 +1903,140 @@ ClassMethod GetFHIRServerStats(url As %String = "", resourceTypes As %String = "
     Quit out
 }
 
+/// List recent FHIR directory-load runs from the durable history
+/// (AgenticInterop.Data.FHIRLoadRun) — duration, throughput, and totals per
+/// run for trend review. Read-only. (This reads our own history table, not a
+/// FHIR CORE API.)
+///
+/// namespace: optional — filter to loads that targeted this FHIR namespace.
+/// limit:     max rows (default 20).
+///
+/// Returns: { ok, total, runs:[{namespace, endpoint, jobId, startedAt,
+/// finishedAt, durationSec, totalFiles, filesDone, filesFailed,
+/// totalResources, resourcesPerSec, totalMB, status}] }.
+ClassMethod ListFHIRLoadRuns(namespace As %String = "", limit As %Integer = 20) As %DynamicObject
+{
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("ListFHIRLoadRuns")
+    Set out = {}
+    Set out.tool = "list_fhir_load_runs"
+    Set out.runs = []
+    Try {
+        If '##class(%Dictionary.CompiledClass).%ExistsId("AgenticInterop.Data.FHIRLoadRun") {
+            Set out.ok = 1
+            Set out.total = 0
+            Set out.message = "No load-run history yet."
+            Do ##class(AgenticInterop.Agent.Manager).ToolDone("ListFHIRLoadRuns", out)
+            Return out
+        }
+        Set lim = +$get(limit) If lim <= 0 { Set lim = 20 }
+        Set cols = "Namespace,Endpoint,JobId,StartedAt,FinishedAt,DurationSec,TotalFiles,FilesDone,FilesFailed,TotalResources,ResourcesPerSec,TotalMB,Status"
+        Set ns = $get(namespace)
+        If ns '= "" {
+            Set rs = ##class(%SQL.Statement).%ExecDirect(, "SELECT TOP ? " _ cols _ " FROM AgenticInterop_Data.FHIRLoadRun WHERE Namespace = ? ORDER BY CreatedAt DESC", lim, ns)
+        } Else {
+            Set rs = ##class(%SQL.Statement).%ExecDirect(, "SELECT TOP ? " _ cols _ " FROM AgenticInterop_Data.FHIRLoadRun ORDER BY CreatedAt DESC", lim)
+        }
+        Set cnt = 0
+        While rs.%Next() {
+            Set row = {}
+            Set row.namespace = rs.%Get("Namespace")
+            Set row.endpoint = rs.%Get("Endpoint")
+            Set row.jobId = rs.%Get("JobId")
+            Set row.startedAt = rs.%Get("StartedAt")
+            Set row.finishedAt = rs.%Get("FinishedAt")
+            Set row.durationSec = rs.%Get("DurationSec")
+            Set row.totalFiles = rs.%Get("TotalFiles")
+            Set row.filesDone = rs.%Get("FilesDone")
+            Set row.filesFailed = rs.%Get("FilesFailed")
+            Set row.totalResources = rs.%Get("TotalResources")
+            Set row.resourcesPerSec = rs.%Get("ResourcesPerSec")
+            Set row.totalMB = rs.%Get("TotalMB")
+            Set row.status = rs.%Get("Status")
+            Do out.runs.%Push(row)
+            Set cnt = cnt + 1
+        }
+        Set out.total = cnt
+        Set out.ok = 1
+    } Catch ex {
+        Set out.ok = 0
+        Set out.error = $extract(ex.DisplayString(), 1, 400)
+    }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("ListFHIRLoadRuns", out)
+    Quit out
+}
+
+/// Measure FHIR query performance AT REST: times representative CORE FHIR
+/// searches (a `_summary=count` and a results page) against an endpoint and
+/// reports elapsed milliseconds. Read-only. Answers "are searches fast?"
+/// independent of ingestion. Uses the CORE FHIR dispatch (no SQL).
+///
+/// url:          endpoint cspUrl.
+/// resourceType: type to probe (default Patient).
+/// namespace:    optional target namespace.
+///
+/// Returns: { ok, url, resourceType, probes:[{name, query, ms, httpStatus,
+/// total?}], message }.
+ClassMethod GetFHIRQueryPerformance(url As %String, resourceType As %String = "Patient", namespace As %String = "") As %DynamicObject
+{
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("GetFHIRQueryPerformance")
+    Set out = {}
+    Set out.tool = "get_fhir_query_performance"
+    Set dispNs = $namespace
+    Set targetNs = ..%ResolveNs(namespace)
+    Set out.namespace = targetNs
+    Set out.url = $get(url)
+    Set rt = $select($get(resourceType) '= "":resourceType, 1:"Patient")
+    Set out.resourceType = rt
+    Set out.probes = []
+    If $get(url) = "" {
+        Set out.ok = 0
+        Set out.error = "Pass `url` (endpoint cspUrl)."
+        Do ##class(AgenticInterop.Agent.Manager).ToolDone("GetFHIRQueryPerformance", out)
+        Quit out
+    }
+    New $namespace
+    Try {
+        Set nsOk = 1
+        Try { Set $namespace = targetNs } Catch  { Set nsOk = 0 }
+        If 'nsOk {
+            Set out.ok = 0
+            Set out.error = "Cannot access namespace: " _ targetNs
+        } ElseIf '##class(HS.FHIRServer.ServiceAdmin).EndpointExists(url) {
+            Set out.ok = 0
+            Set out.error = "No FHIR endpoint at '" _ url _ "' in namespace " _ targetNs _ "."
+        } Else {
+            Do ..%ProbeQuery(url, rt, "_summary=count", "count", out.probes)
+            Do ..%ProbeQuery(url, rt, "_count=20", "page (20 results)", out.probes)
+            Set out.ok = 1
+            Set out.message = "Timed " _ out.probes.%Size() _ " CORE FHIR search(es) on " _ rt _ " (elapsed ms per probe)."
+        }
+    } Catch ex {
+        Set out.ok = 0
+        Set out.error = $extract(ex.DisplayString(), 1, 400)
+    }
+    Set $namespace = dispNs
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("GetFHIRQueryPerformance", out)
+    Quit out
+}
+
+/// Time one CORE FHIR search and append a probe result. Internal helper for
+/// GetFHIRQueryPerformance.
+ClassMethod %ProbeQuery(url As %String, rt As %String, query As %String, name As %String, probes As %DynamicArray) [ Internal ]
+{
+    Set p = {}
+    Set p.name = name
+    Set p.query = rt _ "?" _ query
+    Set t0 = $zhorolog
+    Set r = ..%Interaction(url, "GET", rt, query)
+    Set ms = ($zhorolog - t0) * 1000
+    If ms < 0 { Set ms = ms + 86400000 }
+    Set p.ms = $normalize(ms, 1)
+    Set p.httpStatus = $select($isobject(r) && r.%IsDefined("httpStatus"):r.httpStatus, 1:"")
+    If $isobject(r), $isobject(r.body), r.body.%IsDefined("total") { Set p.total = r.body.total }
+    Do probes.%Push(p)
+    Quit
+}
+
 /// Background runner for LoadFHIRDirectory: loads each queued file in order,
 /// updating the ^AgInt.FHIRLoad(jobId) progress global. JOB'd from
 /// LoadFHIRDirectory (runs in the app namespace; switches per file). Internal.
@@ -1913,7 +2047,7 @@ ClassMethod %RunLoadJob(pJobId As %String, pUrl As %String, pNs As %String) [ In
         Set ^AgInt.FHIRLoad(pJobId, "started") = $zdatetime($horolog, 3, 1)
         ; High-precision start markers for throughput/bottleneck metrics.
         Set ^AgInt.FHIRLoad(pJobId, "startH") = $zhorolog
-        Set totalRes = 0
+        Set totalRes = 0, totalBytes = 0
         Set seq = $order(^AgInt.FHIRLoad(pJobId, "file", ""))
         While seq '= "" {
             Set fp = ^AgInt.FHIRLoad(pJobId, "file", seq)
@@ -1926,6 +2060,7 @@ ClassMethod %RunLoadJob(pJobId As %String, pUrl As %String, pNs As %String) [ In
             Set ok = ($isobject(r) && r.ok)
             ; Per-file metrics: filename, seconds, resourceCount, ok, bytes.
             Set bytes = "" Try { Set bytes = ##class(%Library.File).GetFileSize(fp) } Catch  {}
+            Set totalBytes = totalBytes + (+bytes)
             Set ^AgInt.FHIRLoad(pJobId, "metric", seq) = $listbuild($piece(fp, "/", *), fDur, rcount, +ok, bytes)
             If ok {
                 Set ^AgInt.FHIRLoad(pJobId, "done") = +$get(^AgInt.FHIRLoad(pJobId, "done")) + 1
@@ -1945,11 +2080,32 @@ ClassMethod %RunLoadJob(pJobId As %String, pUrl As %String, pNs As %String) [ In
         Set ^AgInt.FHIRLoad(pJobId, "status") = "completed"
         Set ^AgInt.FHIRLoad(pJobId, "finished") = $zdatetime($horolog, 3, 1)
         Set ^AgInt.FHIRLoad(pJobId, "finishedH") = $zhorolog
+        Do ..%RecordLoadRun(pJobId, pUrl, pNs, totalRes, totalBytes, "completed")
     } Catch ex {
         Set ^AgInt.FHIRLoad(pJobId, "status") = "error"
         Set ^AgInt.FHIRLoad(pJobId, "jobError") = $extract(ex.DisplayString(), 1, 300)
         Set ^AgInt.FHIRLoad(pJobId, "finishedH") = $zhorolog
+        Do ..%RecordLoadRun(pJobId, pUrl, pNs, $get(totalRes), $get(totalBytes), "error")
     }
+    Quit
+}
+
+/// Persist a durable history row for a finished load run into
+/// AgenticInterop.Data.FHIRLoadRun. Best-effort: a metrics-history failure
+/// must never affect the load itself. Internal helper for %RunLoadJob.
+ClassMethod %RecordLoadRun(pJobId As %String, pUrl As %String, pNs As %String, pTotalRes As %Integer, pTotalBytes As %Integer, pStatus As %String) [ Internal ]
+{
+    Try {
+        If '##class(%Dictionary.CompiledClass).%ExistsId("AgenticInterop.Data.FHIRLoadRun") Quit
+        Set startH = +$get(^AgInt.FHIRLoad(pJobId, "startH"))
+        Set finishH = +$get(^AgInt.FHIRLoad(pJobId, "finishedH"))
+        If finishH = 0 { Set finishH = $zhorolog }
+        Set dur = finishH - startH
+        If dur < 0 { Set dur = dur + 86400 }
+        Set rps = $select(dur > 0:$normalize(pTotalRes / dur, 2), 1:0)
+        Set mb = $normalize((+pTotalBytes) / 1048576, 2)
+        Do ##class(AgenticInterop.Data.FHIRLoadRun).Record(pNs, pUrl, pJobId, $get(^AgInt.FHIRLoad(pJobId, "started")), $get(^AgInt.FHIRLoad(pJobId, "finished")), $normalize(dur, 2), +$get(^AgInt.FHIRLoad(pJobId, "total")), +$get(^AgInt.FHIRLoad(pJobId, "done")), +$get(^AgInt.FHIRLoad(pJobId, "failed")), pTotalRes, rps, mb, pStatus)
+    } Catch  {}
     Quit
 }
 

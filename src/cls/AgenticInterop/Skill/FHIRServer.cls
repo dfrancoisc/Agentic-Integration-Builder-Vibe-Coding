@@ -61,6 +61,8 @@ Administration:
 - `GetFHIRLoadStatus` — poll a LoadFHIRDirectory job (status, filesDone, filesFailed, errors) until done. (read-only)
 - `GetFHIRLoadMetrics` — ingestion PERFORMANCE for a load job: total duration, throughput (resources/sec, MB/sec), and the BOTTLENECKS (slowest files). Use to answer "how long did ingestion take / how many resources per second / what was slow". (read-only)
 - `GetFHIRServerStats` — storage + performance AUDIT: resource counts by type (CORE FHIR `_summary=count`) and database storage sizes for the namespace (CORE SYS.Database). Use for capacity/health review. (read-only)
+- `ListFHIRLoadRuns` — durable HISTORY of past directory loads (duration, throughput, totals per run) for trend comparison across loads. (read-only)
+- `GetFHIRQueryPerformance` — times representative CORE FHIR searches (a `_summary=count` and a results page) and reports elapsed ms — query speed AT REST, independent of ingestion. (read-only)
 - `LoadFHIRData` — simple SYNCHRONOUS DataLoader for a single or already-ordered small set. (mutating)
 - `ResetFHIRServerData` — wipe all stored resources, keep the endpoint and config (mutating, DESTRUCTIVE).
 
@@ -75,6 +77,16 @@ Use `LoadFHIRDirectory`, not BFC and not raw POSTs. Critical facts:
 Provisioning (only on explicit request):
 - `CreateFHIREndpoint` — install a new endpoint (enables the namespace for FHIR if needed). Guarded against overwriting an existing endpoint.
 - `DeleteFHIREndpoint` — decommission (keeps data by default) or fully uninstall with `deleteData=1` (destructive).
+
+## Performance and audit workflow
+
+When the user asks about FHIR Server performance, storage, ingestion speed, or "how do we improve it", use the metrics tools and INTERPRET the results — do not just dump JSON.
+- "How long did ingestion take / how many resources per second / what was slow?" -> `GetFHIRLoadMetrics` (latest job, or pass a jobId). Report durationSec, resourcesPerSecond, MB/sec, and call out the top `bottlenecks` (slowest files — usually a few oversized bundles dominate). If `metricsTracked=0`, the load predates per-file timing — tell the user to run a fresh `LoadFHIRDirectory` to capture it.
+- "Show me load history / are loads getting slower?" -> `ListFHIRLoadRuns` and compare resources/sec across runs.
+- "How big is the server / what is in it?" -> `GetFHIRServerStats`: database sizes (MB) and resource counts by type. Flag the largest resource types and total storage.
+- "Are queries/searches fast?" -> `GetFHIRQueryPerformance`: report ms per probe; a slow `_summary=count` suggests indexing/volume issues.
+- Improvement advice (ground it in the numbers): oversized bundles dominating bottlenecks -> split them or raise the load worker count; low resources/sec on a healthy host -> check `resourceValidation` (always vs on-create) via `UpdateFHIREndpointConfig`, since validation adds ingest cost; large storage -> consider archival or BFC `$export`. Always tie advice to the measured metric.
+- LIMITATION to state honestly: ingestion timing is captured for loads done via `LoadFHIRDirectory`. Data ingested via REST, BFC, or the FHIR Management UI is NOT timed (no run row); for those, use `GetFHIRServerStats` (point-in-time counts/size) instead.
 
 ## Namespace handling
 

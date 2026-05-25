@@ -4,7 +4,7 @@
 <Module>
 <Name>agentic-interop</Name>
 <Version>1.0.0</Version>
-<Description>AI Copilot for InterSystems IRIS for Health. Helps integration engineers build, review, and optimize healthcare interoperability workflows through natural conversation. 77 classes, 84 tools across 7 domains (Production, Transform, Testing, Catalog, Monitoring, FHIR Server, Bulk FHIR), 15 domain skills, a chatbot-to-agent config layer with two shipped chatbots (Interop, FHIR Management), streaming chat with tool-call approval, vector catalog search, and live Observer for behind-the-scenes computation view. Four personas: Developer, AI Hub Admin, Interface Engineer, Operator. Built on the %AI Framework. Namespace-agnostic.</Description>
+<Description>AI Copilot for InterSystems IRIS for Health. Helps integration engineers build, review, and optimize healthcare interoperability workflows through natural conversation. 78 classes, 86 tools across 7 domains (Production, Transform, Testing, Catalog, Monitoring, FHIR Server, Bulk FHIR), 15 domain skills, a chatbot-to-agent config layer with two shipped chatbots (Interop, FHIR Management), streaming chat with tool-call approval, vector catalog search, and live Observer for behind-the-scenes computation view. Four personas: Developer, AI Hub Admin, Interface Engineer, Operator. Built on the %AI Framework. Namespace-agnostic.</Description>
 <Keywords>iris ai copilot mcp interop fhir hl7 dtl bpl sda x12 cda hipaa production agent skill adapter</Keywords>
 <Packaging>module</Packaging>
 <SourcesRoot>src</SourcesRoot>
