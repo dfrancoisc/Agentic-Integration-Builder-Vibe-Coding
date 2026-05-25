@@ -12,12 +12,12 @@ All build phases complete (Phase 0 through Phase 7). The agent operates under th
 
 | Metric | Value |
 |---|---|
-| ObjectScript classes | 74 |
+| ObjectScript classes | 77 |
 | Agents (%AI.Agent) | 2 (Health Interop generalist, FHIR Specialist) |
-| Tool classes (%AI.Tool) | 6 (Production, Transform, Testing, Catalog, Monitoring, FHIR Server) |
-| Tools (public ClassMethods) | 67 |
-| ToolSets (%AI.ToolSet) | 6 |
-| MCP servers | 5 (Production, Transform, Testing, Catalog, FHIR Server) |
+| Tool classes (%AI.Tool) | 7 (Production, Transform, Testing, Catalog, Monitoring, FHIR Server, Bulk FHIR) |
+| Tools (public ClassMethods) | 74 |
+| ToolSets (%AI.ToolSet) | 7 |
+| MCP servers | 6 (Production, Transform, Testing, Catalog, FHIR Server, Bulk FHIR) |
 | Skills (%AI.Agent.Skill) | 15 |
 | Vector catalogs | 2 (search_ens: 164 classes, search_hs: 58 classes) |
 | Field-level mappings (Transformation and Mapping Catalog) | 1,538 |
@@ -27,9 +27,9 @@ All build phases complete (Phase 0 through Phase 7). The agent operates under th
 ## Features
 
 - Streaming chat with Server-Sent Events (SSE) -- token-by-token responses with inline tool-call cards
-- 67 tools across 6 domains: Production, Transform, Testing, Catalog, Monitoring, FHIR Server
+- 74 tools across 7 domains: Production, Transform, Testing, Catalog, Monitoring, FHIR Server, Bulk FHIR
 - 15 domain skills covering Productions, DTL, BPL, Routing Rules, HL7v2, FHIR R4, FHIR Server, Bulk FHIR, FHIR SQL Builder, SDA, REST, ESB, X12/HIPAA, CDA/C-CDA, and Adapters
-- FHIR Specialist agent: a dedicated FHIR platform agent (FHIR Server MCP + Catalog, with the FHIR Server / FHIR R4 / SDA / Bulk FHIR / FHIR SQL Builder skills) alongside the generalist Health Interop agent
+- FHIR Specialist agent: a dedicated FHIR platform agent (FHIR Server MCP + Bulk FHIR MCP + Catalog, with the FHIR Server / FHIR R4 / SDA / Bulk FHIR / FHIR SQL Builder skills) alongside the generalist Health Interop agent
 - Chatbot configuration layer: bind each chatbot surface to an agent in the admin "Chatbots" tab (the chat resolves its agent from the chatbot key at request time — no redeploy). Ships an Interop chatbot (Health Interop, in the Interop Editor) and a FHIR Management chatbot (FHIR Specialist, a floating launcher injected into the shipped `/csp/fhir-management` FHIR Server Management page)
 - Confirmation gate on every mutating tool -- create, update, delete, compile, start, stop all require explicit user approval before executing
 - Semantic vector search over the IRIS class library (164 Business Hosts, 58 transformation classes) using FastEmbed 384-dimensional embeddings and HNSW index
@@ -110,7 +110,7 @@ Uses the chatbot to monitor, triage, and review existing integrations at run-tim
 
 4. **Extend the MCP layer.** A developer creates a new %AI.MCP.Service subclass to expose a new domain of tools (for example, a Monitoring MCP for production health metrics). The MCP groups related ToolSets and is registered in the agent configuration through the admin UI.
 
-5. **Package and deploy via IPM.** A developer maintains the module.xml that defines the IPM package: ObjectScript classes, seed data, web application definitions, install/uninstall hooks. A single `zpm "load /path/to/agentic_interop"` command installs all 74 classes, two web apps, seed data, and the curated class catalog into any namespace.
+5. **Package and deploy via IPM.** A developer maintains the module.xml that defines the IPM package: ObjectScript classes, seed data, web application definitions, install/uninstall hooks. A single `zpm "load /path/to/agentic_interop"` command installs all 77 classes, two web apps, seed data, and the curated class catalog into any namespace.
 
 ### AI Hub Admin (5 use cases)
 
@@ -183,7 +183,7 @@ Features:
 
 ## Tools
 
-The agent's capabilities are organized into 6 Tool classes (67 tools total). Each Tool class is a `%AI.Tool` subclass where every public ClassMethod is a tool the LLM can call.
+The agent's capabilities are organized into 7 Tool classes (74 tools total). Each Tool class is a `%AI.Tool` subclass where every public ClassMethod is a tool the LLM can call.
 
 | Tool class | Tools | Purpose |
 |---|---|---|
@@ -193,6 +193,7 @@ The agent's capabilities are organized into 6 Tool classes (67 tools total). Eac
 | Catalog | 7 | Vector search over Ens.* and HS.* catalogs, class introspection, namespace utilities, glossary |
 | Monitoring | 5 | Event log search, top-error grouping, message status, throughput summaries, queue depth |
 | FHIR Server | 20 | Discover FHIR-enabled foundation namespaces, inspect/configure endpoints, CapabilityStatement, metadata packages, resource search/read/CRUD/$validate, bulk load, data reset, guarded endpoint provisioning |
+| Bulk FHIR | 7 | Bulk FHIR Coordinator (BFC): list/get/schema/create/configure configs, start exports, monitor sessions — fetch from a source FHIR endpoint to ndjson or ingest into a target FHIR server |
 
 ## Skills
 
@@ -265,7 +266,7 @@ ZN "<your-namespace>"
 zpm "load /path/to/agentic_interop"
 ```
 
-The module installs all 74 classes, two web apps (`/agentic/` for the UI, `/api/agentic/` for REST), seed data, and the curated class catalog. To install in multiple namespaces, run the command once per namespace.
+The module installs all 77 classes, two web apps (`/agentic/` for the UI, `/api/agentic/` for REST), seed data, and the curated class catalog. To install in multiple namespaces, run the command once per namespace.
 
 ## After install
 

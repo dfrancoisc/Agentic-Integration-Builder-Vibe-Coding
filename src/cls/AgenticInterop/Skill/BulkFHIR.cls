@@ -1,7 +1,7 @@
 Class AgenticInterop.Skill.BulkFHIR Extends AgenticInterop.Skill.Base
 {
 
-Parameter TOOLS = "AgenticInterop.ToolSet.FHIRServer";
+Parameter TOOLS = "AgenticInterop.ToolSet.BulkFHIR,AgenticInterop.ToolSet.FHIRServer";
 
 XData SUMMARY [ MimeType = "text/yaml" ]
 {

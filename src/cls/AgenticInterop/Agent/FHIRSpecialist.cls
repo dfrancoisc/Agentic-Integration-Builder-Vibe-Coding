@@ -3,13 +3,12 @@
 /// InterSystems IRIS for Health FHIR stack: the FHIR R4 server (repository),
 /// SDA<->FHIR transformation, Bulk FHIR ($export), and the FHIR SQL Builder.
 ///
-/// Tools come from the FHIR Server MCP (build/manage the repository) plus the
+/// Tools come from the FHIR Server MCP (build/manage the repository), the
+/// Bulk FHIR MCP (create/configure/start/monitor BFC exports), and the
 /// Catalog MCP (namespace + class introspection + vector search). Deep domain
 /// knowledge comes from five sub-agent skills: FHIRServer, FHIRR4, SDA,
-/// BulkFHIR, FHIRSQLBuilder. Bulk FHIR and FHIR SQL Builder are configured
-/// through their own UIs/classes (no dedicated tools); this agent KNOWS how to
-/// configure them and walks the user through it via the BulkFHIR /
-/// FHIRSQLBuilder skills.
+/// BulkFHIR, FHIRSQLBuilder. FHIR SQL Builder has no programmatic API (UI/REST
+/// only); this agent walks the user through it via the FHIRSQLBuilder skill.
 ///
 /// Auto-discovered by the admin Registry (PrimarySuper [ '~%AI.Agent~'). Build
 /// it by passing this class name to AgenticInterop.Agent.Manager.Build.
@@ -25,7 +24,7 @@ Parameter TOOLBINDING = "mcp";
 
 /// FHIR Server MCP (repository build/manage) + Catalog MCP (namespace,
 /// class introspection, vector search). UI-editable via the admin Editor.
-Parameter MCPS = "AgenticInterop.MCP.FHIRServer,AgenticInterop.MCP.Catalog";
+Parameter MCPS = "AgenticInterop.MCP.FHIRServer,AgenticInterop.MCP.BulkFHIR,AgenticInterop.MCP.Catalog";
 
 /// FHIR specialist skills attached as sub-agent tools. FHIRServer (server
 /// admin), FHIRR4 (resources, SDA<->FHIR transforms, interop), SDA (the
@@ -58,9 +57,13 @@ A foundation namespace already HAS the FHIR server. ALWAYS start a FHIR-server t
   - `bulk-fhir` — configure the Bulk FHIR Coordinator and run `$export` (this is NOT a repository interaction).
   - `fhir-sql-builder` — project FHIR data into relational SQL (Analysis -> Spec -> Projection -> query).
 
-## Bulk FHIR and FHIR SQL Builder
+## Bulk FHIR (has tools) and FHIR SQL Builder (UI only)
 
-You KNOW how to configure both, but neither has dedicated tools — they are configured through their own UIs/classes. When asked, consult the `bulk-fhir` or `fhir-sql-builder` skill and walk the user through the exact, ordered steps (UI location, the entities to create, roles, and the REST/SQL usage). Use the FHIR Server tools to verify the underlying endpoint/repository the user is pointing those features at.
+Bulk FHIR (BFC) HAS tools — USE them to act, never just describe. Call `GetBFCConfigSchema` FIRST to learn the exact config shape, then `ListBFCConfigs` / `GetBFCConfig` to inspect, `CreateOrUpdateBFCConfig` to create or edit a config, `StartBFCExport` to run it, and `ListBFCExports` / `GetBFCExportStatus` to monitor. Never invent BFC fields or features — build the config from `GetBFCConfigSchema`.
+
+What BFC actually does: it FETCHES FHIR resources FROM a source FHIR endpoint (`fetch_config.endpoint_url`, via $export or $everything) and writes them to ndjson files (Storage.File) OR ingests them into a target FHIR server (Storage.Ingestion, `storage_config.fhir_endpoint`). BFC does NOT read a folder of files. To load a directory of FHIR files into a server, use the FHIR Server tool `LoadFHIRData` (the DataLoader), NOT BFC. Creating/starting BFC requires the `%HS_BFC_Administrator` role and prerequisites (an SSL config, credentials, optionally an OAuth/SMART-backend server, and a storage location); if a config saves INACTIVE, report which prerequisite is missing.
+
+FHIR SQL Builder has NO programmatic API (UI/REST only) — consult the `fhir-sql-builder` skill and walk the user through Analysis -> Transformation Spec -> Projection.
 
 ## Picking the right approach
 

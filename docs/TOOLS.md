@@ -1,6 +1,6 @@
 # Agent Tool Catalog
 
-62 tools across 6 `%AI.Tool` subclasses. Each public ClassMethod on a Tool class becomes a tool the LLM can call. Tools are composed into `%AI.ToolSet` subclasses via the framework's `<Include Class="..."/>` directive and registered with the agent at build time by `AgenticInterop.Agent.Manager`.
+69 tools across 7 `%AI.Tool` subclasses. Each public ClassMethod on a Tool class becomes a tool the LLM can call. Tools are composed into `%AI.ToolSet` subclasses via the framework's `<Include Class="..."/>` directive and registered with the agent at build time by `AgenticInterop.Agent.Manager`.
 
 | Tool class | Tools | Domain |
 |---|---|---|
@@ -10,6 +10,7 @@
 | AgenticInterop.Tool.Catalog | 7 | Vector search, class introspection, namespace utilities, reference lookups |
 | AgenticInterop.Tool.Monitoring | 5 | Event log, error grouping, message status, throughput, queue depth |
 | AgenticInterop.Tool.FHIRServer | 20 | FHIR R4 server discovery, endpoint inspect/config, metadata packages, resource CRUD/search/$validate, CapabilityStatement, bulk load, data reset, guarded provisioning |
+| AgenticInterop.Tool.BulkFHIR | 7 | Bulk FHIR Coordinator (BFC): list/get/schema/create/configure configs, start exports, monitor sessions |
 
 Standard output envelope for any non-streaming tool: `{ "ok": true, "data": <result>, "namespace": "<current>" }` on success, `{ "ok": false, "error": { "code": "<code>", "message": "<text>" }, "namespace": "<current>" }` on error. The current namespace is always included so the chatbot can verify the user's expected namespace matches the execution namespace.
 
@@ -945,3 +946,35 @@ Read-only tools for querying production event logs, message headers, error summa
 ### ResetFHIRServerData
 - Description: Wipe ALL stored resources from the repository while keeping the endpoint, config, and packages (`HS.FHIRServer.Installer.Reset`). Destructive, no undo.
 - Input: `{ url, namespace? }`. Output: `{ ok, message? }`. MUTATING (reset_).
+
+## ToolSet.BulkFHIR  [BATCH 9 — Bulk FHIR Coordinator MCP]
+
+7 tools to create, configure, start, edit, and monitor Bulk FHIR Coordinator (BFC) exports. BFC FETCHES FHIR resources FROM a source FHIR endpoint (`fetch_config.endpoint_url`, via `$export` or `$everything`) and writes them to ndjson (Storage.File) OR ingests them into a target FHIR server (Storage.Ingestion, `storage_config.fhir_endpoint`) — it does NOT read a folder of files (use `Tool.FHIRServer.LoadFHIRData` for that). Backed by `HS.BulkFHIR.Installer` / `Configuration` / `ExportManager`; create/start require the `%HS_BFC_Administrator` role. Namespace-safe (same pattern as Tool.FHIRServer); each tool takes an optional `namespace`.
+
+### ListBFCConfigs
+- Description: list BFC configurations in a namespace. Read-only.
+- Input: `{ namespace? }`. Output: `{ ok, configs:[{name, endpoint, fetchAdapter, storageAdapter, inactive}], total }`.
+
+### GetBFCConfig
+- Description: full config envelope for one BFC endpoint (or config name). Read-only.
+- Input: `{ endpoint, namespace? }`. Output: `{ ok, found, config?(object) }`.
+
+### GetBFCConfigSchema
+- Description: live schema for building a config — envelope fields + available fetch/storage/client-auth/auth adapters and each adapter config's fields. CALL BEFORE CreateOrUpdateBFCConfig. Read-only.
+- Input: `{ namespace? }`. Output: `{ ok, envelope, fetchAdapters, storageAdapters, clientAuthAdapters, authAdapters, notes }`.
+
+### CreateOrUpdateBFCConfig
+- Description: create or edit a BFC config via `HS.BulkFHIR.Installer.ConfigureConfigElseSaveInactive`. Saves INACTIVE if it cannot be fully configured (source/target unreachable, missing SSL/credential/OAuth prerequisite). MUTATING (create_).
+- Input: `{ config(object/string: name + endpoint_url + fetch_adapter/fetch_config + storage_adapter/storage_config + auth_adapter/auth_config), namespace? }`. Output: `{ ok, name, endpoint, active, savedInactive, message }`.
+
+### StartBFCExport
+- Description: start an export for an active BFC endpoint (`HS.BulkFHIR.Installer.Export`). MUTATING (start_).
+- Input: `{ endpoint, namespace? }`. Output: `{ ok, result?, message? }`.
+
+### ListBFCExports
+- Description: recent export sessions with running status. Read-only.
+- Input: `{ namespace? }`. Output: `{ ok, exports:[{id, status}], total }`.
+
+### GetBFCExportStatus
+- Description: running status of one export session (`ExportManager.SessionRunningStatus`). Read-only.
+- Input: `{ sessionId, namespace? }`. Output: `{ ok, sessionId, status }`.
