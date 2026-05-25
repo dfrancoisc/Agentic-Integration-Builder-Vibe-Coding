@@ -27,6 +27,7 @@ XData UrlMap [ XMLNamespace = "http://www.intersystems.com/urlmap" ]
     <Route Url="/namespaces"         Method="GET"  Call="Namespaces" />
     <Route Url="/whoami"             Method="GET"  Call="WhoAmI" />
     <Route Url="/debug"              Method="GET"  Call="Debug" />
+    <Route Url="/fhir/audit"         Method="GET"  Call="FHIRAudit" />
 
     <!-- Registries (for UI dropdowns) -->
     <!-- Class source viewer (read-only UDL for the inline panel) -->
@@ -454,6 +455,37 @@ ClassMethod IsFhirNamespace(pName As %String) As %Boolean [ Internal ]
         }
     } Catch  { Set ok = 0 }
     Quit ok
+}
+
+/// GET /fhir/audit — FHIR Server performance + storage audit for the
+/// namespace named by the X-IRIS-Namespace header (or the dispatch namespace).
+/// Combines the CORE-based metrics tools (Tool.FHIRServer.GetFHIRServerStats +
+/// GetFHIRLoadMetrics) with the discovered endpoint, for the left-menu Audit
+/// panel injected into the FHIR Management page.
+ClassMethod FHIRAudit() As %Status
+{
+    Set out = {}
+    Set ns = $get(%request.CgiEnvs("HTTP_X_IRIS_NAMESPACE"))
+    If ns = "" { Set ns = $namespace }
+    Set out.namespace = ns
+    Set out.endpoints = []
+    Set url = ""
+    Try {
+        Set eps = ##class(AgenticInterop.Tool.FHIRServer).ListFHIREndpoints(ns)
+        If $isobject(eps), $isobject(eps.endpoints) {
+            Set it = eps.endpoints.%GetIterator()
+            While it.%GetNext(.k, .e) {
+                Do out.endpoints.%Push(e)
+                If (url = "") && $isobject(e) && e.%IsDefined("url") { Set url = e.url }
+            }
+        }
+    } Catch  {}
+    Set out.endpointUrl = url
+    Try { Set out.stats = ##class(AgenticInterop.Tool.FHIRServer).GetFHIRServerStats(url, "", ns) } Catch ex { Set out.statsError = $extract(ex.DisplayString(), 1, 300) }
+    Try { Set out.loadMetrics = ##class(AgenticInterop.Tool.FHIRServer).GetFHIRLoadMetrics("", ns) } Catch ex { Set out.loadError = $extract(ex.DisplayString(), 1, 300) }
+    Set out.ok = 1
+    Do ..%WriteJSON(out)
+    Quit $$$OK
 }
 
 ClassMethod WhoAmI() As %Status

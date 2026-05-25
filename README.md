@@ -28,6 +28,7 @@ All build phases complete (Phase 0 through Phase 7). The agent operates under th
 
 - Streaming chat with Server-Sent Events (SSE) -- token-by-token responses with inline tool-call cards
 - 84 tools across 7 domains: Production, Transform, Testing, Catalog, Monitoring, FHIR Server, Bulk FHIR
+- FHIR Server Audit panel: a left slide-in panel injected into the FHIR Management header showing storage (database sizes via CORE `SYS.Database`), resource counts by type (CORE FHIR `_summary=count`), and ingestion performance (duration, resources/sec, bottlenecks) — backed by `GET /api/agentic/fhir/audit`
 - 15 domain skills covering Productions, DTL, BPL, Routing Rules, HL7v2, FHIR R4, FHIR Server, Bulk FHIR, FHIR SQL Builder, SDA, REST, ESB, X12/HIPAA, CDA/C-CDA, and Adapters
 - FHIR Specialist agent: a dedicated FHIR platform agent (FHIR Server MCP + Bulk FHIR MCP + Catalog, with the FHIR Server / FHIR R4 / SDA / Bulk FHIR / FHIR SQL Builder skills) alongside the generalist Health Interop agent
 - Chatbot configuration layer: bind each chatbot surface to an agent in the admin "Chatbots" tab (the chat resolves its agent from the chatbot key at request time — no redeploy). Ships an Interop chatbot (Health Interop, in the Interop Editor) and a FHIR Management chatbot (FHIR Specialist, a launcher button injected into the header of the shipped `/csp/fhir-management` FHIR Server Management page)

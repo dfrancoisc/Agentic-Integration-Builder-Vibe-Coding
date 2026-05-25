@@ -1717,11 +1717,12 @@ ClassMethod GetFHIRLoadMetrics(jobId As %String = "", namespace As %String = "")
     Set out.tool = "get_fhir_load_metrics"
     Try {
         Set jid = $get(jobId)
-        ; Default to the most recently started job.
+        ; Default to the most recent job that has per-file metrics tracking
+        ; (startH > 0); fall back to the most recent job overall.
         If jid = "" {
-            Set best = "", bestH = -1, k = ""
-            For  { Set k = $order(^AgInt.FHIRLoad(k)) Quit:k=""  Set sh = +$get(^AgInt.FHIRLoad(k, "startH")) If sh > bestH { Set best = k, bestH = sh } }
-            Set jid = best
+            Set best = "", bestH = 0, anyK = "", k = ""
+            For  { Set k = $order(^AgInt.FHIRLoad(k)) Quit:k=""  Set anyK = k Set sh = +$get(^AgInt.FHIRLoad(k, "startH")) If sh > bestH { Set best = k, bestH = sh } }
+            Set jid = $select(best '= "":best, 1:anyK)
         }
         Set out.jobId = jid
         If (jid = "") || ('$data(^AgInt.FHIRLoad(jid))) {
@@ -1734,6 +1735,20 @@ ClassMethod GetFHIRLoadMetrics(jobId As %String = "", namespace As %String = "")
             Set out.startedAt = $get(^AgInt.FHIRLoad(jid, "started"))
             Set out.finishedAt = $get(^AgInt.FHIRLoad(jid, "finished"))
             Set startH = +$get(^AgInt.FHIRLoad(jid, "startH"))
+            ; Jobs created before per-file metrics tracking have no startH —
+            ; report basic counts and say so, rather than bogus throughput.
+            If startH = 0 {
+                Set out.metricsTracked = 0
+                Set out.totalFiles = +$get(^AgInt.FHIRLoad(jid, "total"))
+                Set out.filesDone = +$get(^AgInt.FHIRLoad(jid, "done"))
+                Set out.filesFailed = +$get(^AgInt.FHIRLoad(jid, "failed"))
+                Set out.bottlenecks = []
+                Set out.message = "This load job predates per-file metrics tracking. Run a new LoadFHIRDirectory to capture duration, throughput (resources/sec), and bottlenecks."
+                Set out.ok = 1
+                Do ##class(AgenticInterop.Agent.Manager).ToolDone("GetFHIRLoadMetrics", out)
+                Return out
+            }
+            Set out.metricsTracked = 1
             Set finishH = +$get(^AgInt.FHIRLoad(jid, "finishedH"))
             If finishH = 0 { Set finishH = $zhorolog }
             Set dur = finishH - startH

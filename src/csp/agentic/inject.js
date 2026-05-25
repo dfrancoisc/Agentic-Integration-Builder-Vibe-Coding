@@ -39,6 +39,8 @@
     var FAB_ID = 'agentic-fab';          // floating launcher (host-agnostic)
     var CONFIG_OVERLAY_ID = 'agentic-config-overlay';
     var CHAT_OVERLAY_ID = 'agentic-chat-overlay';
+    var AUD_MARK = 'agentic-hdr-audit';  // mat-toolbar-row audit icon marker
+    var AUD_OVERLAY_ID = 'agentic-audit-overlay';  // left-slide audit panel
     var CLEAN_PROD_MARK = 'agentic-clean-prod';
     var CLEAN_ART_MARK  = 'agentic-clean-art';
 
@@ -266,6 +268,7 @@
             'body.agentic-login-mode .' + CLEAN_PROD_MARK + ',',
             'body.agentic-login-mode .' + CLEAN_ART_MARK + ',',
             'body.agentic-login-mode #' + CONFIG_OVERLAY_ID + ',',
+            'body.agentic-login-mode #' + AUD_OVERLAY_ID + ',',
             'body.agentic-login-mode #' + CHAT_OVERLAY_ID + ' { display:none !important; }',
             'body.agentic-login-mode #' + FAB_ID + ' { display:none !important; }',
 
@@ -317,6 +320,25 @@
             '}',
             '#' + CHAT_OVERLAY_ID + ' .bar .obs-link:hover { opacity:1; text-decoration:underline; }',
             '#' + CHAT_OVERLAY_ID + ' iframe { flex:1; width:100%; border:0; background:#0f1115; }',
+
+            // Audit overlay (LEFT-slide panel)
+            '#' + AUD_OVERLAY_ID + ' { position:fixed; inset:0; z-index:99999; background:rgba(15,23,42,0.32); display:none; }',
+            '#' + AUD_OVERLAY_ID + '.open { display:block; }',
+            '#' + AUD_OVERLAY_ID + ' .panel {',
+            '  position:absolute; top:0; left:0; bottom:0; width:min(720px, 60vw);',
+            '  background:#0b0d11; box-shadow:12px 0 48px rgba(0,0,0,0.5);',
+            '  display:flex; flex-direction:column;',
+            '  transform:translateX(-100%); transition:transform 220ms ease-out;',
+            '}',
+            '#' + AUD_OVERLAY_ID + '.open .panel { transform:translateX(0); }',
+            '#' + AUD_OVERLAY_ID + ' .bar {',
+            '  flex:0 0 auto; height:42px; background:#1c2129; display:flex; align-items:center;',
+            '  justify-content:space-between; padding:0 14px; color:#e6e8eb;',
+            '  border-bottom:1px solid #2a313c; font:600 13px/1 system-ui,sans-serif;',
+            '}',
+            '#' + AUD_OVERLAY_ID + ' .bar .close { background:transparent; color:#8b95a6; border:1px solid #2a313c; width:26px; height:26px; border-radius:4px; cursor:pointer; font-size:13px; }',
+            '#' + AUD_OVERLAY_ID + ' .bar .close:hover { background:rgba(255,255,255,0.06); color:#e6e8eb; }',
+            '#' + AUD_OVERLAY_ID + ' iframe { flex:1; width:100%; border:0; background:#0b0d11; }',
 
             // Config full-screen overlay
             '#' + CONFIG_OVERLAY_ID + ' {',
@@ -382,6 +404,45 @@
 
     function closeChat() {
         var overlay = document.getElementById(CHAT_OVERLAY_ID);
+        if (!overlay) return;
+        overlay.classList.remove('open');
+        var iframe = overlay.querySelector('iframe');
+        if (iframe) iframe.src = 'about:blank';
+    }
+
+    /* ---------------- audit overlay (left-slide) ---------------- */
+
+    function buildAuditOverlay() {
+        if (document.getElementById(AUD_OVERLAY_ID)) return;
+        var overlay = document.createElement('div');
+        overlay.id = AUD_OVERLAY_ID;
+        overlay.innerHTML =
+            '<div class="panel">' +
+              '<div class="bar">' +
+                '<span>FHIR Server Audit</span>' +
+                '<button class="close" type="button" title="Close">✕</button>' +
+              '</div>' +
+              '<iframe src="about:blank" title="FHIR Server Audit"></iframe>' +
+            '</div>';
+        document.body.appendChild(overlay);
+        overlay.querySelector('.close').addEventListener('click', closeAudit);
+        overlay.addEventListener('click', function (e) { if (e.target === overlay) closeAudit(); });
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape' && overlay.classList.contains('open')) closeAudit();
+        });
+    }
+
+    function openAudit() {
+        buildAuditOverlay();
+        var overlay = document.getElementById(AUD_OVERLAY_ID);
+        var iframe = overlay.querySelector('iframe');
+        var ns = currentNamespace();
+        iframe.src = '/agentic/audit/index.html?t=' + Date.now() + (ns ? '&ns=' + encodeURIComponent(ns) : '');
+        overlay.classList.add('open');
+    }
+
+    function closeAudit() {
+        var overlay = document.getElementById(AUD_OVERLAY_ID);
         if (!overlay) return;
         overlay.classList.remove('open');
         var iframe = overlay.querySelector('iframe');
@@ -596,6 +657,42 @@
         return true;
     }
 
+    // FHIR Server Audit button — left-slide metrics/storage panel. Only for
+    // the FHIR Management injection (chatbot=fhir-management).
+    function ensureHeaderAudit() {
+        if (CHATBOT_KEY !== 'fhir-management') return false;
+        var row = document.querySelector('mat-toolbar mat-toolbar-row')
+               || document.querySelector('mat-toolbar-row')
+               || document.querySelector('mat-toolbar');
+        if (!row) return false;
+        for (var i = 0; i < row.children.length; i++) {
+            if (row.children[i].classList.contains(AUD_MARK)) return true;
+        }
+        injectStyles();
+        var wrap = document.createElement('div');
+        wrap.className = 'dropdown ' + HDR_MARK + ' ' + AUD_MARK;
+        wrap.innerHTML =
+            '<button type="button" aria-label="Open FHIR Server Audit" title="FHIR Server performance and storage audit">' +
+              '<svg viewBox="0 0 24 24"><path d="M4 20h16v-2H4v2zM6 10h3v6H6v-6zm5-4h3v10h-3V6zm5 6h3v4h-3v-4z" fill="currentColor"/></svg>' +
+            '</button>';
+        wrap.querySelector('button').addEventListener('click', function (e) {
+            e.preventDefault(); e.stopPropagation();
+            openAudit();
+        });
+        // Place right after the chat button if present, else before the pill.
+        var chatDrop = null, firstDirectDrop = null;
+        for (var j = 0; j < row.children.length; j++) {
+            var ch = row.children[j];
+            if (ch.classList.contains(AUD_MARK)) continue;
+            if (ch.classList.contains(HDR_MARK) && !chatDrop) chatDrop = ch;
+            if (ch.classList.contains('dropdown') && !firstDirectDrop) firstDirectDrop = ch;
+        }
+        if (chatDrop && chatDrop.nextSibling) row.insertBefore(wrap, chatDrop.nextSibling);
+        else if (firstDirectDrop) row.insertBefore(wrap, firstDirectDrop);
+        else row.appendChild(wrap);
+        return true;
+    }
+
     /* ---------------- floating launcher (host-agnostic) ---------------- */
 
     function ensureFloatingLauncher() {
@@ -647,6 +744,7 @@
             // Host-agnostic: just splice the chat icon into the page's
             // top toolbar (no Interop-Editor-specific tabs/cleanup).
             ensureHeaderChat();
+            ensureHeaderAudit();
         } else {
             ensureTab();
             ensureCleanupButtons();

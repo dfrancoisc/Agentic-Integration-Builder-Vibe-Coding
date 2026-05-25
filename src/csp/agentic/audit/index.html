@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<title>FHIR Server Audit</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:#0b0d11; color:#e6e8eb;
+    font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; }
+  header { display:flex; align-items:center; gap:12px; padding:14px 18px;
+    border-bottom:1px solid #1c2128; background:#10141a; position:sticky; top:0; }
+  header h1 { font-size:15px; margin:0; font-weight:600; letter-spacing:.2px; }
+  header .ns { color:#8b93a1; font-size:12px; }
+  header .spacer { flex:1; }
+  button.refresh { background:#1c2128; color:#e6e8eb; border:1px solid #2a313c;
+    border-radius:6px; padding:6px 12px; cursor:pointer; font:inherit; }
+  button.refresh:hover { background:#252c36; }
+  main { padding:16px 18px 40px; max-width:920px; }
+  .section { margin-bottom:22px; }
+  .section h2 { font-size:12px; text-transform:uppercase; letter-spacing:.6px;
+    color:#8b93a1; margin:0 0 10px; font-weight:600; }
+  .cards { display:flex; gap:12px; flex-wrap:wrap; margin-bottom:12px; }
+  .card { background:#10141a; border:1px solid #1c2128; border-radius:8px;
+    padding:12px 16px; min-width:140px; }
+  .card .big { font-size:22px; font-weight:700; }
+  .card .lbl { color:#8b93a1; font-size:11px; text-transform:uppercase; letter-spacing:.5px; }
+  table { width:100%; border-collapse:collapse; background:#10141a;
+    border:1px solid #1c2128; border-radius:8px; overflow:hidden; }
+  th, td { text-align:left; padding:8px 12px; border-bottom:1px solid #1c2128; font-size:13px; }
+  th { color:#8b93a1; font-weight:600; font-size:11px; text-transform:uppercase; letter-spacing:.5px; }
+  td.num, th.num { text-align:right; font-variant-numeric:tabular-nums; }
+  tr:last-child td { border-bottom:none; }
+  .bar { height:6px; background:#4f46e5; border-radius:3px; min-width:2px; }
+  .muted { color:#8b93a1; }
+  .note { background:#161b22; border:1px solid #2a313c; border-left:3px solid #d29922;
+    border-radius:6px; padding:10px 12px; color:#c9d1d9; font-size:13px; }
+  .err { color:#f85149; }
+  #status { padding:16px 18px; color:#8b93a1; }
+</style>
+</head>
+<body>
+<header>
+  <h1>FHIR Server Audit</h1>
+  <span class="ns" id="ns"></span>
+  <span class="spacer"></span>
+  <button class="refresh" id="refresh">Refresh</button>
+</header>
+<div id="status">Authenticating…</div>
+<main id="main" style="display:none"></main>
+
+<script>
+(function () {
+  "use strict";
+  var API = "/api/agentic";
+  var STATE = { bearer: "", ns: "" };
+  var $ = function (id) { return document.getElementById(id); };
+  var esc = function (s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) {
+    return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]; }); };
+
+  // URL ?ns= override
+  try { STATE.ns = new URLSearchParams(location.search).get("ns") || ""; } catch (e) {}
+
+  // Ask the host page (inject.js) for the bearer + namespace, same protocol
+  // the chat iframe uses. Falls through to whatever we already have.
+  function requestAuth() {
+    return new Promise(function (resolve) {
+      var done = false;
+      function onMsg(e) {
+        var d = e.data || {};
+        if (d.type === "agentic:auth:response") {
+          done = true;
+          window.removeEventListener("message", onMsg);
+          if (d.bearer) STATE.bearer = d.bearer;
+          if (!STATE.ns && d.namespace) STATE.ns = d.namespace;
+          resolve();
+        }
+      }
+      window.addEventListener("message", onMsg);
+      try { if (window.parent && window.parent !== window) window.parent.postMessage({ type: "agentic:auth:request" }, "*"); } catch (e) {}
+      setTimeout(function () { if (!done) { window.removeEventListener("message", onMsg); resolve(); } }, 1500);
+    });
+  }
+
+  function headers() {
+    var h = {};
+    if (STATE.bearer) h["Authorization"] = STATE.bearer;
+    if (STATE.ns) h["X-IRIS-Namespace"] = STATE.ns;
+    return h;
+  }
+
+  function fetchAudit() {
+    return fetch(API + "/fhir/audit", { headers: headers() }).then(function (r) {
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return r.json();
+    });
+  }
+
+  function num(n) { return (n == null ? "" : Number(n)).toLocaleString(); }
+
+  function render(d) {
+    STATE.ns = d.namespace || STATE.ns;
+    $("ns").textContent = "namespace: " + (d.namespace || "?");
+    var stats = d.stats || {}, storage = stats.storage || {}, counts = stats.counts || [];
+    var lm = d.loadMetrics || {};
+    var html = "";
+
+    // Storage
+    html += '<div class="section"><h2>Storage</h2>';
+    html += '<div class="cards"><div class="card"><div class="big">' + num(storage.totalMB) + ' MB</div><div class="lbl">Total database size</div></div>';
+    html += '<div class="card"><div class="big">' + num(stats.totalResources) + '</div><div class="lbl">Resources (counted types)</div></div></div>';
+    var dbs = storage.databases || [];
+    if (dbs.length) {
+      html += '<table><tr><th>Database</th><th>Directory</th><th class="num">Size (MB)</th></tr>';
+      dbs.forEach(function (db) { html += '<tr><td>' + esc(db.name) + '</td><td class="muted">' + esc(db.directory) + '</td><td class="num">' + num(db.sizeMB) + '</td></tr>'; });
+      html += '</table>';
+    }
+    html += '</div>';
+
+    // Resource counts
+    html += '<div class="section"><h2>Resource counts by type</h2>';
+    if (counts.length) {
+      var max = Math.max.apply(null, counts.map(function (c) { return +c.count || 0; })) || 1;
+      var sorted = counts.slice().sort(function (a, b) { return (+b.count || 0) - (+a.count || 0); });
+      html += '<table><tr><th>Resource type</th><th class="num">Count</th><th style="width:40%"></th></tr>';
+      sorted.forEach(function (c) {
+        var pct = Math.round((+c.count || 0) / max * 100);
+        html += '<tr><td>' + esc(c.resourceType) + '</td><td class="num">' + num(c.count) + '</td><td><div class="bar" style="width:' + pct + '%"></div></td></tr>';
+      });
+      html += '</table>';
+    } else {
+      html += '<div class="note">No resources counted. ' + (d.endpointUrl ? '' : 'No FHIR endpoint found in this namespace — create one, then load data.') + '</div>';
+    }
+    html += '</div>';
+
+    // Ingestion performance
+    html += '<div class="section"><h2>Ingestion performance (last load)</h2>';
+    if (lm.found && lm.metricsTracked) {
+      html += '<div class="cards">';
+      html += '<div class="card"><div class="big">' + num(lm.durationSec) + 's</div><div class="lbl">Duration</div></div>';
+      html += '<div class="card"><div class="big">' + num(lm.resourcesPerSecond) + '</div><div class="lbl">Resources / sec</div></div>';
+      html += '<div class="card"><div class="big">' + num(lm.mbPerSecond) + '</div><div class="lbl">MB / sec</div></div>';
+      html += '<div class="card"><div class="big">' + num(lm.totalResources) + '</div><div class="lbl">Resources (' + num(lm.filesDone) + ' files)</div></div>';
+      html += '</div>';
+      var bn = lm.bottlenecks || [];
+      if (bn.length) {
+        html += '<h2 style="margin-top:6px">Bottlenecks (slowest files)</h2><table><tr><th>File</th><th class="num">Seconds</th><th class="num">Resources</th><th class="num">MB</th></tr>';
+        bn.forEach(function (b) { html += '<tr><td>' + esc(b.file) + '</td><td class="num">' + num(b.seconds) + '</td><td class="num">' + num(b.resources) + '</td><td class="num">' + num(b.mb) + '</td></tr>'; });
+        html += '</table>';
+      }
+    } else if (lm.found && !lm.metricsTracked) {
+      html += '<div class="note">' + esc(lm.message || "This load predates metrics tracking.") + '</div>';
+    } else {
+      html += '<div class="note">No load job found. Use the FHIR Assistant to load a directory of FHIR files, then this panel shows duration, throughput, and bottlenecks.</div>';
+    }
+    html += '</div>';
+
+    $("main").innerHTML = html;
+    $("status").style.display = "none";
+    $("main").style.display = "block";
+  }
+
+  function load() {
+    $("status").style.display = "block";
+    $("status").className = "";
+    $("status").textContent = "Loading FHIR Server metrics…";
+    $("main").style.display = "none";
+    fetchAudit().then(render).catch(function (e) {
+      $("status").className = "err";
+      $("status").textContent = "Could not load audit: " + e.message + (STATE.bearer ? "" : " (no auth token — open this from the FHIR Management page).");
+    });
+  }
+
+  $("refresh").addEventListener("click", load);
+  requestAuth().then(load);
+})();
+</script>
+</body>
+</html>
