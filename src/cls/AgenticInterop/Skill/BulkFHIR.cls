@@ -60,11 +60,24 @@ Create via the new-config screen at `/csp/fhir-management/bfc-config/new-config`
    - `Bulk Access FHIR Endpoint` (`HS.BulkFHIR.Fetch.BulkFHIR.Adapter`) — source supports native `$export`.
    - `Custom FHIR Endpoint` (`HS.BulkFHIR.Fetch.PureFHIR.Adapter`) — source has no `$export`; BFC uses `Patient/$everything`. Enable "Paginate resource export" only if the source supports `_count`.
    - `HealthShare UCR ODS` — note: does NOT support system `$export`.
-   Plus Authorization Type (OAuth 2.0 / Basic / SMART Backend Services / X-API Key), TLS Configuration, Credential / API Credential ID, Audience Property, Private JWT Authentication Client (SMART), OAuth Client.
+   Plus Authorization Type (OAuth 2.0 / Basic / SMART Backend Services / X-API Key), TLS Configuration, Credential / API Credential ID, Audience Property, Private JWT Authentication Client (SMART), OAuth Client. Also Export Type (Patient / Group / System — at least one), Resource Types (populated once the source URL is valid), and tuning: HTTP Timeout (default 180s), Max Requests Per Second, Worker Jobs, Working Directory, Flush Interval (60 min).
 5. Storage Adapter:
    - `Output File Server` — writes ndjson files. File URL (download web app, e.g. `/file`); Directory (default `installDir/mgr/Temp/BulkFHIR/<namespace>/`); Maximum File Size (default 1000 MB); Working Directory (staging); Flush Interval (default 60 min); Expire After (default 1440 min = 1 day — an hourly task deletes expired files).
    - `FHIR Repository` — directly ingests fetched resources into a FHIR server. Ingesting FHIR Server Endpoint; Integrity Check; Failed Files Directory (default `mgr/Temp/BulkFHIR/<namespace>/failed/`).
    Use DISTINCT storage directories per namespace (session IDs collide otherwise).
+
+## Programmatic config structure (what the tools build)
+
+`CreateOrUpdateBFCConfig` / `GetBFCConfigSchema` use the NESTED config that `HS.BulkFHIR.Installer` consumes — NOT the flattened format the UI "Import JSON" screen shows (in that flat UI variant, export-type and retention fields appear at top level; do NOT hand a user the flat JSON for the programmatic tools). Always call `GetBFCConfigSchema` first. The programmatic envelope:
+- Top level: `name`, `endpoint_url` (RELATIVE, unique), `auto_start`, `authorized_users[]`, `core_fhir_package`, `is_inactive`, plus three adapter+config pairs.
+- `auth_adapter` + `auth_config` — how export CLIENTS authenticate TO the BFC: `HS.BulkFHIR.Auth.BasicAuth.Adapter` (`auth_config` = `{}`) or `HS.BulkFHIR.Auth.OAuth.Adapter` (`auth_config` = `{ bfc_client_name, clients:[{name, authentication_method: client_secret_post|private_key_jwt}], introspect }`).
+- `fetch_adapter` + `fetch_config` — how BFC pulls FROM the source. `fetch_config` holds `endpoint_url` (SOURCE FHIR), `resource_types[]`, `patient_export`/`group_export`/`system_export`, `http_timeout`, `max_req_per_sec`, `worker_jobs`, `working_directory`, `flush_interval_mins`, AND `client_auth_adapter` + `client_auth_config` (how BFC authenticates to the source): `ClientAuth.BasicAuth` = `{ http_credential_id, ssl_configuration }`; `ClientAuth.OAuth` / `ClientAuth.SMARTBackendService` = `{ ssl_configuration, client_name, grant_type, fetch_token_scopes[], fetch_token_credential_id, audience_property }`; `ClientAuth.XAPIKey` = `{ ssl_configuration, x_api_key_credential_id }`.
+- `storage_adapter` + `storage_config` — `HS.BulkFHIR.Storage.File.Adapter` (`{ directory, file_url, expire_after_mins, max_file_size }`, ndjson) or `HS.BulkFHIR.Storage.Ingestion.Adapter` (`{ fhir_endpoint = TARGET FHIR server, integrity_check, failed_files_directory, file_url }`, direct ingest).
+
+## Lifecycle tools beyond create
+
+- `SetBFCConfigActive(endpoint, active)` — flip the home-page Active toggle. ACTIVATE a config that saved INACTIVE after you fixed a prerequisite (it re-runs the full configure), or deactivate to take it offline. Inactive configs reject all export requests.
+- `DeleteBFCConfig(nameOrEndpoint)` — delete a config and its generated web app (DESTRUCTIVE — confirm first; needs `%HS_BFC_Administrator`).
 
 ## Roles and the dummy-user rule
 
@@ -92,6 +105,7 @@ Classes: `HS.BulkFHIR.Installer`, `HS.BulkFHIR.OAuth2Installer`, `HS.BulkFHIR.Co
 - For "set up / configure BFC for me", do it end to end with tools: provision prereqs (`EnsureStorageDirectory` / `EnsureSSLConfig` / `EnsureInteropCredential` / `EnsureBFCOAuth` as the auth model requires), then `GetBFCConfigSchema` → `CreateOrUpdateBFCConfig` → `StartBFCExport` → `GetBFCExportStatus`. State the plan and target endpoint/namespace first; confirm before standing up an OAuth server. If a config saves INACTIVE, name the missing prerequisite and fix it. Surface any ok=0 security error verbatim with the role needed.
 - Walk the user through the four tiles in order; call out the dummy-user + Authorized Users requirement, the Max Search Results bump, per-namespace storage dirs, and the right fetch adapter for the source's capability.
 - For "run an export", give the exact REST kickoff → poll → download sequence with the right scopes.
+- For lifecycle: use `SetBFCConfigActive` to bring a config online/offline (especially to activate one that saved INACTIVE once prereqs are fixed) and `DeleteBFCConfig` to remove one — both mutate, so state the target and confirm before deactivating or deleting.
 - Hand off FHIR repository management (endpoints, resources, config, packages) to the fhir-server skill, and SDA/transformation/interop work to the fhir-r4 skill.
 }
 

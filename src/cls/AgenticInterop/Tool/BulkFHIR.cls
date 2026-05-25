@@ -277,7 +277,7 @@ ClassMethod GetBFCConfigSchema(namespace As %String = "") As %DynamicObject
                 Do out.authAdapters.%Push(e)
                 Set k = $order(au(k))
             }
-            Set out.notes = "fetch_config.endpoint_url is the SOURCE FHIR endpoint to pull from. storage = File (ndjson output) OR Ingestion (storage_config.fhir_endpoint = TARGET FHIR server to ingest into). auth_* = how export clients authenticate to the BFC endpoint; fetch_config.client_auth_* = how BFC authenticates to the source. Provide nested objects matching each chosen adapter's config class fields."
+            Set out.notes = "This is the PROGRAMMATIC (nested) config that HS.BulkFHIR.Installer consumes via CreateOrUpdateBFCConfig — NOT the flattened format the FHIR Management UI 'Import JSON' uses. Structure: top level = name, endpoint_url (RELATIVE, unique, e.g. /bulkFHIR/r4a), auto_start, authorized_users[], core_fhir_package, is_inactive, plus three adapter+config pairs. auth_adapter+auth_config = how export CLIENTS authenticate TO the BFC (Auth.BasicAuth.Adapter with {} | Auth.OAuth.Adapter with {bfc_client_name, clients:[{name, authentication_method: client_secret_post|private_key_jwt}], introspect}). fetch_adapter+fetch_config = how BFC pulls FROM the source: fetch_config.endpoint_url = SOURCE FHIR endpoint; patient_export/group_export/system_export, resource_types, http_timeout (default 180), max_req_per_sec, worker_jobs, working_directory, flush_interval_mins all live INSIDE fetch_config; and fetch_config.client_auth_adapter+client_auth_config = how BFC authenticates to the source (ClientAuth.BasicAuth=http_credential_id+ssl_configuration | ClientAuth.OAuth/SMARTBackendService=ssl_configuration+client_name+grant_type+fetch_token_scopes+fetch_token_credential_id+audience_property | ClientAuth.XAPIKey=ssl_configuration+x_api_key_credential_id). storage_adapter+storage_config = Storage.File (directory, file_url, expire_after_mins default 1440, max_file_size default 1000000) for ndjson OR Storage.Ingestion (fhir_endpoint = TARGET FHIR server, integrity_check, failed_files_directory, file_url) for direct ingest. Provide nested objects matching each chosen adapter's config class fields above."
             Set out.ok = 1
         }
     } Catch ex {
@@ -295,20 +295,36 @@ ClassMethod GetBFCConfigSchema(namespace As %String = "") As %DynamicObject
 /// configured yet (e.g. the source/target FHIR server is unreachable).
 /// Call GetBFCConfigSchema first to build a valid config.
 ///
+/// This is the PROGRAMMATIC nested envelope (what HS.BulkFHIR.Installer
+/// consumes) — NOT the flattened format the FHIR Management UI "Import JSON"
+/// screen uses. patient_export/group_export/system_export, resource_types,
+/// and client_auth_* live INSIDE fetch_config; expire_after_mins/
+/// max_file_size live inside storage_config.
+///
 /// config: the BFC config envelope (object or JSON string), e.g.
 ///   {
 ///     "name": "dsfranco-pull",
 ///     "endpoint_url": "/bulkfhir/r4",
 ///     "auto_start": true,
+///     "core_fhir_package": "hl7.fhir.r4.core@4.0.1",
 ///     "auth_adapter": "HS.BulkFHIR.Auth.BasicAuth.Adapter",
-///     "auth_config": { ... },
+///     "auth_config": {},
 ///     "fetch_adapter": "HS.BulkFHIR.Fetch.PureFHIR.Adapter",
 ///     "fetch_config": { "endpoint_url": "<SOURCE FHIR endpoint>",
+///        "resource_types": ["Patient","Observation"],
+///        "patient_export": true, "system_export": true,
+///        "http_timeout": 180, "worker_jobs": 4,
 ///        "client_auth_adapter": "HS.BulkFHIR.ClientAuth.BasicAuth.Adapter",
-///        "client_auth_config": { ... }, "system_export": true },
+///        "client_auth_config": { "ssl_configuration": "<SSL>",
+///           "http_credential_id": "<credentialId>" } },
 ///     "storage_adapter": "HS.BulkFHIR.Storage.Ingestion.Adapter",
-///     "storage_config": { "fhir_endpoint": "<TARGET FHIR endpoint>" }
+///     "storage_config": { "fhir_endpoint": "<TARGET FHIR endpoint>",
+///        "integrity_check": true }
 ///   }
+/// (For ndjson output instead of ingestion, use storage_adapter
+/// "HS.BulkFHIR.Storage.File.Adapter" with storage_config
+/// { "directory": "<server path>", "file_url": "/file",
+///   "expire_after_mins": 1440, "max_file_size": 1000000 }.)
 /// namespace: optional target namespace.
 ///
 /// Returns: { ok, name, endpoint, active, savedInactive, error?, message }.
@@ -758,6 +774,151 @@ ClassMethod EnsureBFCOAuth(clientName As %String = "", issuerUrl As %String = ""
     }
     Set $namespace = dispNs
     Do ##class(AgenticInterop.Agent.Manager).ToolDone("EnsureBFCOAuth", out)
+    Quit out
+}
+
+/// Delete a Bulk FHIR Coordinator configuration (and the web app/endpoint
+/// it generated). MUTATING (delete_ prefix) and DESTRUCTIVE — confirm with
+/// the user first. Backed by HS.BulkFHIR.Installer.Delete, which takes the
+/// config NAME; this tool also accepts the endpoint_url and resolves it to
+/// the name. Requires the %HS_BFC_Administrator role.
+///
+/// nameOrEndpoint: the config Name OR its endpoint_url.
+/// namespace: optional target namespace.
+///
+/// Returns: { ok, name, namespace, message, error? }.
+ClassMethod DeleteBFCConfig(nameOrEndpoint As %String, namespace As %String = "") As %DynamicObject
+{
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("DeleteBFCConfig")
+    Set out = {}
+    Set out.tool = "delete_bfc_config"
+    Set dispNs = $namespace
+    Set targetNs = ..%ResolveNs(namespace)
+    Set out.namespace = targetNs
+    If $get(nameOrEndpoint) = "" {
+        Set out.ok = 0
+        Set out.error = "Pass `nameOrEndpoint` (the BFC config name or endpoint_url)."
+        Do ##class(AgenticInterop.Agent.Manager).ToolDone("DeleteBFCConfig", out)
+        Quit out
+    }
+    New $namespace
+    Try {
+        Set nsOk = 1
+        Try { Set $namespace = targetNs } Catch  { Set nsOk = 0 }
+        If 'nsOk {
+            Set out.ok = 0
+            Set out.error = "Cannot access namespace: " _ targetNs
+        } ElseIf '##class(%Dictionary.CompiledClass).%ExistsId("HS.BulkFHIR.Installer") {
+            Set out.ok = 0
+            Set out.error = "Bulk FHIR Coordinator is not available in namespace " _ targetNs _ "."
+        } Else {
+            ; Installer.Delete takes the config Name; resolve from name or endpoint.
+            Set cfgName = nameOrEndpoint
+            Set found = 0
+            Set rs = ##class(%SQL.Statement).%ExecDirect(, "SELECT Name FROM HS_BulkFHIR.Configuration WHERE Name = ? OR BFCEndpoint = ?", nameOrEndpoint, nameOrEndpoint)
+            If rs.%Next() { Set cfgName = rs.%Get("Name"), found = 1 }
+            Set out.name = cfgName
+            If 'found {
+                Set out.ok = 0
+                Set out.error = "No BFC config named or endpointed '" _ nameOrEndpoint _ "' in namespace " _ targetNs _ "."
+            } Else {
+                Set sc = ##class(HS.BulkFHIR.Installer).Delete(cfgName)
+                Set scErr = ..%SCErr(sc)
+                If scErr '= "" {
+                    Set out.ok = 0
+                    Set out.error = scErr
+                } Else {
+                    Set out.ok = 1
+                    Set out.message = "Deleted BFC config '" _ cfgName _ "' in " _ targetNs _ "."
+                }
+            }
+        }
+    } Catch ex {
+        Set out.ok = 0
+        Set out.error = $extract(ex.DisplayString(), 1, 400)
+    }
+    Set $namespace = dispNs
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("DeleteBFCConfig", out)
+    Quit out
+}
+
+/// Activate or deactivate a BFC configuration (the home page Active toggle).
+/// An INACTIVE config cannot run exports and rejects all export requests.
+/// Use this to ACTIVATE a config that was saved INACTIVE after you fixed a
+/// missing prerequisite, or to take a config offline. MUTATING (set_ prefix);
+/// deactivating is disruptive, so confirm first. Activating re-runs the full
+/// configure (HS.BulkFHIR.Installer.ConfigureConfigElseSaveInactive), so the
+/// prerequisites must be in place; if it still cannot configure, the config
+/// stays INACTIVE and that is reported.
+///
+/// endpoint:  the BFC endpoint_url (or config name).
+/// active:    1 to activate (default), 0 to deactivate.
+/// namespace: optional target namespace.
+///
+/// Returns: { ok, endpoint, active, savedInactive, message, error? }.
+ClassMethod SetBFCConfigActive(endpoint As %String, active As %Boolean = 1, namespace As %String = "") As %DynamicObject
+{
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("SetBFCConfigActive")
+    Set out = {}
+    Set out.tool = "set_bfc_config_active"
+    Set dispNs = $namespace
+    Set targetNs = ..%ResolveNs(namespace)
+    Set out.namespace = targetNs
+    Set out.endpoint = $get(endpoint)
+    If $get(endpoint) = "" {
+        Set out.ok = 0
+        Set out.error = "Pass `endpoint` (the BFC endpoint_url or config name)."
+        Do ##class(AgenticInterop.Agent.Manager).ToolDone("SetBFCConfigActive", out)
+        Quit out
+    }
+    New $namespace
+    Try {
+        Set nsOk = 1
+        Try { Set $namespace = targetNs } Catch  { Set nsOk = 0 }
+        If 'nsOk {
+            Set out.ok = 0
+            Set out.error = "Cannot access namespace: " _ targetNs
+        } ElseIf '##class(%Dictionary.CompiledClass).%ExistsId("HS.BulkFHIR.Installer") {
+            Set out.ok = 0
+            Set out.error = "Bulk FHIR Coordinator is not available in namespace " _ targetNs _ "."
+        } Else {
+            Set cfgObj = ##class(HS.BulkFHIR.Configuration).GetConfiguration(endpoint)
+            If '$isobject(cfgObj) {
+                Set rs = ##class(%SQL.Statement).%ExecDirect(, "SELECT BFCEndpoint FROM HS_BulkFHIR.Configuration WHERE Name = ?", endpoint)
+                If rs.%Next() { Set cfgObj = ##class(HS.BulkFHIR.Configuration).GetConfiguration(rs.%Get("BFCEndpoint")) }
+            }
+            If ('$isobject(cfgObj)) || ('$isobject(cfgObj.Configuration)) {
+                Set out.ok = 0
+                Set out.error = "No BFC config for '" _ endpoint _ "' in namespace " _ targetNs _ "."
+            } Else {
+                Set env = cfgObj.Configuration
+                Set env."is_inactive" = ''(active = 0)
+                Set savedInactive = 0
+                Set sc = ##class(HS.BulkFHIR.Installer).ConfigureConfigElseSaveInactive(env, .savedInactive)
+                Set scErr = ..%SCErr(sc)
+                If scErr '= "" {
+                    Set out.ok = 0
+                    Set out.error = scErr
+                } Else {
+                    Set out.savedInactive = ''savedInactive
+                    Set out.active = ('savedInactive) && (active '= 0)
+                    If active = 0 {
+                        Set out.message = "BFC config '" _ endpoint _ "' deactivated."
+                    } ElseIf savedInactive {
+                        Set out.message = "Activation attempted but the config saved INACTIVE — a prerequisite is still missing or the source/target FHIR server is unreachable. Fix it and retry."
+                    } Else {
+                        Set out.message = "BFC config '" _ endpoint _ "' is now active."
+                    }
+                    Set out.ok = 1
+                }
+            }
+        }
+    } Catch ex {
+        Set out.ok = 0
+        Set out.error = $extract(ex.DisplayString(), 1, 400)
+    }
+    Set $namespace = dispNs
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("SetBFCConfigActive", out)
     Quit out
 }
 

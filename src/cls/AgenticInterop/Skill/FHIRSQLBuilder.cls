@@ -37,10 +37,11 @@ Examines a FHIR repository and summarizes resource types, elements, value ranges
 
 ## 2. Transformation Specification
 
-Built FROM a completed Analysis; defines the SQL schema. New > name + select the Analysis. In the editor (a tree of resources/elements with counts):
-- For a PRIMITIVE (string/boolean/date/number): set the Column name, toggle Index and "Store a copy", then Add To Projection. Reference elements by FULL path (e.g. `AllergyIntolerance.code.coding.code`) — leaf names collide across resources.
-- For a COLLECTION: checking elements auto-creates a SUBTABLE (child rows = collection entries, with special columns identifying the source resource + position); rename via Subtable name. To instead inline ONE value from a collection into the parent table, use a Filter (e.g. project `display` WHERE `code = "SS"`) — don't accept an arbitrary first element. Filter ops: equals, >, <, <=, >=, exists, like (regex), resolves-to-type, etc. You cannot set two filters on the same path tier, and you cannot filter a subtable's inner elements (filter the subtable itself).
-- "Currently Selected Items" shows Table/Column/Type/Index/Store-a-copy. Done to save. Specs export/import as JSON and are copyable.
+Built FROM a completed Analysis (New > Name + select the Analysis + optional Description > Create Transformation Specification). Defines the SQL schema. Elements in the tree are one of three kinds: PRIMITIVES (string/boolean/date/number), OBJECTS (contain properties), and COLLECTIONS (repeating). In the editor (a tree of resources/elements with counts):
+- For a PRIMITIVE: optionally Show Histogram (unique values in the repo), set the Column name, toggle Index and "Store a copy", then Add To Projection. Reference elements by FULL path (e.g. `AllergyIntolerance.code.coding.code`) — leaf names collide across resources.
+- For an OBJECT: click through its properties to a primitive (as above). You can also set a Filter on an object to drop rows that don't match a criterion (e.g. show `start` only when `end` = a given date).
+- For a COLLECTION: checking elements auto-creates a SUBTABLE (child rows = collection entries, plus special columns identifying the source resource + position in the collection); rename via Subtable name. To instead inline ONE value from a collection into the parent table, use a Filter (e.g. project `display` WHERE `code = "SS"`) — don't accept the arbitrary first element. Set the filter on the deepest node (e.g. `coding`), not the resource root or the terminal leaf. Filter ops: equals, >, <, <=, >=, exists, like (regex), resolves-to-type, etc. You cannot set two filters on the same path tier, and you cannot filter a subtable's inner elements (filter the subtable itself).
+- "Currently Selected Items" shows Table/Column/Type/Index/Store-a-copy with Edit/Delete per row. Done to save. Specs Export/Import as JSON and Copy (the spec list has Edit/Copy/Export/Delete); on import you re-select an Analysis whose resources match the spec.
 
 ## 3. Projection
 

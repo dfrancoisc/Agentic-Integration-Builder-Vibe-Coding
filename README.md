@@ -27,7 +27,7 @@ All build phases complete (Phase 0 through Phase 7). The agent operates under th
 ## Features
 
 - Streaming chat with Server-Sent Events (SSE) -- token-by-token responses with inline tool-call cards
-- 80 tools across 7 domains: Production, Transform, Testing, Catalog, Monitoring, FHIR Server, Bulk FHIR
+- 82 tools across 7 domains: Production, Transform, Testing, Catalog, Monitoring, FHIR Server, Bulk FHIR
 - 15 domain skills covering Productions, DTL, BPL, Routing Rules, HL7v2, FHIR R4, FHIR Server, Bulk FHIR, FHIR SQL Builder, SDA, REST, ESB, X12/HIPAA, CDA/C-CDA, and Adapters
 - FHIR Specialist agent: a dedicated FHIR platform agent (FHIR Server MCP + Bulk FHIR MCP + Catalog, with the FHIR Server / FHIR R4 / SDA / Bulk FHIR / FHIR SQL Builder skills) alongside the generalist Health Interop agent
 - Chatbot configuration layer: bind each chatbot surface to an agent in the admin "Chatbots" tab (the chat resolves its agent from the chatbot key at request time — no redeploy). Ships an Interop chatbot (Health Interop, in the Interop Editor) and a FHIR Management chatbot (FHIR Specialist, a launcher button injected into the header of the shipped `/csp/fhir-management` FHIR Server Management page)
@@ -183,7 +183,7 @@ Features:
 
 ## Tools
 
-The agent's capabilities are organized into 7 Tool classes (80 tools total). Each Tool class is a `%AI.Tool` subclass where every public ClassMethod is a tool the LLM can call.
+The agent's capabilities are organized into 7 Tool classes (82 tools total). Each Tool class is a `%AI.Tool` subclass where every public ClassMethod is a tool the LLM can call.
 
 | Tool class | Tools | Purpose |
 |---|---|---|
@@ -193,7 +193,7 @@ The agent's capabilities are organized into 7 Tool classes (80 tools total). Eac
 | Catalog | 7 | Vector search over Ens.* and HS.* catalogs, class introspection, namespace utilities, glossary |
 | Monitoring | 5 | Event log search, top-error grouping, message status, throughput summaries, queue depth |
 | FHIR Server | 22 | Discover FHIR-enabled foundation namespaces, inspect/configure endpoints, CapabilityStatement, metadata packages, resource search/read/CRUD/$validate, ordered async directory load (+ status), bulk load, data reset, guarded endpoint provisioning |
-| Bulk FHIR | 11 | Bulk FHIR Coordinator (BFC): list/get/schema/create/configure configs, start exports, monitor sessions, and provision prerequisites end to end (storage directory, SSL/TLS config, interop credential, SMART-backend OAuth server + client) — fetch from a source FHIR endpoint to ndjson or ingest into a target FHIR server |
+| Bulk FHIR | 13 | Bulk FHIR Coordinator (BFC): list/get/schema/create/configure/activate/delete configs, start exports, monitor sessions, and provision prerequisites end to end (storage directory, SSL/TLS config, interop credential, SMART-backend OAuth server + client) — fetch from a source FHIR endpoint to ndjson or ingest into a target FHIR server |
 
 ## Skills
 
