@@ -12,7 +12,7 @@
 
 const API = '/api/agentic';
 const ADMIN_VERSION = '2026.05.11.3';
-const TABS = ['agents', 'mcps', 'toolsets', 'tools', 'skills', 'connections', 'catalogs', 'transforms', 'audit'];
+const TABS = ['agents', 'mcps', 'toolsets', 'tools', 'skills', 'connections', 'chatbots', 'catalogs', 'transforms', 'audit'];
 const AUTH_KEY = 'AGENTIC_AUTH';
 
 // [CSP cookie fix] Force credentials:'omit' on every fetch from this
@@ -252,7 +252,7 @@ function setTab(tab) {
     // and lets #list-panel flex to 100% width.
     document.body.dataset.layout = (tab === 'audit' || tab === 'catalogs' || tab === 'transforms') ? 'full' : 'split';
     $('list-title').textContent = ({
-        agents: 'Agents', mcps: 'MCPs', toolsets: 'ToolSets', tools: 'Tools', skills: 'Skills', connections: 'Connections', catalogs: 'Catalogs', transforms: 'Transforms', audit: 'Audit'
+        agents: 'Agents', mcps: 'MCPs', toolsets: 'ToolSets', tools: 'Tools', skills: 'Skills', connections: 'Connections', chatbots: 'Chatbots', catalogs: 'Catalogs', transforms: 'Transforms', audit: 'Audit'
     })[tab];
     $('btn-new').style.display = (tab === 'tools' || tab === 'skills' || tab === 'catalogs' || tab === 'audit' || tab === 'transforms') ? 'none' : 'inline-block';
     $('detail-panel').hidden = true;
@@ -293,6 +293,10 @@ async function loadList() {
             const data = await get('/connections');
             state.list = data.connections || [];
             renderConnectionList();
+        } else if (state.tab === 'chatbots') {
+            const data = await get('/chatbots');
+            state.list = data.chatbots || [];
+            renderChatbotList();
         } else if (state.tab === 'catalogs') {
             const data = await get('/catalog/status');
             state.list = [data];
@@ -560,6 +564,98 @@ function renderConnectionDetail() {
             }
         });
     }
+}
+
+// -------- Chatbots (the chatbot -> agent config layer) --------
+// Each chatbot is a UI surface (a launcher injected into a host page)
+// bound to an %AI.Agent. The chat surface sends the chatbot Key and the
+// backend resolves the agent from it at request time — so changing which
+// agent a chatbot uses is a one-row edit, no redeploy.
+
+function renderChatbotList() {
+    const list = $('list');
+    if (!state.list.length) {
+        list.innerHTML = '<div class="empty-state">No chatbots configured. Click + New to add one.</div>';
+        return;
+    }
+    list.innerHTML = '';
+    for (const c of state.list) {
+        const div = document.createElement('div');
+        div.className = 'list-item';
+        div.dataset.id = c.key;
+        const badges = [];
+        if (!c.enabled) badges.push('<span class="badge abstract">disabled</span>');
+        if (c.core)     badges.push('<span class="badge shipped">core</span>');
+        div.innerHTML = `
+            <div class="row1">${escapeHtml(c.name || c.key)} <span class="conn-badges">${badges.join('')}</span></div>
+            <div class="row2"><code>${escapeHtml(c.key)}</code></div>
+            <div class="row2 desc">agent: <code>${escapeHtml(shortName(c.agentClass || '') || '—')}</code></div>
+            <div class="row2">${escapeHtml(c.hostApp || '')}</div>
+        `;
+        div.addEventListener('click', () => openChatbot(c.key));
+        list.appendChild(div);
+    }
+}
+
+async function openChatbot(key) {
+    try {
+        const c = await get('/chatbots/' + encodeURIComponent(key));
+        if (!state.registry.agents) {
+            try { const d = await get('/registry/agents'); state.registry.agents = d.agents || []; } catch (e) {}
+        }
+        state.selected = c;
+        state.detailKind = 'chatbot';
+        $('detail-panel').hidden = false;
+        renderChatbotDetail();
+        markListSelected(key);
+    } catch (e) { toast('Load failed: ' + e.message, 'error'); }
+}
+
+function renderChatbotDetail() {
+    const c = state.selected;
+    const isNew = !!c._isNew;
+    $('detail-title').textContent = isNew ? 'New Chatbot' : (c.name || c.key);
+    $('btn-delete').style.display = (isNew || c.core) ? 'none' : 'inline-block';
+    $('btn-save').disabled = false;
+    const agents = (state.registry && state.registry.agents) || [];
+    const agentOptions = agents.map(a =>
+        `<option value="${escapeAttr(a.class)}" ${c.agentClass === a.class ? 'selected' : ''}>${escapeHtml(a.name || shortName(a.class))} — ${escapeHtml(a.class)}</option>`
+    ).join('');
+    const enabledYes = c.enabled === undefined ? true : !!c.enabled;
+    const keyField = isNew
+        ? `<div class="field"><label>Key</label><input id="f-key" type="text" value="${escapeAttr(c.key || '')}" placeholder="fhir-management"><div class="hint">Lowercase letters/digits/dashes, starting with a letter. The chat surface sends this key; the backend maps it to the agent. Frozen after save.</div></div>`
+        : `<div class="field readonly"><label>Key</label><input type="text" value="${escapeAttr(c.key)}" readonly></div>`;
+    $('form').innerHTML = `
+        ${keyField}
+        <div class="field">
+            <label>Title</label>
+            <input id="f-name" type="text" value="${escapeAttr(c.name || '')}" placeholder="FHIR Assistant">
+        </div>
+        <div class="field">
+            <label>Agent</label>
+            <select id="f-agentClass">${agentOptions || '<option value="">(no agents found)</option>'}</select>
+            <div class="hint">The %AI.Agent this chatbot runs. Takes effect on the next message — no redeploy.</div>
+        </div>
+        <div class="field-row">
+            <div class="field">
+                <label>Host page</label>
+                <input id="f-hostApp" type="text" value="${escapeAttr(c.hostApp || '')}" placeholder="/csp/fhir-management">
+                <div class="hint">Where this chatbot's launcher is injected (informational).</div>
+            </div>
+            <div class="field">
+                <label>Enabled</label>
+                <select id="f-enabled">
+                    <option value="true"  ${enabledYes ? 'selected' : ''}>Enabled</option>
+                    <option value="false" ${enabledYes ? '' : 'selected'}>Disabled</option>
+                </select>
+            </div>
+        </div>
+        <div class="field">
+            <label>Subtitle</label>
+            <input id="f-subtitle" type="text" value="${escapeAttr(c.subtitle || '')}" placeholder="Short tagline shown under the title">
+        </div>
+    `;
+    watchFormChanges();
 }
 
 // Phase 5 catalog admin. Renders one card per catalog (search_ens,
@@ -2583,6 +2679,8 @@ $('btn-save').addEventListener('click', async () => {
             await saveTool();
         } else if (kind === 'connection') {
             await saveConnection();
+        } else if (kind === 'chatbot') {
+            await saveChatbot();
         }
     } catch (e) {
         showError(e);
@@ -2725,6 +2823,36 @@ async function saveConnection() {
     if (state.tab === 'connections') loadList();
 }
 
+async function saveChatbot() {
+    const c = state.selected;
+    const isNew = !!c._isNew;
+    const body = {
+        name:       ($('f-name')?.value || '').trim(),
+        agentClass: $('f-agentClass')?.value || '',
+        hostApp:    ($('f-hostApp')?.value || '').trim(),
+        subtitle:   ($('f-subtitle')?.value || '').trim(),
+        enabled:    ($('f-enabled')?.value || 'true') === 'true'
+    };
+    if (!body.agentClass) { toast('Pick an agent.', 'error'); return; }
+    let saved;
+    if (isNew) {
+        const key = ($('f-key')?.value || '').trim();
+        if (!key) { toast('Key is required.', 'error'); return; }
+        if (!/^[a-z][a-z0-9-]{0,99}$/.test(key)) {
+            toast('Key must be lowercase, alpha-start, alphanumeric + dash.', 'error');
+            return;
+        }
+        saved = await post('/chatbots', { key, ...body });
+    } else {
+        saved = await put('/chatbots/' + encodeURIComponent(c.key), body);
+    }
+    state.selected = saved;
+    toast('Saved.', 'success');
+    renderChatbotDetail();
+    clearDirtyIndicator();
+    if (state.tab === 'chatbots') loadList();
+}
+
 async function saveTool() {
     const t = state.selected;
     const body = {
@@ -2763,6 +2891,7 @@ $('btn-delete').addEventListener('click', async () => {
         if (kind === 'toolset') await del('/editor/toolset/' + encodeURIComponent(state.selected.class));
         if (kind === 'tool') await del('/editor/tool/' + encodeURIComponent(state.selected._toolset) + '/' + encodeURIComponent(state.selected._originalName));
         if (kind === 'connection') await del('/connections/' + encodeURIComponent(state.selected.name));
+        if (kind === 'chatbot') await del('/chatbots/' + encodeURIComponent(state.selected.key));
         toast('Deleted.', 'success');
         $('detail-panel').hidden = true;
         loadList();
@@ -2817,6 +2946,16 @@ $('btn-new').addEventListener('click', async () => {
         renderConnectionDetail();
         markListSelected('');
         const f = $('f-name'); if (f) f.focus();
+    } else if (tab === 'chatbots') {
+        if (!state.registry.agents) {
+            try { const d = await get('/registry/agents'); state.registry.agents = d.agents || []; } catch (e) {}
+        }
+        state.selected = { key: '', name: '', agentClass: 'AgenticInterop.Agent.FHIRSpecialist', hostApp: '', subtitle: '', enabled: true, core: false, _isNew: true };
+        state.detailKind = 'chatbot';
+        $('detail-panel').hidden = false;
+        renderChatbotDetail();
+        markListSelected('');
+        const f = $('f-key'); if (f) f.focus();
     }
 });
 

@@ -12,7 +12,7 @@ All build phases complete (Phase 0 through Phase 7). The agent operates under th
 
 | Metric | Value |
 |---|---|
-| ObjectScript classes | 71 |
+| ObjectScript classes | 74 |
 | Agents (%AI.Agent) | 2 (Health Interop generalist, FHIR Specialist) |
 | Tool classes (%AI.Tool) | 6 (Production, Transform, Testing, Catalog, Monitoring, FHIR Server) |
 | Tools (public ClassMethods) | 67 |
@@ -30,6 +30,7 @@ All build phases complete (Phase 0 through Phase 7). The agent operates under th
 - 67 tools across 6 domains: Production, Transform, Testing, Catalog, Monitoring, FHIR Server
 - 15 domain skills covering Productions, DTL, BPL, Routing Rules, HL7v2, FHIR R4, FHIR Server, Bulk FHIR, FHIR SQL Builder, SDA, REST, ESB, X12/HIPAA, CDA/C-CDA, and Adapters
 - FHIR Specialist agent: a dedicated FHIR platform agent (FHIR Server MCP + Catalog, with the FHIR Server / FHIR R4 / SDA / Bulk FHIR / FHIR SQL Builder skills) alongside the generalist Health Interop agent
+- Chatbot configuration layer: bind each chatbot surface to an agent in the admin "Chatbots" tab (the chat resolves its agent from the chatbot key at request time — no redeploy). Ships an Interop chatbot (Health Interop, in the Interop Editor) and a FHIR Management chatbot (FHIR Specialist, a floating launcher injected into the shipped `/csp/fhir-management` FHIR Server Management page)
 - Confirmation gate on every mutating tool -- create, update, delete, compile, start, stop all require explicit user approval before executing
 - Semantic vector search over the IRIS class library (164 Business Hosts, 58 transformation classes) using FastEmbed 384-dimensional embeddings and HNSW index
 - Transformation and Mapping Catalog with 1,538 pre-computed field-level mappings across HL7 v2, SDA3, FHIR R4, CDA, and X12
@@ -109,7 +110,7 @@ Uses the chatbot to monitor, triage, and review existing integrations at run-tim
 
 4. **Extend the MCP layer.** A developer creates a new %AI.MCP.Service subclass to expose a new domain of tools (for example, a Monitoring MCP for production health metrics). The MCP groups related ToolSets and is registered in the agent configuration through the admin UI.
 
-5. **Package and deploy via IPM.** A developer maintains the module.xml that defines the IPM package: ObjectScript classes, seed data, web application definitions, install/uninstall hooks. A single `zpm "load /path/to/agentic_interop"` command installs all 71 classes, two web apps, seed data, and the curated class catalog into any namespace.
+5. **Package and deploy via IPM.** A developer maintains the module.xml that defines the IPM package: ObjectScript classes, seed data, web application definitions, install/uninstall hooks. A single `zpm "load /path/to/agentic_interop"` command installs all 74 classes, two web apps, seed data, and the curated class catalog into any namespace.
 
 ### AI Hub Admin (5 use cases)
 
@@ -161,6 +162,7 @@ The admin UI provides configuration pages for all entities. No code edits requir
 | Tools | Browse tool catalog with descriptions, parameter signatures, and dry-run panel |
 | Skills | INSTRUCTIONS editor for each domain skill |
 | Connections | LLM provider configuration with masked secret input, live test button, green/red status |
+| Chatbots | Bind each chatbot surface to an %AI.Agent (key → agent + host page + title); ships the Interop and FHIR Management chatbots |
 | Catalogs | Vector catalog rebuild, source namespace selection, test search, browse entries |
 | Transforms | Field-level mapping explorer (Transformation and Mapping Catalog) across HL7 v2, SDA3, FHIR R4, CDA, X12 |
 | Audit | Searchable log of every API request with method, path, status, duration, user, namespace |
@@ -263,7 +265,7 @@ ZN "<your-namespace>"
 zpm "load /path/to/agentic_interop"
 ```
 
-The module installs all 71 classes, two web apps (`/agentic/` for the UI, `/api/agentic/` for REST), seed data, and the curated class catalog. To install in multiple namespaces, run the command once per namespace.
+The module installs all 74 classes, two web apps (`/agentic/` for the UI, `/api/agentic/` for REST), seed data, and the curated class catalog. To install in multiple namespaces, run the command once per namespace.
 
 ## After install
 

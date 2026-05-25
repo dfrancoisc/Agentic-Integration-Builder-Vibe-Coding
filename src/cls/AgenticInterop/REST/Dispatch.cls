@@ -79,6 +79,15 @@ XData UrlMap [ XMLNamespace = "http://www.intersystems.com/urlmap" ]
     <Route Url="/connections/:name/secret"      Method="POST"   Call="SaveConnectionSecret" />
     <Route Url="/connections/:name/test"        Method="POST"   Call="TestConnection" />
 
+    <!-- Chatbot config layer: bind a chatbot surface to an %AI.Agent.
+         The chat surface resolves its agent from the chatbot Key at
+         request time, so changing the agent is a one-row config edit. -->
+    <Route Url="/chatbots"                      Method="GET"    Call="ListChatbots" />
+    <Route Url="/chatbots"                      Method="POST"   Call="CreateChatbot" />
+    <Route Url="/chatbots/:key"                 Method="GET"    Call="GetChatbot" />
+    <Route Url="/chatbots/:key"                 Method="PUT"    Call="SaveChatbot" />
+    <Route Url="/chatbots/:key"                 Method="DELETE" Call="DeleteChatbot" />
+
     <!-- Phase 2 chat — non-streaming single turn against the default
          (or named) Connection. Kept for callers that don't want SSE. -->
     <Route Url="/chat"                          Method="POST"   Call="Chat" />
@@ -530,6 +539,31 @@ ClassMethod SaveConnectionSecret(pName As %String) As %Status
 ClassMethod TestConnection(pName As %String) As %Status
 {
     Quit ##class(AgenticInterop.Editor.ConnectionService).Test(%response, pName)
+}
+
+ClassMethod ListChatbots() As %Status
+{
+    Quit ##class(AgenticInterop.Editor.ChatbotService).List(%response)
+}
+
+ClassMethod GetChatbot(pKey As %String) As %Status
+{
+    Quit ##class(AgenticInterop.Editor.ChatbotService).Get(%response, pKey)
+}
+
+ClassMethod CreateChatbot() As %Status
+{
+    Quit ##class(AgenticInterop.Editor.ChatbotService).Save(%response, "", %request.Content)
+}
+
+ClassMethod SaveChatbot(pKey As %String) As %Status
+{
+    Quit ##class(AgenticInterop.Editor.ChatbotService).Save(%response, pKey, %request.Content)
+}
+
+ClassMethod DeleteChatbot(pKey As %String) As %Status
+{
+    Quit ##class(AgenticInterop.Editor.ChatbotService).Delete(%response, pKey)
 }
 
 ClassMethod Chat() As %Status

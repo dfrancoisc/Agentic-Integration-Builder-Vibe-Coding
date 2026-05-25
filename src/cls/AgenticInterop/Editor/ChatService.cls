@@ -63,7 +63,16 @@ ClassMethod Chat(pResponse As %CSP.Response, pBodyStream) As %Status
     If message = "" {
         Quit $classmethod(util, "WriteError", pResponse, "400 Bad Request", "Missing 'message'")
     }
-    Set agentClass = $classmethod(util, "DObj", req, "agentClass", "AgenticInterop.Agent.HealthInterop")
+    ; Resolve the agent: an explicit agentClass wins; otherwise the
+    ; chatbot key maps to an agent via the Chatbot config layer; else
+    ; fall back to the generalist default.
+    Set agentClass = $classmethod(util, "DObj", req, "agentClass", "")
+    Set chatbotKey = $classmethod(util, "DObj", req, "chatbot", "")
+    If (agentClass = ""), (chatbotKey '= "") {
+        Set cb = ##class(AgenticInterop.Data.Chatbot).GetByKey(chatbotKey)
+        If $isobject(cb), cb.Enabled, cb.AgentClass '= "" { Set agentClass = cb.AgentClass }
+    }
+    If agentClass = "" { Set agentClass = "AgenticInterop.Agent.HealthInterop" }
     Set connectionName = $classmethod(util, "DObj", req, "connection")
     Set history = $S(req.%IsDefined("history"):req.history, 1:[])
     // Approved tokens carried out-of-band — the user clicked Approve
@@ -283,7 +292,16 @@ ClassMethod ChatStream(pResponse As %CSP.Response, pBodyStream) As %Status
     Set startInfo.namespace = $namespace
     Do ..WriteLiveFeed("session_start", startInfo)
 
-    Set agentClass = $classmethod(util, "DObj", req, "agentClass", "AgenticInterop.Agent.HealthInterop")
+    ; Resolve the agent: an explicit agentClass wins; otherwise the
+    ; chatbot key maps to an agent via the Chatbot config layer; else
+    ; fall back to the generalist default.
+    Set agentClass = $classmethod(util, "DObj", req, "agentClass", "")
+    Set chatbotKey = $classmethod(util, "DObj", req, "chatbot", "")
+    If (agentClass = ""), (chatbotKey '= "") {
+        Set cb = ##class(AgenticInterop.Data.Chatbot).GetByKey(chatbotKey)
+        If $isobject(cb), cb.Enabled, cb.AgentClass '= "" { Set agentClass = cb.AgentClass }
+    }
+    If agentClass = "" { Set agentClass = "AgenticInterop.Agent.HealthInterop" }
     Set connectionName = $classmethod(util, "DObj", req, "connection")
     Set history = $S(req.%IsDefined("history"):req.history, 1:[])
     // Approved tokens carried out-of-band — the user clicked Approve

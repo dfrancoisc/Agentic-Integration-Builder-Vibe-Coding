@@ -4,7 +4,7 @@
 <Module>
 <Name>agentic-interop</Name>
 <Version>1.0.0</Version>
-<Description>AI Copilot for InterSystems IRIS for Health. Helps integration engineers build, review, and optimize healthcare interoperability workflows through natural conversation. 71 classes, 67 tools across 6 domains (Production, Transform, Testing, Catalog, Monitoring, FHIR Server), 15 domain skills, streaming chat with tool-call approval, vector catalog search, and live Observer for behind-the-scenes computation view. Four personas: Developer, AI Hub Admin, Interface Engineer, Operator. Built on the %AI Framework. Namespace-agnostic.</Description>
+<Description>AI Copilot for InterSystems IRIS for Health. Helps integration engineers build, review, and optimize healthcare interoperability workflows through natural conversation. 74 classes, 67 tools across 6 domains (Production, Transform, Testing, Catalog, Monitoring, FHIR Server), 15 domain skills, a chatbot-to-agent config layer with two shipped chatbots (Interop, FHIR Management), streaming chat with tool-call approval, vector catalog search, and live Observer for behind-the-scenes computation view. Four personas: Developer, AI Hub Admin, Interface Engineer, Operator. Built on the %AI Framework. Namespace-agnostic.</Description>
 <Keywords>iris ai copilot mcp interop fhir hl7 dtl bpl sda x12 cda hipaa production agent skill adapter</Keywords>
 <Packaging>module</Packaging>
 <SourcesRoot>src</SourcesRoot>
@@ -82,8 +82,22 @@
      /ui/interop/interop-editor/index.html. Idempotent; backs up
      the original on first run; reverted on uninstall. -->
 <Invoke Class="AgenticInterop.Install.CSPTimeoutPatch" Method="Apply" Phase="Activate" />
+
+<!-- Seed the two shipped chatbots for the chatbot config layer:
+     interop -> Health Interop (generalist), fhir-management -> FHIR
+     Specialist. Idempotent; never overwrites a user-edited row. -->
+<Invoke Class="AgenticInterop.Data.Chatbot" Method="EnsureSeed" Phase="Activate" />
+
 <Invoke Class="AgenticInterop.Install.InteropEditorPatch" Method="Apply" Phase="Activate" />
 <Invoke Class="AgenticInterop.Install.InteropEditorPatch" Method="Revert" Phase="UnConfigure" />
+
+<!-- Inject the floating FHIR chatbot launcher into the shipped FHIR
+     Server Management page (/csp/fhir-management -> isc-fhir/index.html).
+     Bound to the fhir-management chatbot (FHIR Specialist agent).
+     Idempotent; reverted on uninstall; auto-skipped if the FHIR
+     Management UI isn't installed. -->
+<Invoke Class="AgenticInterop.Install.FHIRManagementPatch" Method="Apply" Phase="Activate" />
+<Invoke Class="AgenticInterop.Install.FHIRManagementPatch" Method="Revert" Phase="UnConfigure" />
 
 </Module>
 </Document>

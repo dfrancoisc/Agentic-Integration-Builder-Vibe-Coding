@@ -291,7 +291,7 @@ function renderEmptyState(target) {
             `<span class="ex-title">${escapeHtml(e.title)}</span>` +
         `</button>`;
     wrap.innerHTML =
-        '<p class="hero-eyebrow">Health Interop &middot; Copilot</p>' +
+        '<p class="hero-eyebrow">' + escapeHtml(CHATBOT_TITLE || 'Health Interop') + ' &middot; Copilot</p>' +
         '<h1 class="hero-title">How can I help?</h1>' +
         '<p class="hero-sub">Describe your interoperability goal in plain English &mdash; or pick a starter below. ' +
         'The agent reaches into IRIS for Health to read productions, validate messages, and build integrations. ' +
@@ -310,6 +310,18 @@ function urlNamespace() {
     try { return new URLSearchParams(window.location.search).get('namespace') || ''; }
     catch { return ''; }
 }
+function urlChatbot() {
+    try { return new URLSearchParams(window.location.search).get('chatbot') || ''; }
+    catch { return ''; }
+}
+function urlTitle() {
+    try { return new URLSearchParams(window.location.search).get('title') || ''; }
+    catch { return ''; }
+}
+// Which chatbot this surface is. The backend maps this key to an %AI.Agent
+// (Chatbot config layer); empty falls back to the default agent.
+const CHATBOT = urlChatbot();
+const CHATBOT_TITLE = urlTitle();
 
 async function fetchBridgeAuth() {
     return new Promise((resolve) => {
@@ -868,7 +880,7 @@ async function send(message) {
         let res = await fetch(streamUrl, {
             method: 'POST',
             headers,
-            body: JSON.stringify({ message, history, approvedTokens: tokensThisTurn, observerId })
+            body: JSON.stringify({ message, history, approvedTokens: tokensThisTurn, observerId, chatbot: CHATBOT })
         });
         // 401 recovery: the CSP session or bridge bearer expired.
         // Try increasingly aggressive recovery before showing the
@@ -880,7 +892,7 @@ async function send(message) {
             headers['Authorization'] = authHeader();
             res = await fetch(API + '/chat/stream?_t=' + Date.now(), {
                 method: 'POST', headers,
-                body: JSON.stringify({ message, history, approvedTokens: tokensThisTurn, observerId })
+                body: JSON.stringify({ message, history, approvedTokens: tokensThisTurn, observerId, chatbot: CHATBOT })
             });
         }
         if (res.status === 401) {
@@ -892,7 +904,7 @@ async function send(message) {
                     headers['Authorization'] = bridgeBearer;
                     res = await fetch(API + '/chat/stream?_t=' + Date.now(), {
                         method: 'POST', headers,
-                        body: JSON.stringify({ message, history, approvedTokens: tokensThisTurn, observerId })
+                        body: JSON.stringify({ message, history, approvedTokens: tokensThisTurn, observerId, chatbot: CHATBOT })
                     });
                 }
             }
@@ -907,7 +919,7 @@ async function send(message) {
                 headers['Authorization'] = stored;
                 res = await fetch(API + '/chat/stream?_t=' + Date.now(), {
                     method: 'POST', headers,
-                    body: JSON.stringify({ message, history, approvedTokens: tokensThisTurn, observerId })
+                    body: JSON.stringify({ message, history, approvedTokens: tokensThisTurn, observerId, chatbot: CHATBOT })
                 });
             }
         }
@@ -933,7 +945,7 @@ async function send(message) {
             headers['Authorization'] = authHeader();
             res = await fetch(API + '/chat/stream?_t=' + Date.now(), {
                 method: 'POST', headers,
-                body: JSON.stringify({ message, history, approvedTokens: tokensThisTurn, observerId })
+                body: JSON.stringify({ message, history, approvedTokens: tokensThisTurn, observerId, chatbot: CHATBOT })
             });
         }
         if (res.status === 401) {

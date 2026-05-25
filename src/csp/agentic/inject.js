@@ -36,12 +36,40 @@
 
     var TAB_MARK = 'agentic-tab';        // .dashboard tab marker
     var HDR_MARK = 'agentic-hdr-chat';   // mat-toolbar-row chat icon marker
+    var FAB_ID = 'agentic-fab';          // floating launcher (host-agnostic)
     var CONFIG_OVERLAY_ID = 'agentic-config-overlay';
     var CHAT_OVERLAY_ID = 'agentic-chat-overlay';
     var CLEAN_PROD_MARK = 'agentic-clean-prod';
     var CLEAN_ART_MARK  = 'agentic-clean-art';
 
     var STATE = { bearer: '', bearerExp: 0 };
+
+    /* ---------------- self config (chatbot key + mode + title) ----------
+     * Read from THIS script tag's own query string, e.g.
+     *   <script src="/agentic/inject.js?chatbot=fhir-management&mode=floating&title=FHIR%20Assistant">
+     * Defaults reproduce the original Interop-Editor behavior, so the
+     * existing InteropEditorPatch keeps working unchanged.
+     *   chatbot — the Chatbot config key; forwarded to the chat iframe,
+     *             which the backend maps to an %AI.Agent.
+     *   mode    — "interop" (splice into the editor chrome) | "floating"
+     *             (host-agnostic bottom-right launcher).
+     *   title   — panel/launcher label.
+     */
+    function selfParam(name) {
+        try {
+            var src = (document.currentScript && document.currentScript.src) || '';
+            if (!src) {
+                var ss = document.getElementsByTagName('script');
+                for (var i = 0; i < ss.length; i++) {
+                    if (ss[i].src && ss[i].src.indexOf('agentic/inject.js') >= 0) { src = ss[i].src; break; }
+                }
+            }
+            return new URLSearchParams(src.split('?')[1] || '').get(name) || '';
+        } catch (e) { return ''; }
+    }
+    var CHATBOT_KEY = selfParam('chatbot') || 'interop';
+    var INJECT_MODE = selfParam('mode') || 'interop';
+    var CHAT_TITLE  = selfParam('title') || 'AI Chatbot';
 
     /* ---------------- JWT helpers ---------------- */
 
@@ -239,6 +267,22 @@
             'body.agentic-login-mode .' + CLEAN_ART_MARK + ',',
             'body.agentic-login-mode #' + CONFIG_OVERLAY_ID + ',',
             'body.agentic-login-mode #' + CHAT_OVERLAY_ID + ' { display:none !important; }',
+            'body.agentic-login-mode #' + FAB_ID + ' { display:none !important; }',
+
+            // Floating launcher (host-agnostic — e.g. FHIR Management page)
+            '#' + FAB_ID + ' {',
+            '  position:fixed; right:24px; bottom:24px; z-index:99998;',
+            '  width:56px; height:56px; border-radius:50%; border:0; cursor:pointer;',
+            '  background:#4f46e5; box-shadow:0 6px 20px rgba(79,70,229,.45);',
+            '  display:flex; align-items:center; justify-content:center;',
+            '  transition:transform .15s, box-shadow .15s;',
+            '}',
+            '#' + FAB_ID + ':hover { transform:translateY(-2px); box-shadow:0 10px 26px rgba(79,70,229,.55); }',
+            '#' + FAB_ID + ' svg { width:26px; height:26px; }',
+            '#' + FAB_ID + ' .agentic-fab-dot {',
+            '  position:absolute; top:12px; right:12px; width:10px; height:10px;',
+            '  border-radius:50%; background:#10b981; border:2px solid #4f46e5;',
+            '}',
 
             // Chat right-slide panel
             '#' + CHAT_OVERLAY_ID + ' {',
@@ -306,7 +350,7 @@
         overlay.innerHTML =
             '<div class="panel">' +
               '<div class="bar">' +
-                '<span>AI Chatbot</span>' +
+                '<span>' + (CHAT_TITLE || 'AI Chatbot') + '</span>' +
                 '<a class="obs-link" title="Open Observer in a new tab — shows every internal step as the agent works">Observer</a>' +
                 '<button class="close" type="button" title="Close">✕</button>' +
               '</div>' +
@@ -328,7 +372,10 @@
         var overlay = document.getElementById(CHAT_OVERLAY_ID);
         var iframe = overlay.querySelector('iframe');
         var ns = currentNamespace();
-        var url = '/agentic/chat/index.html?via=interop&t=' + Date.now() + (ns ? '&namespace=' + encodeURIComponent(ns) : '');
+        var url = '/agentic/chat/index.html?via=interop&t=' + Date.now()
+            + '&chatbot=' + encodeURIComponent(CHATBOT_KEY)
+            + (CHAT_TITLE ? '&title=' + encodeURIComponent(CHAT_TITLE) : '')
+            + (ns ? '&namespace=' + encodeURIComponent(ns) : '');
         iframe.src = url;
         overlay.classList.add('open');
     }
@@ -547,12 +594,40 @@
         return true;
     }
 
+    /* ---------------- floating launcher (host-agnostic) ---------------- */
+
+    function ensureFloatingLauncher() {
+        if (document.getElementById(FAB_ID)) return true;
+        injectStyles();
+        var fab = document.createElement('button');
+        fab.id = FAB_ID;
+        fab.type = 'button';
+        fab.setAttribute('aria-label', 'Open ' + (CHAT_TITLE || 'AI Chatbot'));
+        fab.title = 'Chat with the ' + (CHAT_TITLE || 'AI Assistant');
+        fab.innerHTML =
+            '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z" fill="#fff"/></svg>' +
+            '<span class="agentic-fab-dot" aria-hidden="true"></span>';
+        fab.addEventListener('click', function (e) {
+            e.preventDefault(); e.stopPropagation();
+            openChat();
+        });
+        document.body.appendChild(fab);
+        return true;
+    }
+
     /* ---------------- login-mode hide ---------------- */
 
     function refreshLoginMode() {
-        var onLogin =
-            !document.querySelector('.dashboard') ||
-            !!document.querySelector('input[type="password"]:not([hidden])');
+        var onLogin;
+        if (INJECT_MODE === 'floating') {
+            // Host-agnostic pages have no .dashboard; only the visible
+            // password field of the login screen means "not logged in".
+            onLogin = !!document.querySelector('input[type="password"]:not([hidden])');
+        } else {
+            onLogin =
+                !document.querySelector('.dashboard') ||
+                !!document.querySelector('input[type="password"]:not([hidden])');
+        }
         document.body.classList.toggle('agentic-login-mode', onLogin);
     }
 
@@ -564,9 +639,13 @@
         pending = setTimeout(function () { pending = null; tick(); }, 150);
     }
     function tick() {
-        ensureTab();
-        ensureCleanupButtons();
-        ensureHeaderChat();
+        if (INJECT_MODE === 'floating') {
+            ensureFloatingLauncher();
+        } else {
+            ensureTab();
+            ensureCleanupButtons();
+            ensureHeaderChat();
+        }
         refreshLoginMode();
     }
 
