@@ -533,4 +533,232 @@ ClassMethod GetBFCExportStatus(sessionId As %Integer, namespace As %String = "")
     Quit out
 }
 
+/// Create or update an Interoperability credential (username/password) so
+/// BFC can authenticate to a source FHIR server, or so export clients can
+/// authenticate to BFC with Basic auth. Idempotent (overwrites). MUTATING
+/// (ensure_ — treated as create). Requires the logged-in user to have
+/// rights to manage Ens credentials; otherwise reports the security error.
+/// The password is never echoed back.
+///
+/// credentialId: the credential id to reference from a BFC config
+///               (fetch_config.client_auth_config.http_credential_id).
+/// username / password: the Basic-auth username and password.
+/// namespace: optional target namespace (credentials are namespace-scoped).
+///
+/// Returns: { ok, credentialId, namespace, message, error? }.
+ClassMethod EnsureInteropCredential(credentialId As %String, username As %String, password As %String, namespace As %String = "") As %DynamicObject
+{
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("EnsureInteropCredential")
+    Set out = {}
+    Set out.tool = "ensure_interop_credential"
+    Set dispNs = $namespace
+    Set targetNs = ..%ResolveNs(namespace)
+    Set out.namespace = targetNs
+    Set out.credentialId = $get(credentialId)
+    If ($get(credentialId) = "") || ($get(username) = "") {
+        Set out.ok = 0
+        Set out.error = "Pass `credentialId` and `username` (and `password`)."
+        Do ##class(AgenticInterop.Agent.Manager).ToolDone("EnsureInteropCredential", out)
+        Quit out
+    }
+    New $namespace
+    Try {
+        Set nsOk = 1
+        Try { Set $namespace = targetNs } Catch  { Set nsOk = 0 }
+        If 'nsOk {
+            Set out.ok = 0
+            Set out.error = "Cannot access namespace: " _ targetNs
+        } Else {
+            Set sc = ##class(Ens.Config.Credentials).SetCredential(credentialId, username, $get(password), 1)
+            Set scErr = ..%SCErr(sc)
+            If scErr '= "" {
+                Set out.ok = 0
+                Set out.error = scErr
+            } Else {
+                Set out.ok = 1
+                Set out.message = "Credential '" _ credentialId _ "' set in " _ targetNs _ ". Reference it from a BFC config as client_auth_config.http_credential_id."
+            }
+        }
+    } Catch ex {
+        Set out.ok = 0
+        Set out.error = $extract(ex.DisplayString(), 1, 400)
+    }
+    Set $namespace = dispNs
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("EnsureInteropCredential", out)
+    Quit out
+}
+
+/// Ensure a server-side directory exists for BFC File (ndjson) output.
+/// Idempotent. MUTATING (ensure_).
+///
+/// path: absolute server path (created with parents if missing).
+///
+/// Returns: { ok, path, existed, message, error? }.
+ClassMethod EnsureStorageDirectory(path As %String) As %DynamicObject
+{
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("EnsureStorageDirectory")
+    Set out = {}
+    Set out.tool = "ensure_storage_directory"
+    Set out.path = $get(path)
+    If $get(path) = "" {
+        Set out.ok = 0
+        Set out.error = "Pass `path` (server-side directory)."
+        Do ##class(AgenticInterop.Agent.Manager).ToolDone("EnsureStorageDirectory", out)
+        Quit out
+    }
+    Try {
+        If ##class(%Library.File).DirectoryExists(path) {
+            Set out.ok = 1
+            Set out.existed = 1
+            Set out.message = "Directory already exists: " _ path
+        } Else {
+            If ##class(%Library.File).CreateDirectoryChain(path) {
+                Set out.ok = 1
+                Set out.existed = 0
+                Set out.message = "Created directory: " _ path
+            } Else {
+                Set out.ok = 0
+                Set out.error = "Failed to create directory: " _ path _ " (check filesystem permissions)."
+            }
+        }
+    } Catch ex {
+        Set out.ok = 0
+        Set out.error = $extract(ex.DisplayString(), 1, 400)
+    }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("EnsureStorageDirectory", out)
+    Quit out
+}
+
+/// Ensure an SSL/TLS configuration exists (a client config for HTTPS to a
+/// secured source FHIR server). Idempotent. MUTATING (ensure_). Operates
+/// in %SYS; requires the logged-in user to have %Admin_Secure; otherwise
+/// reports the security error. Reference the name from a BFC config as
+/// client_auth_config.ssl_configuration.
+///
+/// name: the SSL config name.
+///
+/// Returns: { ok, name, existed, message, error? }.
+ClassMethod EnsureSSLConfig(name As %String) As %DynamicObject
+{
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("EnsureSSLConfig")
+    Set out = {}
+    Set out.tool = "ensure_ssl_config"
+    Set dispNs = $namespace
+    Set out.name = $get(name)
+    If $get(name) = "" {
+        Set out.ok = 0
+        Set out.error = "Pass `name` (SSL config name)."
+        Do ##class(AgenticInterop.Agent.Manager).ToolDone("EnsureSSLConfig", out)
+        Quit out
+    }
+    New $namespace
+    Try {
+        Set $namespace = "%SYS"
+        If ##class(Security.SSLConfigs).Exists(name) {
+            Set out.ok = 1
+            Set out.existed = 1
+            Set out.message = "SSL config '" _ name _ "' already exists."
+        } Else {
+            Kill props
+            Set props("Enabled") = 1
+            Set sc = ##class(Security.SSLConfigs).Create(name, .props)
+            Set scErr = ..%SCErr(sc)
+            If scErr '= "" {
+                Set out.ok = 0
+                Set out.error = scErr
+            } Else {
+                Set out.ok = 1
+                Set out.existed = 0
+                Set out.message = "SSL config '" _ name _ "' created (client TLS defaults). Reference it from a BFC config as client_auth_config.ssl_configuration."
+            }
+        }
+    } Catch ex {
+        Set out.ok = 0
+        Set out.error = $extract(ex.DisplayString(), 1, 400)
+    }
+    Set $namespace = dispNs
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("EnsureSSLConfig", out)
+    Quit out
+}
+
+/// Ensure the SMART Backend Services OAuth setup for BFC: configure the
+/// internal OAuth server if absent, and (when clientName + issuerUrl are
+/// supplied) create the OAuth client BFC uses to authenticate to the
+/// source. Idempotent. MUTATING (ensure_). Requires %Admin_Secure on the
+/// logged-in user; otherwise reports the security error.
+///
+/// clientName: optional OAuth client to create (BFC fetch client).
+/// issuerUrl:  the OAuth server issuer URL (required to create a client).
+/// grantType:  default "client_credentials" (SMART backend services).
+/// namespace:  optional target namespace.
+///
+/// Returns: { ok, serverReady, serverCreated?, clientCreated?, issuerUrl?, message, error? }.
+ClassMethod EnsureBFCOAuth(clientName As %String = "", issuerUrl As %String = "", grantType As %String = "client_credentials", namespace As %String = "") As %DynamicObject
+{
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("EnsureBFCOAuth")
+    Set out = {}
+    Set out.tool = "ensure_bfc_oauth"
+    Set dispNs = $namespace
+    Set targetNs = ..%ResolveNs(namespace)
+    Set out.namespace = targetNs
+    New $namespace
+    Try {
+        Set nsOk = 1
+        Try { Set $namespace = targetNs } Catch  { Set nsOk = 0 }
+        If 'nsOk {
+            Set out.ok = 0
+            Set out.error = "Cannot access namespace: " _ targetNs
+        } ElseIf '##class(%Dictionary.CompiledClass).%ExistsId("HS.HC.OAuth2.Server.Installer") {
+            Set out.ok = 0
+            Set out.error = "OAuth server installer not available in namespace " _ targetNs _ "."
+        } Else {
+            Set exists = 0
+            Try { Set exists = ##class(HS.HC.OAuth2.Server.Installer).DoesOAuthServerExist() } Catch  {}
+            If 'exists {
+                Set sc = ##class(HS.HC.OAuth2.Server.Installer).ConfigureInternalOAuthServer(0)
+                Set scErr = ..%SCErr(sc)
+                If scErr '= "" {
+                    Set out.ok = 0
+                    Set out.error = "Configure internal OAuth server failed: " _ scErr
+                    Set out.serverReady = 0
+                }
+                Set out.serverCreated = 'out.%IsDefined("ok")
+            }
+            If 'out.%IsDefined("ok") {
+                Set out.serverReady = ''##class(HS.HC.OAuth2.Server.Installer).DoesOAuthServerExist()
+                If ($get(clientName) '= "") {
+                    If $get(issuerUrl) = "" {
+                        Set out.ok = 1
+                        Set out.clientCreated = 0
+                        Set out.message = "OAuth server ready. Pass `issuerUrl` to create the OAuth client '" _ clientName _ "' (SMART backend services)."
+                    } Else {
+                        Set out.issuerUrl = issuerUrl
+                        Set created = ""
+                        Set sc2 = ##class(HS.BulkFHIR.Installer).AutoCreateOAuthClient(clientName, issuerUrl, $listbuild(grantType), "", "BFC fetch client", .created)
+                        Set scErr2 = ..%SCErr(sc2)
+                        If scErr2 '= "" {
+                            Set out.ok = 0
+                            Set out.clientCreated = 0
+                            Set out.error = "AutoCreateOAuthClient failed: " _ scErr2
+                        } Else {
+                            Set out.ok = 1
+                            Set out.clientCreated = 1
+                            Set out.message = "OAuth server ready and client '" _ clientName _ "' created. Reference it from a BFC config (client_auth_config.client_name)."
+                        }
+                    }
+                } Else {
+                    Set out.ok = 1
+                    Set out.message = "OAuth server " _ $select(out.serverReady:"ready", 1:"NOT ready") _ ". Pass clientName + issuerUrl to also create the BFC OAuth client."
+                }
+            }
+        }
+    } Catch ex {
+        Set out.ok = 0
+        Set out.error = $extract(ex.DisplayString(), 1, 400)
+    }
+    Set $namespace = dispNs
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("EnsureBFCOAuth", out)
+    Quit out
+}
+
 }

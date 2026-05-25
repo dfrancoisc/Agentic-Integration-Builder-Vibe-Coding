@@ -1,17 +1,19 @@
 /// Patches the shipped IRIS for Health FHIR Server Management Angular app
 /// (web app /csp/fhir-management, physical path
 /// /usr/irissys/csp/hslib/ui/isc-fhir/index.html) so it loads
-/// /agentic/inject.js in FLOATING mode bound to the "fhir-management"
-/// chatbot. inject.js then renders a bottom-right launcher that opens the
-/// FHIR Specialist agent in a slide-in chat panel.
+/// /agentic/inject.js in HEADER mode bound to the "fhir-management"
+/// chatbot. inject.js then splices a launcher button into the page's
+/// Material toolbar (mat-toolbar-row) that opens the FHIR Specialist
+/// agent in a slide-in chat panel.
 ///
 /// Same mechanism as AgenticInterop.Install.InteropEditorPatch: idempotent,
 /// backs up the original to <index.html>.agentic-original on first run, and
 /// the IPM UnConfigure hook reverts it. If the FHIR Management UI isn't
 /// installed on this instance, Apply logs and skips (not an error).
 ///
-/// Per restriction #3 (no UI before login): inject.js hides the launcher
-/// while the login screen is showing (floating-mode login detection).
+/// Per restriction #3 (no UI before login): inject.js only splices the
+/// header button once the authenticated FHIR Management shell has rendered
+/// its toolbar, so nothing appears on the login screen.
 Class AgenticInterop.Install.FHIRManagementPatch Extends %RegisteredObject
 {
 

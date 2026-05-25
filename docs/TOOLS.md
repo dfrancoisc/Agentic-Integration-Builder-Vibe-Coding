@@ -1,16 +1,16 @@
 # Agent Tool Catalog
 
-71 tools across 7 `%AI.Tool` subclasses. Each public ClassMethod on a Tool class becomes a tool the LLM can call. Tools are composed into `%AI.ToolSet` subclasses via the framework's `<Include Class="..."/>` directive and registered with the agent at build time by `AgenticInterop.Agent.Manager`.
+80 tools across 7 `%AI.Tool` subclasses. Each public ClassMethod on a Tool class becomes a tool the LLM can call. Tools are composed into `%AI.ToolSet` subclasses via the framework's `<Include Class="..."/>` directive and registered with the agent at build time by `AgenticInterop.Agent.Manager`.
 
 | Tool class | Tools | Domain |
 |---|---|---|
-| AgenticInterop.Tool.Production | 10 | Production CRUD, business host lifecycle, post-build validation |
+| AgenticInterop.Tool.Production | 13 | Production CRUD, business host lifecycle, post-build validation |
 | AgenticInterop.Tool.Transform | 14 | DTL/BPL/routing rule CRUD, HL7 schema introspection, lookup tables, SDA-FHIR pipeline |
-| AgenticInterop.Tool.Testing | 6 | HL7/FHIR send, validation, comparison |
+| AgenticInterop.Tool.Testing | 8 | HL7/FHIR send, validation, comparison |
 | AgenticInterop.Tool.Catalog | 7 | Vector search, class introspection, namespace utilities, reference lookups |
 | AgenticInterop.Tool.Monitoring | 5 | Event log, error grouping, message status, throughput, queue depth |
 | AgenticInterop.Tool.FHIRServer | 22 | FHIR R4 server discovery, endpoint inspect/config, metadata packages, resource CRUD/search/$validate, CapabilityStatement, ordered async directory load, bulk load, data reset, guarded provisioning |
-| AgenticInterop.Tool.BulkFHIR | 7 | Bulk FHIR Coordinator (BFC): list/get/schema/create/configure configs, start exports, monitor sessions |
+| AgenticInterop.Tool.BulkFHIR | 11 | Bulk FHIR Coordinator (BFC): list/get/schema/create/configure configs, start exports, monitor sessions, provision prerequisites (storage dir, SSL, credential, OAuth) |
 
 Standard output envelope for any non-streaming tool: `{ "ok": true, "data": <result>, "namespace": "<current>" }` on success, `{ "ok": false, "error": { "code": "<code>", "message": "<text>" }, "namespace": "<current>" }` on error. The current namespace is always included so the chatbot can verify the user's expected namespace matches the execution namespace.
 
@@ -957,7 +957,7 @@ Read-only tools for querying production event logs, message headers, error summa
 
 ## ToolSet.BulkFHIR  [BATCH 9 — Bulk FHIR Coordinator MCP]
 
-7 tools to create, configure, start, edit, and monitor Bulk FHIR Coordinator (BFC) exports. BFC FETCHES FHIR resources FROM a source FHIR endpoint (`fetch_config.endpoint_url`, via `$export` or `$everything`) and writes them to ndjson (Storage.File) OR ingests them into a target FHIR server (Storage.Ingestion, `storage_config.fhir_endpoint`) — it does NOT read a folder of files (use `Tool.FHIRServer.LoadFHIRData` for that). Backed by `HS.BulkFHIR.Installer` / `Configuration` / `ExportManager`; create/start require the `%HS_BFC_Administrator` role. Namespace-safe (same pattern as Tool.FHIRServer); each tool takes an optional `namespace`.
+11 tools to create, configure, start, edit, and monitor Bulk FHIR Coordinator (BFC) exports, plus provision the four prerequisites end to end. BFC FETCHES FHIR resources FROM a source FHIR endpoint (`fetch_config.endpoint_url`, via `$export` or `$everything`) and writes them to ndjson (Storage.File) OR ingests them into a target FHIR server (Storage.Ingestion, `storage_config.fhir_endpoint`) — it does NOT read a folder of files (use `Tool.FHIRServer.LoadFHIRData` for that). Backed by `HS.BulkFHIR.Installer` / `Configuration` / `ExportManager` / `OAuth2Installer`, `Ens.Config.Credentials`, `Security.SSLConfigs`, `%Library.File`, and `HS.HC.OAuth2.Server.Installer`; create/start require the `%HS_BFC_Administrator` role and SSL/OAuth provisioning requires `%Admin_Secure`. The `Ensure*` provisioning tools are idempotent, MUTATING, and gated by the logged-in user's IRIS privileges (they report the security error verbatim if the user lacks rights). Namespace-safe (same pattern as Tool.FHIRServer); each tool takes an optional `namespace`.
 
 ### ListBFCConfigs
 - Description: list BFC configurations in a namespace. Read-only.
@@ -986,3 +986,19 @@ Read-only tools for querying production event logs, message headers, error summa
 ### GetBFCExportStatus
 - Description: running status of one export session (`ExportManager.SessionRunningStatus`). Read-only.
 - Input: `{ sessionId, namespace? }`. Output: `{ ok, sessionId, status }`.
+
+### EnsureInteropCredential
+- Description: create or update an Interoperability credential (username/password) so BFC can authenticate to a source FHIR server (or so Basic-auth export clients can authenticate to BFC). Idempotent. MUTATING (ensure_). Backed by `Ens.Config.Credentials.SetCredential`; requires rights to manage Ens credentials. The password is NEVER echoed back. Reference from a config as `fetch_config.client_auth_config.http_credential_id`.
+- Input: `{ credentialId, username, password, namespace? }`. Output: `{ ok, credentialId, namespace, message, error? }`.
+
+### EnsureStorageDirectory
+- Description: ensure a server-side directory exists for BFC File (ndjson) output (created with parents if missing). Idempotent. MUTATING (ensure_). Backed by `%Library.File.CreateDirectoryChain`. Use a per-namespace path (session ids collide if shared).
+- Input: `{ path }`. Output: `{ ok, path, existed, message, error? }`.
+
+### EnsureSSLConfig
+- Description: ensure an SSL/TLS client configuration exists for HTTPS to a secured source FHIR server. Idempotent. MUTATING (ensure_). Operates in `%SYS` via `Security.SSLConfigs`; requires `%Admin_Secure`. Reference from a config as `fetch_config.client_auth_config.ssl_configuration`.
+- Input: `{ name }`. Output: `{ ok, name, existed, message, error? }`.
+
+### EnsureBFCOAuth
+- Description: ensure the SMART Backend Services OAuth setup for BFC — configure the internal OAuth server if absent (`HS.HC.OAuth2.Server.Installer`), and when `clientName` + `issuerUrl` are supplied, create the BFC OAuth client (`HS.BulkFHIR.Installer.AutoCreateOAuthClient`). Idempotent. MUTATING (ensure_). Requires `%Admin_Secure`. Still create a matching DISABLED IRIS user named for the client (that step has no tool).
+- Input: `{ clientName?, issuerUrl?, grantType="client_credentials", namespace? }`. Output: `{ ok, serverReady, serverCreated?, clientCreated?, issuerUrl?, message, error? }`.

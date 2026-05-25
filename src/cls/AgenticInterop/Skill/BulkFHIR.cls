@@ -30,13 +30,24 @@ The Bulk FHIR Coordinator (BFC) mediates bulk-data requests between a bulk-data 
 
 BFC is SEPARATE from the FHIR repository: `$export` is NOT a FHIR repository interaction, so the FHIR Server tools do not perform it. The source FHIR endpoint may be InterSystems IRIS for Health, InterSystems Health Connect, HealthShare Unified Care Record (UCR), or any server that returns all resources and supports `Patient/$everything` (for patient/group exports) — or native `$export`.
 
-UI location — routes INSIDE the FHIR Management app (NOT the legacy Management Portal): create/edit a configuration at `/csp/fhir-management/bfc-config/new-config`; view exports, status, downloads, and logs at `/csp/fhir-management/bfc-exports/list`. Give the user these as direct links. Note: the agent can also do most of this programmatically with the BFC tools (CreateOrUpdateBFCConfig, StartBFCExport, ListBFCExports, GetBFCExportStatus) and should prefer them; the deep links are for the parts a human must do in the UI (OAuth/credential/SSL setup) and for review. The full FHIR Bulk Data Export spec is also reachable via a REST client.
+UI location — routes INSIDE the FHIR Management app (NOT the legacy Management Portal): create/edit a configuration at `/csp/fhir-management/bfc-config/new-config`; view exports, status, downloads, and logs at `/csp/fhir-management/bfc-exports/list`. Give the user these as direct links. Note: the agent can do nearly all of this programmatically and should PREFER the tools — the config lifecycle (`CreateOrUpdateBFCConfig`, `StartBFCExport`, `ListBFCExports`, `GetBFCExportStatus`) AND the prerequisites (`EnsureStorageDirectory`, `EnsureSSLConfig`, `EnsureInteropCredential`, `EnsureBFCOAuth`). The deep links are for review and for the one step with no tool: creating the disabled IRIS export-client users (Security > Users). The full FHIR Bulk Data Export spec is also reachable via a REST client.
 
 ## Prerequisites (do these first)
 
 1. The source FHIR server endpoint: URL + SSL/TLS config; if OAuth fetch, its OAuth server URL + grant types; if UCR ODS, the Registry web-service endpoint.
 2. Raise the FHIR server's "Max Search Results" from the 1000 default to ~3000 (Home > Health > FHIR Configuration > Server Configuration > endpoint > Configuration). Bulk pulls large result sets.
 3. On the BFC side: create SSL/TLS configs; create Interoperability Credentials (HTTP / X-API Key / OAuth); set up OAuth (a SMART Backend Services-capable server — IRIS ships a utility to create one); create users; create storage locations.
+
+## Provisioning prerequisites with tools (preferred)
+
+You do NOT have to send the user to the Management Portal for prereqs — the BFC MCP has idempotent, re-runnable provisioning tools. Each is gated by the logged-in user's IRIS privileges; if one returns ok=0 with a security error, report it verbatim and name the role needed (`%Admin_Secure` for SSL/OAuth; `%HS_BFC_Administrator` for configs/exports). Recommended order:
+
+1. `EnsureStorageDirectory(path)` — server-side ndjson output dir (use a per-namespace path; session ids collide if shared). Skip for the FHIR Repository (ingestion) storage adapter.
+2. `EnsureSSLConfig(name)` — a client TLS config for HTTPS to a secured source FHIR server. Reference as `fetch_config.client_auth_config.ssl_configuration`.
+3. `EnsureInteropCredential(credentialId, username, password)` — Basic-auth credential (the password is never echoed back). Reference as `fetch_config.client_auth_config.http_credential_id`.
+4. `EnsureBFCOAuth(clientName, issuerUrl, grantType)` — configures the internal SMART-backend OAuth server if absent and creates the BFC OAuth client. Still create a matching DISABLED IRIS user (see the dummy-user rule) — that step has no tool.
+
+The one prereq with no tool is creating the disabled export-client IRIS users (Security > Users) and bumping Max Search Results in the FHIR config — guide the user to those.
 
 ## Configuration (one config = four tiles)
 
@@ -78,6 +89,7 @@ Classes: `HS.BulkFHIR.Installer`, `HS.BulkFHIR.OAuth2Installer`, `HS.BulkFHIR.Co
 ## How to help
 
 - First confirm the SOURCE FHIR endpoint exists and is reachable (the FHIR Server tools can discover/inspect it). BFC fetches from it.
+- For "set up / configure BFC for me", do it end to end with tools: provision prereqs (`EnsureStorageDirectory` / `EnsureSSLConfig` / `EnsureInteropCredential` / `EnsureBFCOAuth` as the auth model requires), then `GetBFCConfigSchema` → `CreateOrUpdateBFCConfig` → `StartBFCExport` → `GetBFCExportStatus`. State the plan and target endpoint/namespace first; confirm before standing up an OAuth server. If a config saves INACTIVE, name the missing prerequisite and fix it. Surface any ok=0 security error verbatim with the role needed.
 - Walk the user through the four tiles in order; call out the dummy-user + Authorized Users requirement, the Max Search Results bump, per-namespace storage dirs, and the right fetch adapter for the source's capability.
 - For "run an export", give the exact REST kickoff → poll → download sequence with the right scopes.
 - Hand off FHIR repository management (endpoints, resources, config, packages) to the fhir-server skill, and SDA/transformation/interop work to the fhir-r4 skill.
