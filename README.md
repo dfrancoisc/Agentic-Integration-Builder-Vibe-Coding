@@ -12,12 +12,13 @@ All build phases complete (Phase 0 through Phase 7). The agent operates under th
 
 | Metric | Value |
 |---|---|
-| ObjectScript classes | 68 |
+| ObjectScript classes | 71 |
+| Agents (%AI.Agent) | 2 (Health Interop generalist, FHIR Specialist) |
 | Tool classes (%AI.Tool) | 6 (Production, Transform, Testing, Catalog, Monitoring, FHIR Server) |
 | Tools (public ClassMethods) | 67 |
 | ToolSets (%AI.ToolSet) | 6 |
 | MCP servers | 5 (Production, Transform, Testing, Catalog, FHIR Server) |
-| Skills (%AI.Agent.Skill) | 13 |
+| Skills (%AI.Agent.Skill) | 15 |
 | Vector catalogs | 2 (search_ens: 164 classes, search_hs: 58 classes) |
 | Field-level mappings (Transformation and Mapping Catalog) | 1,538 |
 | Persistent data classes | 6 (Connection, AgentOverride, MCPOverride, ToolSetOverride, AuditLog, FieldMapping) |
@@ -27,7 +28,8 @@ All build phases complete (Phase 0 through Phase 7). The agent operates under th
 
 - Streaming chat with Server-Sent Events (SSE) -- token-by-token responses with inline tool-call cards
 - 67 tools across 6 domains: Production, Transform, Testing, Catalog, Monitoring, FHIR Server
-- 13 domain skills covering Productions, DTL, BPL, Routing Rules, HL7v2, FHIR R4, FHIR Server, SDA, REST, ESB, X12/HIPAA, CDA/C-CDA, and Adapters
+- 15 domain skills covering Productions, DTL, BPL, Routing Rules, HL7v2, FHIR R4, FHIR Server, Bulk FHIR, FHIR SQL Builder, SDA, REST, ESB, X12/HIPAA, CDA/C-CDA, and Adapters
+- FHIR Specialist agent: a dedicated FHIR platform agent (FHIR Server MCP + Catalog, with the FHIR Server / FHIR R4 / SDA / Bulk FHIR / FHIR SQL Builder skills) alongside the generalist Health Interop agent
 - Confirmation gate on every mutating tool -- create, update, delete, compile, start, stop all require explicit user approval before executing
 - Semantic vector search over the IRIS class library (164 Business Hosts, 58 transformation classes) using FastEmbed 384-dimensional embeddings and HNSW index
 - Transformation and Mapping Catalog with 1,538 pre-computed field-level mappings across HL7 v2, SDA3, FHIR R4, CDA, and X12
@@ -107,7 +109,7 @@ Uses the chatbot to monitor, triage, and review existing integrations at run-tim
 
 4. **Extend the MCP layer.** A developer creates a new %AI.MCP.Service subclass to expose a new domain of tools (for example, a Monitoring MCP for production health metrics). The MCP groups related ToolSets and is registered in the agent configuration through the admin UI.
 
-5. **Package and deploy via IPM.** A developer maintains the module.xml that defines the IPM package: ObjectScript classes, seed data, web application definitions, install/uninstall hooks. A single `zpm "load /path/to/agentic_interop"` command installs all 68 classes, two web apps, seed data, and the curated class catalog into any namespace.
+5. **Package and deploy via IPM.** A developer maintains the module.xml that defines the IPM package: ObjectScript classes, seed data, web application definitions, install/uninstall hooks. A single `zpm "load /path/to/agentic_interop"` command installs all 71 classes, two web apps, seed data, and the curated class catalog into any namespace.
 
 ### AI Hub Admin (5 use cases)
 
@@ -192,7 +194,7 @@ The agent's capabilities are organized into 6 Tool classes (67 tools total). Eac
 
 ## Skills
 
-Thirteen domain skills teach the agent IRIS-specific concepts. Each skill is a `%AI.Agent.Skill` subclass with markdown INSTRUCTIONS distilled from InterSystems documentation.
+Fifteen domain skills teach the agent IRIS-specific concepts. Each skill is a `%AI.Agent.Skill` subclass with markdown INSTRUCTIONS distilled from InterSystems documentation.
 
 | Skill | Domain |
 |---|---|
@@ -203,6 +205,8 @@ Thirteen domain skills teach the agent IRIS-specific concepts. Each skill is a `
 | HL7v2 | Message types, segments, ACK semantics, schema navigation |
 | FHIRR4 | Resources, references, search parameters, R4 bundles |
 | FHIRServer | FHIR R4 server build/admin: discover foundation namespace, endpoints, config, metadata packages, resource CRUD/search/$validate, CapabilityStatement, guarded provisioning |
+| BulkFHIR | Bulk FHIR Coordinator config + `$export` (system/Patient/Group), SMART Backend Services, fetch/storage adapters, async REST flow |
+| FHIRSQLBuilder | Project FHIR data into relational SQL (Analysis → Spec → Projection), columns/subtables/filters, query over SQL/JDBC/ODBC |
 | SDA | SDA3 model as transformation hub, HL7-to-SDA-to-FHIR pipeline |
 | RestInProductions | REST services and operations inside productions |
 | ESBPattern | Using a production as an Enterprise Service Bus |
@@ -259,7 +263,7 @@ ZN "<your-namespace>"
 zpm "load /path/to/agentic_interop"
 ```
 
-The module installs all 68 classes, two web apps (`/agentic/` for the UI, `/api/agentic/` for REST), seed data, and the curated class catalog. To install in multiple namespaces, run the command once per namespace.
+The module installs all 71 classes, two web apps (`/agentic/` for the UI, `/api/agentic/` for REST), seed data, and the curated class catalog. To install in multiple namespaces, run the command once per namespace.
 
 ## After install
 
