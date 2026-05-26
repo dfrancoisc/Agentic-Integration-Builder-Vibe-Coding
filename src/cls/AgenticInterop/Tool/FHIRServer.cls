@@ -1567,6 +1567,14 @@ ClassMethod LoadFHIRDirectory(url As %String, directory As %String, infraFirst A
     Set out.url = $get(url)
     Set out.directory = $get(directory)
     Set out.order = []
+    ; The %AI framework passes "" for optional params the model omits, so the
+    ; ObjectScript default (infraFirst=1) does NOT apply — an omitted infraFirst
+    ; arrives as "" and `If infraFirst` is false, which loads patient bundles
+    ; before the infrastructure (Organizations/Practitioners) they reference and
+    ; fails with <HSFHIRErr>ConditionalRefNotResolved. Normalize: default ON;
+    ; only OFF when the caller explicitly passes 0/false.
+    Set infraFirst = $select($get(infraFirst)="":1, $zconvert($get(infraFirst),"L")="true":1, $zconvert($get(infraFirst),"L")="false":0, 1:+infraFirst)
+    Set out.infraFirst = infraFirst
     If ($get(url) = "") || ($get(directory) = "") {
         Set out.ok = 0
         Set out.error = "Pass `url` (endpoint cspUrl) and `directory` (server-side path of FHIR files)."

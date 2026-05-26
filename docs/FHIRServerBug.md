@@ -140,6 +140,34 @@ MB. Verified: pattern `^<NS>X[0-9]+[RV]$` matches `FHIRX0007R`/`V`, excludes
   no longer shows "unknown" or auto-selects a non-FHIR namespace. (commit `52ebe47`;
   CORE-method refactor follows.)
 
+## 🟡 OUR-3 — `%AI` framework passes `""` for omitted optional params, so ObjectScript defaults don't apply (broke Synthea load ordering)
+
+- **Symptom:** loading a Synthea directory through the FHIR Assistant failed with
+  `<HSFHIRErr>ConditionalRefNotResolved` on (nearly) every file — e.g. 32 of 108
+  done, 32 failed — even though the folder contained the `hospitalInformation` and
+  `practitionerInformation` bundles and `LoadFHIRDirectory` defaults `infraFirst=1`.
+- **Root cause:** the load order was alphabetical, NOT infrastructure-first. The tool
+  signature is `LoadFHIRDirectory(url, directory, infraFirst As %Boolean = 1, ...)`, but
+  when the model omits `infraFirst` the **%AI framework passes it as `""`** (not omitted),
+  so the ObjectScript default of `1` never applies and `If infraFirst` is false. Patient
+  bundles loaded before the Organizations/Practitioners they reference by **conditional
+  reference** (`Organization?identifier=...`), which the server resolves against the
+  store → not found → `ConditionalRefNotResolved`. (`done` ticked up only when
+  `hospitalInformation` finally came up in alphabetical position.) This is why the same
+  data loaded fine in earlier dev runs — those called the tool with `infraFirst=1`
+  explicitly; the regression only appears through the agent.
+- **FHIR fact:** Synthea cross-bundle references (patient → hospital/practitioner) are
+  **conditional references** resolved against persisted data, so the infrastructure
+  bundles MUST be ingested before the patient bundles.
+- **Fix:** normalize the flag at the top of `LoadFHIRDirectory` — treat `""`/unspecified
+  as ON, only OFF when explicitly `0`/`false`:
+  `Set infraFirst = $select($get(infraFirst)="":1, ...="true":1, ...="false":0, 1:+infraFirst)`.
+  Verified by dry-run: with `infraFirst=""` the order is now hospitalInformation →
+  practitionerInformation → patients.
+- **General lesson:** never rely on an ObjectScript parameter default for a `%AI` tool —
+  the framework supplies `""` for any optional the model omits. Normalize every optional
+  at the method top.
+
 ## Note — `GetEndpointList()` returning empty is NOT a bug
 
 Investigated as a suspected CORE bug; it was correct — the endpoint had genuinely been
