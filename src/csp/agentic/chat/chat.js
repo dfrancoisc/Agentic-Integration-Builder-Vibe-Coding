@@ -728,6 +728,86 @@ function newToolCard(stack, name) {
     return { card, argsBlock, resultBlock, status, dot };
 }
 
+// Live progress bar for a background FHIR directory load. LoadFHIRDirectory
+// returns a jobId + totalFiles and runs the load in a background job; we poll
+// /fhir/load/status until the job reaches a terminal state (completed|error)
+// and animate the bar. This is decoupled from the chat turn, so large loads
+// (minutes) are not bound by the turn deadline.
+const fhirLoadBars = new Set();
+function startFhirLoadProgress(bubble, result) {
+    const jobId = result.jobId;
+    if (!jobId || fhirLoadBars.has(jobId)) return;
+    fhirLoadBars.add(jobId);
+    const total0 = Number(result.totalFiles || result.total || 0);
+    const dest = result.url || 'the FHIR server';
+
+    const box = document.createElement('div');
+    box.className = 'fhir-load';
+    const head = document.createElement('div');
+    head.className = 'fhir-load-head';
+    head.textContent = 'Loading FHIR data into ' + dest;
+    box.appendChild(head);
+    const track = document.createElement('div');
+    track.className = 'fhir-load-track';
+    const fill = document.createElement('div');
+    fill.className = 'fhir-load-fill';
+    fill.style.width = '0%';
+    track.appendChild(fill);
+    box.appendChild(track);
+    const count = document.createElement('div');
+    count.className = 'fhir-load-count';
+    count.textContent = total0 ? ('0 of ' + total0 + ' files') : 'Starting...';
+    box.appendChild(count);
+
+    // Place the bar above the assistant's completion text.
+    bubble.wrap.insertBefore(box, bubble.text);
+    $('messages').scrollTop = $('messages').scrollHeight;
+
+    let fails = 0;
+    const startedAt = Date.now();
+    const MAX_MS = 60 * 60 * 1000; // hard stop after 1h
+    function finish(state, msg) {
+        box.classList.add(state === 'error' ? 'is-error' : 'is-done');
+        if (state !== 'error') fill.style.width = '100%';
+        count.textContent = msg;
+    }
+    async function poll() {
+        if (Date.now() - startedAt > MAX_MS) { finish('error', 'Stopped tracking after 1 hour.'); return; }
+        let d;
+        try {
+            const r = await fetch(API + '/fhir/load/status?jobId=' + encodeURIComponent(jobId), { headers: { Authorization: authHeader() }, cache: 'no-store' });
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            d = await r.json();
+            fails = 0;
+        } catch (e) {
+            fails++;
+            if (fails >= 8) { finish('error', 'Lost connection to the load job.'); return; }
+            setTimeout(poll, 2000);
+            return;
+        }
+        const tot = Number(d.total || total0 || 0);
+        const done = Number(d.done != null ? d.done : ((d.filesDone || 0) + (d.filesFailed || 0)));
+        const pct = d.percent != null ? Number(d.percent) : (tot ? Math.round(done / tot * 100) : 0);
+        fill.style.width = Math.max(0, Math.min(100, pct)) + '%';
+        const failedTxt = d.filesFailed ? (', ' + d.filesFailed + ' failed') : '';
+        const st = String(d.status || '').toLowerCase();
+        if (st === 'completed' || st === 'done') {
+            finish('done', 'Loaded ' + (d.filesDone != null ? d.filesDone : done) + ' of ' + tot + ' files' + failedTxt + '.');
+            return;
+        }
+        if (st === 'error') {
+            finish('error', 'Load failed' + failedTxt + (d.error ? ': ' + d.error : '') + ' (' + done + ' of ' + tot + ' done).');
+            return;
+        }
+        // queued / running
+        let line = done + ' of ' + tot + ' files' + failedTxt;
+        if (d.current) { line += ' — ' + String(d.current).slice(0, 48); }
+        count.textContent = line;
+        setTimeout(poll, 1500);
+    }
+    poll();
+}
+
 // Render an Approve / Reject card for a pending mutating tool call.
 // The card is open by default (the user needs to act); APPROVE adds
 // the token to the next request and re-fires the same tool intent;
@@ -993,6 +1073,16 @@ async function send(message) {
                         card.resultBlock.textContent = formatToolResult(data.result);
                     }
                 }
+                // A FHIR directory load started -> show a live progress bar
+                // that polls the background job until it finishes.
+                try {
+                    let rr = data.result;
+                    if (typeof rr === 'string') { try { rr = JSON.parse(rr); } catch (e) { rr = null; } }
+                    if (rr && rr.jobId && rr.ok && !rr.dryRun &&
+                        (data.name === 'LoadFHIRDirectory' || rr.tool === 'load_fhir_directory')) {
+                        startFhirLoadProgress(bubble, rr);
+                    }
+                } catch (e) {}
             } else if (event === 'tool_error' && data && data.name) {
                 toolErrors++;
                 const card = toolCardsByName.get(data.name);

@@ -31,6 +31,7 @@ XData UrlMap [ XMLNamespace = "http://www.intersystems.com/urlmap" ]
     <Route Url="/fhir/upload"        Method="GET"    Call="FHIRUploadList" />
     <Route Url="/fhir/upload"        Method="POST"   Call="FHIRUpload" />
     <Route Url="/fhir/upload"        Method="DELETE" Call="FHIRUploadClear" />
+    <Route Url="/fhir/load/status"   Method="GET"    Call="FHIRLoadStatus" />
 
     <!-- Registries (for UI dropdowns) -->
     <!-- Class source viewer (read-only UDL for the inline panel) -->
@@ -508,6 +509,42 @@ ClassMethod FHIRAudit() As %Status
     Try { Set out.stats = ##class(AgenticInterop.Tool.FHIRServer).GetFHIRServerStats(url, "", ns) } Catch ex { Set out.statsError = $extract(ex.DisplayString(), 1, 300) }
     Try { Set out.loadMetrics = ##class(AgenticInterop.Tool.FHIRServer).GetFHIRLoadMetrics("", ns) } Catch ex { Set out.loadError = $extract(ex.DisplayString(), 1, 300) }
     Set out.ok = 1
+    Do ..%WriteJSON(out)
+    Quit $$$OK
+}
+
+/// GET /fhir/load/status?jobId=... — live progress for a background FHIR
+/// directory load (started by LoadFHIRDirectory). The chat surface polls this
+/// to animate a progress bar. Reads the ^AgInt.FHIRLoad progress global
+/// directly (it lives in the dispatch namespace where the loader writes it),
+/// so frequent polling does not spam the Observer/tool log.
+/// Returns: { ok, found, jobId, status, total, filesDone, filesFailed, done,
+/// percent, current?, error? }. status: queued|running|completed|error.
+ClassMethod FHIRLoadStatus() As %Status
+{
+    Set out = {}
+    Set jobId = $get(%request.Data("jobId", 1))
+    Set out.jobId = jobId
+    If jobId = "" {
+        Set out.ok = 0, out.found = 0, out.error = "Pass jobId."
+        Do ..%WriteJSON(out)
+        Quit $$$OK
+    }
+    If '$data(^AgInt.FHIRLoad(jobId)) {
+        Set out.ok = 1, out.found = 0, out.status = "unknown", out.percent = 0
+        Do ..%WriteJSON(out)
+        Quit $$$OK
+    }
+    Set out.ok = 1, out.found = 1
+    Set out.status = $get(^AgInt.FHIRLoad(jobId, "status"))
+    Set out.total = +$get(^AgInt.FHIRLoad(jobId, "total"))
+    Set out.filesDone = +$get(^AgInt.FHIRLoad(jobId, "done"))
+    Set out.filesFailed = +$get(^AgInt.FHIRLoad(jobId, "failed"))
+    Set out.current = $get(^AgInt.FHIRLoad(jobId, "current"))
+    Set done = out.filesDone + out.filesFailed
+    Set out.done = done
+    Set out.percent = $select(out.total > 0:$normalize((done / out.total) * 100, 0), 1:0)
+    If $get(^AgInt.FHIRLoad(jobId, "jobError")) '= "" { Set out.error = ^AgInt.FHIRLoad(jobId, "jobError") }
     Do ..%WriteJSON(out)
     Quit $$$OK
 }

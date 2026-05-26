@@ -226,6 +226,31 @@ file-staging feature, separate from the FHIR repository.
   `/usr/irissys/mgr/Temp/agentic-fhir-upload/` (owned by irisowner), GET lists
   it, DELETE clears it.
 
+## 5d. Live load progress bar in chat (what + why)
+
+Why: `LoadFHIRDirectory` runs the load as a background `Job` and returns a
+`jobId` + `total` immediately (a large Synthea set takes minutes — far longer
+than a single chat turn, and chat must never block, per the no-timeouts rule).
+The user wants to SEE how far along the load is, not read a wall of text.
+
+How: the load already records progress in `^AgInt.FHIRLoad(jobId, "total"/"done"/
+"failed"/"status"/"current")` in the dispatch namespace (status: queued →
+running → completed|error; `done`/`failed` increment per file). We surface it:
+
+- REST (`Dispatch`): `GET /api/agentic/fhir/load/status?jobId=...` reads that
+  global directly (no Observer/tool-log spam from frequent polls) and returns
+  `{ ok, found, status, total, filesDone, filesFailed, done, percent, current?,
+  error? }`. Verified: percent computed correctly; route registered (401 unauth).
+- Chat UI (`chat.js`): when a `tool_result` for `LoadFHIRDirectory` carries a
+  `jobId` (and `ok`, not `dryRun`), it renders a progress bar inside the
+  assistant message and polls the status endpoint every ~1.5s, animating the
+  fill and showing "N of M files" + the current file, until `completed`/`error`.
+  Styles in `chat.css` (`.fhir-load*`), themed; no icons/emoji. Decoupled from
+  the chat turn, so minutes-long loads are not bound by the turn deadline.
+- Agent: `LoadFHIRDirectory`'s result message and `GetFHIRLoadStatus`'s doc now
+  tell the agent the chat shows the bar — report that the load started + the
+  count, then stop; do NOT poll `GetFHIRLoadStatus` in a loop.
+
 ## 5. Status legend
 - DONE: GetFHIRLoadMetrics, GetFHIRServerStats, /fhir/audit, audit panel,
   CORE refactor (GetAllPackages), FHIRServerBug.md.

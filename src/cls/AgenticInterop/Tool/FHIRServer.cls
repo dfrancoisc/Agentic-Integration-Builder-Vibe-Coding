@@ -1653,7 +1653,7 @@ ClassMethod LoadFHIRDirectory(url As %String, directory As %String, infraFirst A
                 ; Launch the background loader.
                 Job ##class(AgenticInterop.Tool.FHIRServer).%RunLoadJob(jobId, url, targetNs)
                 Set out.ok = 1
-                Set out.message = "Queued " _ total _ " file(s) for load into " _ url _ " (infrastructure bundles first). Poll GetFHIRLoadStatus with this jobId."
+                Set out.message = "Loading " _ total _ " file(s) into " _ url _ " in the background (infrastructure bundles first). The chat shows a live progress bar that tracks this to completion — tell the user the load has started and how many files, then stop. Do NOT poll in a loop."
             }
         }
     } Catch ex {
@@ -1665,8 +1665,9 @@ ClassMethod LoadFHIRDirectory(url As %String, directory As %String, infraFirst A
 }
 
 /// Check the progress of a background FHIR directory load started by
-/// LoadFHIRDirectory. CALL THIS repeatedly to report progress until done.
-/// Read-only.
+/// LoadFHIRDirectory. The chat already shows a live progress bar, so do NOT
+/// poll this in a loop — call it only if the user explicitly asks for a
+/// one-time status update in text. Read-only.
 ///
 /// jobId:     the id returned by LoadFHIRDirectory.
 /// namespace: optional (unused for the read; kept for signature symmetry).

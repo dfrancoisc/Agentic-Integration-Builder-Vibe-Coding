@@ -813,3 +813,44 @@ body[data-rail="closed"] .history-rail { transform: translateX(-100%); pointer-e
 .rail-list::-webkit-scrollbar-thumb:hover { background: var(--border-strong); }
 .messages::-webkit-scrollbar-track,
 .rail-list::-webkit-scrollbar-track { background: transparent; }
+
+/* ----- FHIR directory load progress bar ---------------------- */
+
+.fhir-load {
+    margin: 8px 0 10px;
+    padding: 10px 12px;
+    background: var(--panel-2, #1c2129);
+    border: 1px solid var(--border, #262d39);
+    border-left: 3px solid var(--primary, #6366f1);
+    border-radius: 8px;
+}
+.fhir-load-head {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text, #e6e8eb);
+    margin-bottom: 8px;
+}
+.fhir-load-track {
+    height: 8px;
+    background: var(--code, #0a0d12);
+    border: 1px solid var(--border, #262d39);
+    border-radius: 6px;
+    overflow: hidden;
+}
+.fhir-load-fill {
+    height: 100%;
+    width: 0;
+    background: var(--primary, #6366f1);
+    border-radius: 6px;
+    transition: width .4s ease;
+}
+.fhir-load-count {
+    margin-top: 6px;
+    font-size: 11px;
+    color: var(--muted, #8b95a6);
+    font-variant-numeric: tabular-nums;
+}
+.fhir-load.is-done .fhir-load-fill { background: #3fb950; }
+.fhir-load.is-done .fhir-load-count { color: #3fb950; }
+.fhir-load.is-error .fhir-load-fill { background: #f85149; }
+.fhir-load.is-error .fhir-load-count { color: #f85149; }
