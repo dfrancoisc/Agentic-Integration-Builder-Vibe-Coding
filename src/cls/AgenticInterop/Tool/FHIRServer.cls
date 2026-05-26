@@ -1554,10 +1554,17 @@ ClassMethod ResetFHIRServerData(url As %String, namespace As %String = "") As %D
 /// infraFirst: 1 (default) = load infrastructure bundles first.
 /// dryRun:    1 = return the planned order only, do not load.
 /// namespace: optional target namespace.
+/// force:     0 (default) = run the pre-check that refuses to start the load
+///            when patient bundles are present without their infrastructure
+///            (hospitalInformation*.json / practitionerInformation*.json), to
+///            avoid the cascade of <HSFHIRErr>ConditionalRefNotResolved that
+///            otherwise hits every patient. Re-call with force=1 ONLY after
+///            the user confirms the target FHIR server already contains the
+///            Organizations and Practitioners these patients reference.
 ///
-/// Returns: { ok, url, directory, totalFiles, order:[firstFiles],
-/// jobId?, dryRun?, message }.
-ClassMethod LoadFHIRDirectory(url As %String, directory As %String, infraFirst As %Boolean = 1, dryRun As %Boolean = 0, namespace As %String = "") As %DynamicObject
+/// Returns: { ok, url, directory, totalFiles, infraCount, otherCount,
+/// order:[firstFiles], jobId?, dryRun?, warning?, message }.
+ClassMethod LoadFHIRDirectory(url As %String, directory As %String, infraFirst As %Boolean = 1, dryRun As %Boolean = 0, namespace As %String = "", force As %Boolean = 0) As %DynamicObject
 {
     Do ##class(AgenticInterop.Agent.Manager).ToolStart("LoadFHIRDirectory")
     Set out = {}
@@ -1575,6 +1582,10 @@ ClassMethod LoadFHIRDirectory(url As %String, directory As %String, infraFirst A
     ; only OFF when the caller explicitly passes 0/false.
     Set infraFirst = $select($get(infraFirst)="":1, $zconvert($get(infraFirst),"L")="true":1, $zconvert($get(infraFirst),"L")="false":0, 1:+infraFirst)
     Set out.infraFirst = infraFirst
+    ; Same defense for `force`: framework-omitted arrives as "" — the SAFE
+    ; default here is 0 (DO run the pre-check). Only ON when explicitly true.
+    Set force = $select($get(force)="":0, $zconvert($get(force),"L")="true":1, $zconvert($get(force),"L")="false":0, 1:+force)
+    Set out.force = force
     If ($get(url) = "") || ($get(directory) = "") {
         Set out.ok = 0
         Set out.error = "Pass `url` (endpoint cspUrl) and `directory` (server-side path of FHIR files)."
@@ -1591,13 +1602,21 @@ ClassMethod LoadFHIRDirectory(url As %String, directory As %String, infraFirst A
             Set out.error = "Directory not found on the IRIS server: " _ directory _ ". The files must be on a path IRIS can read (copy them onto the server or mount a volume)."
         } Else {
             Kill keys
-            Set total = 0
+            Set total = 0, infraCount = 0, otherCount = 0
             Set q = ##class(%ResultSet).%New("%File:FileSet")
             Do q.Execute(directory, "*.json;*.ndjson")
             While q.Next() {
                 Set fp = q.Get("Name")
                 If fp = "" { Continue }
                 Set lname = $zconvert($piece(fp, "/", *), "L")
+                ; Track Synthea infrastructure vs everything else for the
+                ; pre-check below. Strict filename match — we use this only
+                ; for the warning, not for ranking.
+                If (lname [ "hospitalinformation") || (lname [ "practitionerinformation") {
+                    Set infraCount = infraCount + 1
+                } Else {
+                    Set otherCount = otherCount + 1
+                }
                 Set rank = 2
                 If infraFirst {
                     If lname [ "hospitalinformation" { Set rank = 0 }
@@ -1609,6 +1628,22 @@ ClassMethod LoadFHIRDirectory(url As %String, directory As %String, infraFirst A
                 Set keys(rank, lname, total) = fp
             }
             Set out.totalFiles = total
+            Set out.infraCount = infraCount
+            Set out.otherCount = otherCount
+            ; PRE-CHECK: refuse before queueing the background job if patient
+            ; bundles are present without the two Synthea infrastructure
+            ; bundles. Without them, every patient fails with
+            ; <HSFHIRErr>ConditionalRefNotResolved (the reference lookup
+            ; resolves against the persisted store, not against entries in
+            ; the same transaction bundle). Skipped for dryRun (preview
+            ; only) and when force=1 (caller has confirmed the FHIR server
+            ; already has the referenced Organizations and Practitioners).
+            If 'force, 'dryRun, (otherCount > 0), (infraCount = 0) {
+                Set out.ok = 0
+                Set out.warning = "No infrastructure bundles in this folder. The " _ otherCount _ " patient bundle(s) reference Organizations and Practitioners that the FHIR server resolves against already-loaded data — without hospitalInformation*.json and practitionerInformation*.json loaded first, every patient bundle would fail with unresolved-reference errors. Add the two infrastructure files to the folder and try again. If the target FHIR server ALREADY contains those Organizations and Practitioners from a previous load, ask the user to confirm and re-call this tool with force=1."
+                Do ##class(AgenticInterop.Agent.Manager).ToolDone("LoadFHIRDirectory", out)
+                Return out
+            }
             If total = 0 {
                 Set out.ok = 1
                 Set out.message = "No .json/.ndjson files found in " _ directory _ "."

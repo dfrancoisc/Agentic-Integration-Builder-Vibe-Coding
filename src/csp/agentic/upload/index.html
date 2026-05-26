@@ -70,7 +70,27 @@
 (function () {
   "use strict";
   var API = "/api/agentic";
-  var STATE = { bearer: "", ns: "", dir: "" };
+  var STATE = { bearer: "", ns: "", dir: "", serverFiles: [] };
+
+  // A Synthea infrastructure bundle by filename (Organizations + Practitioners
+  // live in these two files). Used by the pre-check below.
+  function isInfraName(name) {
+    var n = String(name || "").toLowerCase();
+    return n.indexOf("hospitalinformation") >= 0 || n.indexOf("practitionerinformation") >= 0;
+  }
+  function hasInfra(list) {
+    for (var i = 0; i < (list || []).length; i++) {
+      if (isInfraName(list[i].name || list[i])) return true;
+    }
+    return false;
+  }
+  function countNonInfra(list) {
+    var c = 0;
+    for (var i = 0; i < (list || []).length; i++) {
+      if (!isInfraName(list[i].name || list[i])) c++;
+    }
+    return c;
+  }
   var $ = function (id) { return document.getElementById(id); };
   var esc = function (s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) {
     return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]; }); };
@@ -145,6 +165,7 @@
       $("dir").innerHTML = "";
     }
     var files = d.files || [];
+    STATE.serverFiles = files; // cached for the pre-check in upload()
     if (files.length) {
       var html = '<table><tr><th>File</th><th class="num">Bytes</th></tr>';
       files.forEach(function (f) { html += '<tr><td>' + esc(f.name) + '</td><td class="num">' + num(f.bytes) + '</td></tr>'; });
@@ -171,6 +192,27 @@
     var picker = $("picker");
     if (!picker.files || !picker.files.length) { $("status").innerHTML = '<span class="err">Choose one or more .json files first.</span>'; return; }
     var files = Array.prototype.slice.call(picker.files);
+
+    // PRE-CHECK (mirrors LoadFHIRDirectory's server-side gate): warn before
+    // the upload starts if the user would end up with patient bundles on the
+    // server WITHOUT the two infrastructure files. Without them the load
+    // fails with ConditionalRefNotResolved on every patient.
+    var selFiles = files.map(function (f) { return { name: f.name }; });
+    var selectionPatients = countNonInfra(selFiles);
+    var infraSomewhere = hasInfra(selFiles) || hasInfra(STATE.serverFiles);
+    if (selectionPatients > 0 && !infraSomewhere) {
+      var go = confirm(
+        "You're uploading " + selectionPatients + " patient bundle(s), but neither this upload nor the server folder contains hospitalInformation*.json or practitionerInformation*.json.\n\n" +
+        "Synthea patient bundles reference Organizations and Practitioners that live in those two files; loading them without the infrastructure files will fail with reference errors on every patient.\n\n" +
+        "Recommended: click Cancel, add hospitalInformation*.json and practitionerInformation*.json to this upload, then upload all together.\n\n" +
+        "Click OK to upload anyway (only do this if the FHIR server already has those Organizations and Practitioners from a previous load)."
+      );
+      if (!go) {
+        $("status").innerHTML = '<span class="err">Upload cancelled — add hospitalInformation*.json and practitionerInformation*.json, then try again.</span>';
+        return;
+      }
+    }
+
     $("uploadBtn").disabled = true;
     var okCount = 0, failCount = 0, firstErr = "", i = 0;
 
