@@ -372,7 +372,7 @@ ClassMethod ChatStream(pResponse As %CSP.Response, pBodyStream) As %Status
         While iteration < maxIter {
             Set iteration = iteration + 1
             Do monitor.OnIterationStart(iteration, maxIter, session)
-            Set input = $select(iteration=1:message, 1:"Continue. Call more tools if needed, or write your completion report if all work is done.")
+            Set input = $select(iteration=1:message, 1:"Continue working. If you still need to act, call the next tool. If everything the user asked for is done, reply to the user in plain language with ONLY the outcome — one or two short sentences naming what now exists and where. Do NOT show tool output, JSON, or internal class names; do NOT add suggestions, caveats, comparisons, or any topic the user did not ask about.")
             ; ── Observer: calling LLM ──
             Set iterEv = {}
             Set iterEv.msg = "Calling Bedrock..."

@@ -1260,22 +1260,24 @@ ClassMethod SetFHIREndpointEnabled(url As %String, enabled As %Boolean, namespac
 ///
 /// url:         the new endpoint cspUrl (e.g., "/csp/healthshare/myns/fhir/r4").
 /// packages:    metadata packages CSV; default "hl7.fhir.r4.core@4.0.1".
-/// strategy:    InteractionsStrategy class; default
-///              "HS.FHIRServer.Storage.JsonAdvSQL.InteractionsStrategy".
+/// strategy:    storage strategy; default "advanced-json".
 /// description: optional display description.
 /// namespace:   optional target namespace.
 ///
-/// Returns: { ok, created, url, namespace, strategy, packages, error? }.
-ClassMethod CreateFHIREndpoint(url As %String, packages As %String = "hl7.fhir.r4.core@4.0.1", strategy As %String = "HS.FHIRServer.Storage.JsonAdvSQL.InteractionsStrategy", description As %String = "", namespace As %String = "") As %DynamicObject
+/// Returns: { ok, created, url, namespace, storage, packages, error? }.
+ClassMethod CreateFHIREndpoint(url As %String, packages As %String = "hl7.fhir.r4.core@4.0.1", strategy As %String = "advanced-json", description As %String = "", namespace As %String = "") As %DynamicObject
 {
     Do ##class(AgenticInterop.Agent.Manager).ToolStart("CreateFHIREndpoint")
     Set out = {}
-    Set out.tool = "create_fhir_endpoint"
     Set dispNs = $namespace
     Set targetNs = ..%ResolveNs(namespace)
+    ; Map the friendly alias to the real storage class. The class name is
+    ; never exposed to the model (in the schema or the result) because the
+    ; model parrots whatever it sees — that is the internals leak we fix.
+    Set strategyClass = ..%ResolveStrategy(strategy)
     Set out.namespace = targetNs
     Set out.url = $get(url)
-    Set out.strategy = strategy
+    Set out.storage = $select((strategyClass["JsonAdvSQL"):"Advanced JSON",1:"standard JSON")
     Set out.packages = packages
     If $get(url) = "" {
         Set out.ok = 0
@@ -1313,7 +1315,7 @@ ClassMethod CreateFHIREndpoint(url As %String, packages As %String = "hl7.fhir.r
             ; InstallInstance is a VOID method (no return value) — call with
             ; Do, not Set (Set triggers <COMMAND> "Function must return a
             ; value"). It throws on failure, which the outer Catch handles.
-            Do ##class(HS.FHIRServer.Installer).InstallInstance(url, strategy, pkgList, "", description)
+            Do ##class(HS.FHIRServer.Installer).InstallInstance(url, strategyClass, pkgList, "", description)
             Set out.created = ''##class(HS.FHIRServer.ServiceAdmin).EndpointExists(url)
             If 'out.created {
                 Set out.ok = 0
@@ -1330,6 +1332,18 @@ ClassMethod CreateFHIREndpoint(url As %String, packages As %String = "hl7.fhir.r
     Set $namespace = dispNs
     Do ##class(AgenticInterop.Agent.Manager).ToolDone("CreateFHIREndpoint", out)
     Quit out
+}
+
+/// Map a friendly storage-strategy alias to the real InteractionsStrategy
+/// class. Back-compat: a value that already looks like a class (contains a
+/// dot) passes through unchanged; anything else maps to Advanced JSON, the
+/// strategy currently offered. Internal — never exposed as a tool, so the
+/// class name stays out of the model's view.
+ClassMethod %ResolveStrategy(strategy As %String = "advanced-json") As %String [ Internal ]
+{
+    Set s = $zstrip($get(strategy), "<>W")
+    If s [ "." Quit s
+    Quit "HS.FHIRServer.Storage.JsonAdvSQL.InteractionsStrategy"
 }
 
 /// Remove a FHIR endpoint. MUTATING (delete_ prefix). By default this
