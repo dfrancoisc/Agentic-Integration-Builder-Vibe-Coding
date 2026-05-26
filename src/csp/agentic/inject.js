@@ -40,8 +40,9 @@
     var CONFIG_OVERLAY_ID = 'agentic-config-overlay';
     var CHAT_OVERLAY_ID = 'agentic-chat-overlay';
     var AUD_MARK = 'agentic-hdr-audit';  // mat-toolbar-row audit icon marker
-    var AUD_NAV_MARK = 'agentic-nav-audit';  // left mat-sidenav nav-list item marker
-    var LOAD_NAV_MARK = 'agentic-nav-load';  // left mat-sidenav "Load FHIR Data" item marker
+    var LOAD_MARK = 'agentic-hdr-load';  // mat-toolbar-row "Load FHIR Data" icon marker
+    var AUD_NAV_MARK = 'agentic-nav-audit';  // (unused) left mat-sidenav nav-list item marker
+    var LOAD_NAV_MARK = 'agentic-nav-load';  // (unused) left mat-sidenav nav-list item marker
     var AUD_OVERLAY_ID = 'agentic-audit-overlay';  // left-slide audit panel
     var CLEAN_PROD_MARK = 'agentic-clean-prod';
     var CLEAN_ART_MARK  = 'agentic-clean-art';
@@ -702,6 +703,45 @@
         return true;
     }
 
+    // "Load FHIR Data" header button — opens the upload panel. Sits in the
+    // top toolbar next to the chat + audit icons. FHIR Management only.
+    function ensureHeaderLoad() {
+        if (CHATBOT_KEY !== 'fhir-management') return false;
+        var row = document.querySelector('mat-toolbar mat-toolbar-row')
+               || document.querySelector('mat-toolbar-row')
+               || document.querySelector('mat-toolbar');
+        if (!row) return false;
+        for (var i = 0; i < row.children.length; i++) {
+            if (row.children[i].classList.contains(LOAD_MARK)) return true;
+        }
+        injectStyles();
+        var wrap = document.createElement('div');
+        wrap.className = 'dropdown ' + HDR_MARK + ' ' + LOAD_MARK;
+        wrap.innerHTML =
+            '<button type="button" aria-label="Load FHIR Data" title="Upload FHIR JSON files to a server folder for loading">' +
+              '<svg viewBox="0 0 24 24"><path d="M19 13v6H5v-6H3v6c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2v-6h-2zM11 4.83V15h2V4.83l3.59 3.58L18 7l-6-6-6 6 1.41 1.41L11 4.83z" fill="currentColor"/></svg>' +
+            '</button>';
+        wrap.querySelector('button').addEventListener('click', function (e) {
+            e.preventDefault(); e.stopPropagation();
+            openLoad();
+        });
+        // Place after the audit button if present, else after chat, else
+        // before the namespace pill. (audit carries both HDR_MARK + AUD_MARK.)
+        var auditDrop = null, chatDrop = null, firstDirectDrop = null;
+        for (var j = 0; j < row.children.length; j++) {
+            var ch = row.children[j];
+            if (ch.classList.contains(LOAD_MARK)) continue;
+            if (ch.classList.contains(AUD_MARK) && !auditDrop) auditDrop = ch;
+            else if (ch.classList.contains(HDR_MARK) && !chatDrop) chatDrop = ch;
+            if (ch.classList.contains('dropdown') && !firstDirectDrop) firstDirectDrop = ch;
+        }
+        var anchor = auditDrop || chatDrop;
+        if (anchor && anchor.nextSibling) row.insertBefore(wrap, anchor.nextSibling);
+        else if (firstDirectDrop) row.insertBefore(wrap, firstDirectDrop);
+        else row.appendChild(wrap);
+        return true;
+    }
+
     // FHIR Server Audit — a LEFT-NAV menu item in the FHIR Management
     // Angular Material sidenav (mat-sidenav > mat-nav-list). Only for the
     // FHIR Management injection. Clones an existing nav item so it matches
@@ -810,13 +850,13 @@
         if (INJECT_MODE === 'floating') {
             ensureFloatingLauncher();
         } else if (INJECT_MODE === 'header') {
-            // Host-agnostic: splice the chat icon into the page's top toolbar.
+            // Host-agnostic: splice Chat + Audit + Load FHIR Data into the page's
+            // top toolbar, side by side. The header is the proven mechanism (the
+            // chat icon has always rendered there); the left-nav (mat-nav-list)
+            // injection was unreliable in this build, so all three live here.
             ensureHeaderChat();
-            // Audit + Load FHIR Data live in the LEFT NAV (mat-sidenav), per the
-            // user's explicit request — NOT the header. ensureHeaderAudit() is
-            // retained below only as a fallback and is intentionally NOT called.
-            ensureSideNavAudit();
-            ensureSideNavLoad();
+            ensureHeaderAudit();
+            ensureHeaderLoad();
         } else {
             ensureTab();
             ensureCleanupButtons();
