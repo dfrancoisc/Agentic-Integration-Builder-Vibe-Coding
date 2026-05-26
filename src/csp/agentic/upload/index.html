@@ -163,27 +163,45 @@
         $("status").innerHTML = '<span class="err">List failed: ' + esc(e.message) + '</span>'; });
   }
 
+  // Upload files ONE AT A TIME (sequentially), not all in one multipart POST.
+  // A single request carrying many multi-MB Synthea files is large and fragile
+  // through the CSP gateway; per-file requests are small, reliable, give live
+  // progress, and let one bad file fail without sinking the whole batch.
   function upload() {
     var picker = $("picker");
     if (!picker.files || !picker.files.length) { $("status").innerHTML = '<span class="err">Choose one or more .json files first.</span>'; return; }
-    var fd = new FormData();
-    for (var i = 0; i < picker.files.length; i++) { fd.append("files", picker.files[i], picker.files[i].name); }
+    var files = Array.prototype.slice.call(picker.files);
     $("uploadBtn").disabled = true;
-    $("status").textContent = "Uploading " + picker.files.length + " file(s)…";
-    // NOTE: do not set Content-Type — the browser sets the multipart boundary.
-    fetch(API + "/fhir/upload", { method: "POST", headers: authHeaders(), body: fd })
-      .then(function (r) { return r.json(); })
-      .then(function (d) {
-        $("uploadBtn").disabled = false;
-        if (d.ok) {
-          $("status").innerHTML = '<span class="ok">' + num(d.uploaded) + ' file(s) staged' + ((d.failed && d.failed.length) ? (', ' + d.failed.length + ' failed') : '') + '.</span>';
-          picker.value = "";
-          listFiles();
-        } else {
-          $("status").innerHTML = '<span class="err">Upload failed: ' + esc(d.error || "?") + '</span>';
-        }
-      })
-      .catch(function (e) { $("uploadBtn").disabled = false; $("status").innerHTML = '<span class="err">Upload failed: ' + esc(e.message) + (STATE.bearer ? '' : ' (no auth token — open this from the FHIR Management page).') + '</span>'; });
+    var okCount = 0, failCount = 0, firstErr = "", i = 0;
+
+    function finish() {
+      $("uploadBtn").disabled = false;
+      var cls = (okCount === 0) ? "err" : (failCount ? "err" : "ok");
+      var msg = okCount + " of " + files.length + " file(s) staged";
+      if (failCount) { msg += ", " + failCount + " failed" + (firstErr ? " (" + esc(firstErr) + ")" : ""); }
+      if (okCount === 0 && !STATE.bearer) { msg += " — no auth token; open this panel from the FHIR Management page."; }
+      $("status").innerHTML = '<span class="' + cls + '">' + msg + ".</span>";
+      picker.value = "";
+      listFiles();
+    }
+
+    function next() {
+      if (i >= files.length) { finish(); return; }
+      var f = files[i];
+      $("status").textContent = "Uploading " + (i + 1) + " of " + files.length + ": " + f.name + " …";
+      var fd = new FormData();
+      fd.append("files", f, f.name);
+      // NOTE: do not set Content-Type — the browser sets the multipart boundary.
+      fetch(API + "/fhir/upload", { method: "POST", headers: authHeaders(), body: fd })
+        .then(function (r) { return r.json().catch(function () { return { ok: 0, error: "HTTP " + r.status }; }); })
+        .then(function (d) {
+          if (d && d.ok && d.uploaded > 0) { okCount++; }
+          else { failCount++; if (!firstErr) { firstErr = (d && d.error) || "rejected"; } }
+        })
+        .catch(function (e) { failCount++; if (!firstErr) { firstErr = e.message; } })
+        .then(function () { i++; next(); });
+    }
+    next();
   }
 
   function clearFolder() {
