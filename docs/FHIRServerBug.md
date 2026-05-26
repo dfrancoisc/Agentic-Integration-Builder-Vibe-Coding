@@ -102,6 +102,19 @@ Data ingested via REST / BFC / the FHIR Management UI is not timed — use
 those. Capturing all paths would require subclassing the InteractionsStrategy
 (invasive, version-fragile) — deliberately NOT done. See `FHIRServerMCP.md` §4 C-alt.
 
+## ⚪ ENV-4 — FHIR server size ≠ namespace database size
+
+The namespace default database (`/usr/irissys/mgr/FHIR/`, ~1175 MB) holds the
+namespace code + the FHIR metadata packages — it is large even with NO FHIR
+server installed. The FHIR SERVER's actual data lives in DEDICATED repository
+databases created per endpoint, named `<NS>X####R` (resources) and `<NS>X####V`
+(versions) — e.g. `FHIRX0007R` / `FHIRX0007V`. So to report "FHIR server size",
+`GetFHIRServerStats` measures only the `<NS>X####R/V` repository databases (CORE
+`SYS.Database.Size`) and EXCLUDES the namespace default DB (name = `<NS>`). With
+no endpoint there are no repo databases → server storage = 0 (correct), not 1175
+MB. Verified: pattern `^<NS>X[0-9]+[RV]$` matches `FHIRX0007R`/`V`, excludes
+`FHIR`; `GetFHIRServerStats(FHIR)` with no endpoint reports 0 MB.
+
 ## 🟡 OUR-1 — `%AI.ToolSet.%Discover()` is baked at compile time
 
 - **Symptom:** a newly added tool method is invisible to the agent even after recompiling

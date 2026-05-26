@@ -109,15 +109,17 @@
     var lm = d.loadMetrics || {};
     var html = "";
 
-    // Storage
-    html += '<div class="section"><h2>Storage</h2>';
-    html += '<div class="cards"><div class="card"><div class="big">' + num(storage.totalMB) + ' MB</div><div class="lbl">Total database size</div></div>';
+    // Storage (FHIR SERVER repository databases — not the namespace default DB)
+    html += '<div class="section"><h2>FHIR server storage</h2>';
+    html += '<div class="cards"><div class="card"><div class="big">' + num(storage.totalMB) + ' MB</div><div class="lbl">Repository data size</div></div>';
     html += '<div class="card"><div class="big">' + num(stats.totalResources) + '</div><div class="lbl">Resources (counted types)</div></div></div>';
     var dbs = storage.databases || [];
     if (dbs.length) {
-      html += '<table><tr><th>Database</th><th>Directory</th><th class="num">Size (MB)</th></tr>';
-      dbs.forEach(function (db) { html += '<tr><td>' + esc(db.name) + '</td><td class="muted">' + esc(db.directory) + '</td><td class="num">' + num(db.sizeMB) + '</td></tr>'; });
+      html += '<table><tr><th>Repository DB</th><th>Role</th><th>Directory</th><th class="num">Size (MB)</th></tr>';
+      dbs.forEach(function (db) { html += '<tr><td>' + esc(db.name) + '</td><td class="muted">' + esc(db.role || '') + '</td><td class="muted">' + esc(db.directory) + '</td><td class="num">' + num(db.sizeMB) + '</td></tr>'; });
       html += '</table>';
+    } else {
+      html += '<div class="note">No FHIR repository databases found — there is no FHIR server (endpoint) in this namespace yet. (This measures the FHIR server’s own repository storage, not the namespace database.)</div>';
     }
     html += '</div>';
 

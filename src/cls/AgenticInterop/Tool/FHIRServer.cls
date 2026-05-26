@@ -1867,25 +1867,34 @@ ClassMethod GetFHIRServerStats(url As %String = "", resourceTypes As %String = "
                     }
                 }
             }
-            ; --- Database storage sizes (CORE SYS.Database) ---
+            ; --- FHIR SERVER storage = the repository databases (CORE SYS.Database) ---
+            ; The FHIR server's data lives in DEDICATED repo databases created per
+            ; endpoint, named <NS>X####R (resources) and <NS>X####V (versions).
+            ; We measure THOSE — NOT the namespace's own default database (named
+            ; exactly <NS>), which holds namespace code + the FHIR metadata
+            ; packages, not FHIR server data. With no endpoint there are no repo
+            ; databases, so server storage is 0.
             Set st = {}
             Set st.databases = []
             Set st.totalMB = 0
+            Set st.note = "FHIR server storage = the per-endpoint repository databases (<NS>X####R resources + ...V versions). Excludes the namespace default database (code + metadata packages)."
             Set $namespace = "%SYS"
             Set nsU = $zconvert(targetNs, "U")
             Set rs = ##class(%ResultSet).%New("Config.Databases:List")
             Do rs.Execute()
             While rs.Next() {
                 Set dbName = rs.GetData(1), dbDir = rs.GetData(2)
-                ; Heuristic: databases whose NAME contains the namespace name
-                ; (the namespace DB + its FHIR repo DBs, e.g. FHIR, FHIRX0007R).
-                If $zconvert(dbName, "U") [ nsU {
+                Set dbU = $zconvert(dbName, "U")
+                ; Only FHIR repository databases: <NS>X<digits>R | <NS>X<digits>V.
+                ; Explicitly exclude the namespace default DB (name = <NS>).
+                If (dbU '= nsU) && $match(dbU, "^" _ nsU _ "X[0-9]+[RV]$") {
                     Set sz = ""
                     Try { Set dbo = ##class(SYS.Database).%OpenId(dbDir) If $isobject(dbo) { Set sz = dbo.Size } } Catch  {}
                     Set d = {}
                     Set d.name = dbName
                     Set d.directory = dbDir
                     Set d.sizeMB = +sz
+                    Set d.role = $select($extract(dbU, *) = "V":"versions", 1:"resources")
                     Do st.databases.%Push(d)
                     Set st.totalMB = st.totalMB + (+sz)
                 }
