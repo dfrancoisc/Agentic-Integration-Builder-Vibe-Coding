@@ -48,6 +48,7 @@
   <h1>FHIR Server Audit</h1>
   <span class="ns" id="ns"></span>
   <span class="spacer"></span>
+  <button class="refresh" id="clear" title="Clear all load metrics and history so the audit starts fresh">Clear metrics</button>
   <button class="refresh" id="refresh">Refresh</button>
 </header>
 <div id="status">Authenticating…</div>
@@ -177,7 +178,22 @@
     });
   }
 
+  function clearMetrics() {
+    if (!confirm("Clear all FHIR load metrics and history so the audit starts fresh?\n\nThis removes only the load metrics — it does NOT delete any loaded FHIR data.")) return;
+    $("clear").disabled = true;
+    fetch(API + "/fhir/load/history", { method: "DELETE", headers: headers() })
+      .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+      .then(function () { $("clear").disabled = false; load(); })
+      .catch(function (e) {
+        $("clear").disabled = false;
+        $("status").style.display = "block";
+        $("status").className = "err";
+        $("status").textContent = "Clear failed: " + e.message;
+      });
+  }
+
   $("refresh").addEventListener("click", load);
+  $("clear").addEventListener("click", clearMetrics);
   requestAuth().then(load);
 })();
 </script>

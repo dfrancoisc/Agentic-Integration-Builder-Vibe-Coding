@@ -32,6 +32,7 @@ XData UrlMap [ XMLNamespace = "http://www.intersystems.com/urlmap" ]
     <Route Url="/fhir/upload"        Method="POST"   Call="FHIRUpload" />
     <Route Url="/fhir/upload"        Method="DELETE" Call="FHIRUploadClear" />
     <Route Url="/fhir/load/status"   Method="GET"    Call="FHIRLoadStatus" />
+    <Route Url="/fhir/load/history"  Method="DELETE" Call="FHIRLoadHistoryClear" />
 
     <!-- Registries (for UI dropdowns) -->
     <!-- Class source viewer (read-only UDL for the inline panel) -->
@@ -545,6 +546,27 @@ ClassMethod FHIRLoadStatus() As %Status
     Set out.done = done
     Set out.percent = $select(out.total > 0:$normalize((done / out.total) * 100, 0), 1:0)
     If $get(^AgInt.FHIRLoad(jobId, "jobError")) '= "" { Set out.error = ^AgInt.FHIRLoad(jobId, "jobError") }
+    Do ..%WriteJSON(out)
+    Quit $$$OK
+}
+
+/// DELETE /fhir/load/history — clear all FHIR load metrics so the Audit panel
+/// starts fresh: kills the in-memory progress global (^AgInt.FHIRLoad, which
+/// feeds "last load" ingestion metrics) and empties the durable run-history
+/// table (Data.FHIRLoadRun). Does NOT touch any loaded FHIR resources — only
+/// the metrics/history about past loads.
+ClassMethod FHIRLoadHistoryClear() As %Status
+{
+    Set out = {}
+    Try {
+        Kill ^AgInt.FHIRLoad
+        Set sc = ##class(AgenticInterop.Data.FHIRLoadRun).%KillExtent()
+        Set out.ok = 1
+        Set out.message = "FHIR load metrics and history cleared."
+    } Catch ex {
+        Set out.ok = 0
+        Set out.error = $extract(ex.DisplayString(), 1, 300)
+    }
     Do ..%WriteJSON(out)
     Quit $$$OK
 }

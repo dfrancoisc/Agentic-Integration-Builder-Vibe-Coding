@@ -221,7 +221,9 @@ file-staging feature, separate from the FHIR repository.
   (`/agentic/upload/`) with a multi-file picker, Upload, the resulting server
   folder path, the staged-files list, a Clear button, and the exact instruction
   to then tell the FHIR Assistant to load that folder (`LoadFHIRDirectory`,
-  which orders infrastructure bundles first).
+  which orders infrastructure bundles first). The folder path has a copy
+  button (clipboard API with an execCommand fallback for non-secure http)
+  so the user can paste it straight into the chatbot.
 - Verified end to end via curl: POST stages a file at
   `/usr/irissys/mgr/Temp/agentic-fhir-upload/` (owned by irisowner), GET lists
   it, DELETE clears it.
@@ -250,6 +252,10 @@ running → completed|error; `done`/`failed` increment per file). We surface it:
 - Agent: `LoadFHIRDirectory`'s result message and `GetFHIRLoadStatus`'s doc now
   tell the agent the chat shows the bar — report that the load started + the
   count, then stop; do NOT poll `GetFHIRLoadStatus` in a loop.
+- Reset: the Audit panel has a "Clear metrics" button backed by
+  `DELETE /api/agentic/fhir/load/history`, which kills `^AgInt.FHIRLoad` and
+  empties `Data.FHIRLoadRun` (metrics only — never the loaded FHIR resources),
+  so the audit can start fresh.
 
 ## 5. Status legend
 - DONE: GetFHIRLoadMetrics, GetFHIRServerStats, /fhir/audit, audit panel,
