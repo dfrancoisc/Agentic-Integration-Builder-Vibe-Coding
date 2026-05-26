@@ -709,14 +709,21 @@
     // Generic: add a left-nav (mat-sidenav > mat-nav-list) menu item by cloning
     // an existing item for styling, then rebinding it. Used for both the FHIR
     // Audit and Load FHIR Data items. Only for the FHIR Management injection.
-    function ensureNavItem(marker, label, titleAttr, onClick) {
+    function ensureNavItem(marker, label, titleAttr, iconName, onClick) {
         if (CHATBOT_KEY !== 'fhir-management') return false;
         var navList = document.querySelector('mat-sidenav mat-nav-list')
                    || document.querySelector('mat-sidenav-container mat-nav-list')
                    || document.querySelector('mat-nav-list');
         if (!navList) return false;
         if (navList.querySelector('.' + marker)) return true;
-        var sample = navList.querySelector('a[mat-list-item], a.mat-mdc-list-item, [mat-list-item], .mat-mdc-list-item, mat-list-item');
+        // Clone a REAL shipped nav item for styling — never one of our own
+        // injected items (otherwise a second injection clones the first and
+        // the styling/label drift).
+        var samples = navList.querySelectorAll('a[mat-list-item], a.mat-mdc-list-item, [mat-list-item], .mat-mdc-list-item, mat-list-item');
+        var sample = null;
+        for (var si = 0; si < samples.length; si++) {
+            if (!samples[si].classList.contains(AUD_NAV_MARK) && !samples[si].classList.contains(LOAD_NAV_MARK)) { sample = samples[si]; break; }
+        }
         var item;
         if (sample) {
             item = sample.cloneNode(true);
@@ -724,11 +731,19 @@
             item.removeAttribute('routerlink');
             item.removeAttribute('ng-reflect-router-link');
             item.removeAttribute('ng-reflect-router-link-active');
+            // Replace the visible label without disturbing the icon node.
             var txt = item.querySelector('.mdc-list-item__primary-text')
                    || item.querySelector('.mat-mdc-list-item-unscoped-content')
                    || item.querySelector('.mdc-list-item__content')
                    || item;
             try { txt.textContent = label; } catch (e) {}
+            // Retarget the Material icon ONLY when it is a font-ligature icon
+            // (has text, no <svg>, no svgIcon attr) — otherwise leave the
+            // shipped icon alone so we never paint stray text next to an SVG.
+            var ic = item.querySelector('mat-icon');
+            if (ic && iconName && ic.textContent && ic.textContent.trim().length && !ic.getAttribute('svgicon') && !ic.querySelector('svg')) {
+                try { ic.textContent = iconName; } catch (e) {}
+            }
         } else {
             item = document.createElement('a');
             item.textContent = label;
@@ -738,11 +753,14 @@
         item.style.cursor = 'pointer';
         item.setAttribute('title', titleAttr);
         item.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); onClick(); });
-        navList.appendChild(item);
+        // Insert at the TOP of the list (above the ~23 shipped items) so it is
+        // visible without scrolling — the prior append put it below the fold.
+        if (sample && sample.parentNode) sample.parentNode.insertBefore(item, sample);
+        else navList.appendChild(item);
         return true;
     }
-    function ensureSideNavAudit() { return ensureNavItem(AUD_NAV_MARK, 'FHIR Audit', 'FHIR Server performance and storage audit', openAudit); }
-    function ensureSideNavLoad() { return ensureNavItem(LOAD_NAV_MARK, 'Load FHIR Data', 'Upload FHIR JSON files to a server folder for loading', openLoad); }
+    function ensureSideNavAudit() { return ensureNavItem(AUD_NAV_MARK, 'FHIR Audit', 'FHIR Server performance and storage audit', 'assessment', openAudit); }
+    function ensureSideNavLoad() { return ensureNavItem(LOAD_NAV_MARK, 'Load FHIR Data', 'Upload FHIR JSON files to a server folder for loading', 'upload_file', openLoad); }
 
     /* ---------------- floating launcher (host-agnostic) ---------------- */
 
@@ -792,10 +810,11 @@
         if (INJECT_MODE === 'floating') {
             ensureFloatingLauncher();
         } else if (INJECT_MODE === 'header') {
-            // Host-agnostic: just splice the chat icon into the page's
-            // top toolbar (no Interop-Editor-specific tabs/cleanup).
+            // Host-agnostic: splice the chat icon into the page's top toolbar.
             ensureHeaderChat();
-            ensureHeaderAudit();
+            // Audit + Load FHIR Data live in the LEFT NAV (mat-sidenav), per the
+            // user's explicit request — NOT the header. ensureHeaderAudit() is
+            // retained below only as a fallback and is intentionally NOT called.
             ensureSideNavAudit();
             ensureSideNavLoad();
         } else {

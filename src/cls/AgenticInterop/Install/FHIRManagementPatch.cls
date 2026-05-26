@@ -40,24 +40,43 @@ ClassMethod Apply() As %Status
         Do fs.Rewind()
         While 'fs.AtEnd { Set body = body _ fs.Read(32768) }
 
-        ; Idempotent
+        ; Cache-busting version, fresh on EVERY apply, so the browser and the
+        ; CSP gateway fetch a freshly-deployed inject.js (a stale, unchanged
+        ; &v= would keep serving the cached old script). We RE-STAMP an existing
+        ; tag rather than skipping — that was the bug where redeployed inject.js
+        ; never reached the browser.
+        Set v = $piece($zhorolog, ".") _ $piece($zhorolog, ".", 2)
+        Set tag = "<script src=""" _ ..#SCRIPTSRC _ "&v=" _ v _ """ defer></script>"
+
+        ; Already applied -> re-stamp the existing tag with the fresh v.
         If body [ ..#MARKER {
-            Write !,"  FHIRManagementPatch: already applied",!
+            Set s = $find(body, "<script src=""/agentic/inject.js")
+            If s > 0 {
+                Set s = s - $length("<script src=""/agentic/inject.js")
+                Set e = $find(body, "</script>", s)
+                If e > 0 {
+                    Set newBody = $extract(body, 1, s - 1) _ tag _ $extract(body, e, *)
+                    If newBody '= body {
+                        Set out = ##class(%Stream.FileCharacter).%New()
+                        Set tSC = out.LinkToFile(path)
+                        If 'tSC { Quit }
+                        Do out.Clear()
+                        Do out.Write(newBody)
+                        Set tSC = out.%Save()
+                        Write !,"  FHIRManagementPatch: re-stamped cache version v=",v,!
+                    }
+                }
+            }
             Quit
         }
 
-        ; Backup once
+        ; Backup once (first apply only)
         Set backup = path _ ".agentic-original"
         If '##class(%File).Exists(backup) {
             Set tSC = ##class(%File).CopyFile(path, backup)
             If 'tSC { Quit }
             Write !,"  FHIRManagementPatch: backup at ",backup,!
         }
-
-        ; Cache-busting version so the customer's browser picks up the
-        ; freshly-installed inject.js on first reload after upgrade.
-        Set v = $piece($zhorolog, ".") _ $piece($zhorolog, ".", 2)
-        Set tag = "<script src=""" _ ..#SCRIPTSRC _ "&v=" _ v _ """ defer></script>"
 
         ; Inject right before </body>
         Set newBody = $replace(body, "</body>", tag _ "</body>")
