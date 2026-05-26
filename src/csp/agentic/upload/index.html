@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<title>Load FHIR Data</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:#0b0d11; color:#e6e8eb;
+    font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; }
+  header { display:flex; align-items:center; gap:12px; padding:14px 18px;
+    border-bottom:1px solid #1c2128; background:#10141a; position:sticky; top:0; }
+  header h1 { font-size:15px; margin:0; font-weight:600; }
+  main { padding:16px 18px 40px; max-width:820px; }
+  .section { margin-bottom:20px; }
+  .section h2 { font-size:12px; text-transform:uppercase; letter-spacing:.6px; color:#8b93a1; margin:0 0 10px; font-weight:600; }
+  button { background:#1c2128; color:#e6e8eb; border:1px solid #2a313c; border-radius:6px; padding:8px 14px; cursor:pointer; font:inherit; }
+  button:hover { background:#252c36; }
+  button.primary { background:#4f46e5; border-color:#4f46e5; }
+  button.primary:hover { background:#4338ca; }
+  button:disabled { opacity:.5; cursor:default; }
+  input[type=file] { color:#c9d1d9; font:inherit; }
+  .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  table { width:100%; border-collapse:collapse; background:#10141a; border:1px solid #1c2128; border-radius:8px; overflow:hidden; margin-top:10px; }
+  th, td { text-align:left; padding:8px 12px; border-bottom:1px solid #1c2128; font-size:13px; }
+  th { color:#8b93a1; font-weight:600; font-size:11px; text-transform:uppercase; letter-spacing:.5px; }
+  td.num, th.num { text-align:right; font-variant-numeric:tabular-nums; }
+  tr:last-child td { border-bottom:none; }
+  code { background:#161b22; border:1px solid #2a313c; border-radius:4px; padding:1px 6px; font-size:12px; }
+  .note { background:#161b22; border:1px solid #2a313c; border-left:3px solid #4f46e5; border-radius:6px; padding:10px 12px; color:#c9d1d9; font-size:13px; margin-top:10px; }
+  .muted { color:#8b93a1; }
+  .err { color:#f85149; }
+  .ok { color:#3fb950; }
+  #status { min-height:20px; margin-top:8px; }
+</style>
+</head>
+<body>
+<header><h1>Load FHIR Data</h1><span class="muted" id="ns"></span></header>
+<main>
+  <div class="section">
+    <h2>1. Upload FHIR JSON files to the server folder</h2>
+    <p class="muted">Files are staged in a folder on the IRIS server that the FHIR server can read. This does NOT load them into the FHIR repository yet — that is step 2.</p>
+    <div class="row">
+      <input type="file" id="picker" accept=".json,application/json,application/fhir+json" multiple>
+      <button class="primary" id="uploadBtn">Upload</button>
+      <button id="refreshBtn">Refresh list</button>
+      <button id="clearBtn">Clear folder</button>
+    </div>
+    <div id="status"></div>
+  </div>
+
+  <div class="section">
+    <h2>Staged files</h2>
+    <div id="dir" class="muted"></div>
+    <div id="files"></div>
+  </div>
+
+  <div class="section">
+    <h2>2. Load the folder into the FHIR server</h2>
+    <div class="note" id="loadHint">Upload files first, then this shows the exact request to make.</div>
+  </div>
+</main>
+
+<script>
+(function () {
+  "use strict";
+  var API = "/api/agentic";
+  var STATE = { bearer: "", ns: "", dir: "" };
+  var $ = function (id) { return document.getElementById(id); };
+  var esc = function (s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) {
+    return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]; }); };
+  try { STATE.ns = new URLSearchParams(location.search).get("ns") || ""; } catch (e) {}
+
+  function requestAuth() {
+    return new Promise(function (resolve) {
+      var done = false;
+      function onMsg(e) {
+        var d = e.data || {};
+        if (d.type === "agentic:auth:response") {
+          done = true; window.removeEventListener("message", onMsg);
+          if (d.bearer) STATE.bearer = d.bearer;
+          if (!STATE.ns && d.namespace) STATE.ns = d.namespace;
+          resolve();
+        }
+      }
+      window.addEventListener("message", onMsg);
+      try { if (window.parent && window.parent !== window) window.parent.postMessage({ type: "agentic:auth:request" }, "*"); } catch (e) {}
+      setTimeout(function () { if (!done) { window.removeEventListener("message", onMsg); resolve(); } }, 1500);
+    });
+  }
+  function authHeaders(extra) {
+    var h = extra || {};
+    if (STATE.bearer) h["Authorization"] = STATE.bearer;
+    if (STATE.ns) h["X-IRIS-Namespace"] = STATE.ns;
+    return h;
+  }
+  function num(n) { return (n == null ? "" : Number(n)).toLocaleString(); }
+
+  function renderFiles(d) {
+    STATE.dir = d.directory || STATE.dir;
+    $("ns").textContent = STATE.ns ? ("namespace: " + STATE.ns) : "";
+    $("dir").innerHTML = STATE.dir ? ("Folder: <code>" + esc(STATE.dir) + "</code>") : "";
+    var files = d.files || [];
+    if (files.length) {
+      var html = '<table><tr><th>File</th><th class="num">Bytes</th></tr>';
+      files.forEach(function (f) { html += '<tr><td>' + esc(f.name) + '</td><td class="num">' + num(f.bytes) + '</td></tr>'; });
+      html += '</table>';
+      $("files").innerHTML = html;
+      $("loadHint").innerHTML = 'Open the <b>FHIR Assistant</b> and say:<br><br><code>Load the directory ' + esc(STATE.dir) + ' into the FHIR server</code><br><br>It uses <code>LoadFHIRDirectory</code> and loads infrastructure bundles (hospitalInformation / practitionerInformation) first so patient references resolve.';
+    } else {
+      $("files").innerHTML = '<p class="muted">No files staged yet.</p>';
+      $("loadHint").textContent = "Upload files first, then this shows the exact request to make.";
+    }
+  }
+
+  function listFiles() {
+    return fetch(API + "/fhir/upload", { headers: authHeaders() })
+      .then(function (r) { return r.json(); }).then(renderFiles).catch(function (e) {
+        $("status").innerHTML = '<span class="err">List failed: ' + esc(e.message) + '</span>'; });
+  }
+
+  function upload() {
+    var picker = $("picker");
+    if (!picker.files || !picker.files.length) { $("status").innerHTML = '<span class="err">Choose one or more .json files first.</span>'; return; }
+    var fd = new FormData();
+    for (var i = 0; i < picker.files.length; i++) { fd.append("files", picker.files[i], picker.files[i].name); }
+    $("uploadBtn").disabled = true;
+    $("status").textContent = "Uploading " + picker.files.length + " file(s)…";
+    // NOTE: do not set Content-Type — the browser sets the multipart boundary.
+    fetch(API + "/fhir/upload", { method: "POST", headers: authHeaders(), body: fd })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        $("uploadBtn").disabled = false;
+        if (d.ok) {
+          $("status").innerHTML = '<span class="ok">' + num(d.uploaded) + ' file(s) staged' + ((d.failed && d.failed.length) ? (', ' + d.failed.length + ' failed') : '') + '.</span>';
+          picker.value = "";
+          listFiles();
+        } else {
+          $("status").innerHTML = '<span class="err">Upload failed: ' + esc(d.error || "?") + '</span>';
+        }
+      })
+      .catch(function (e) { $("uploadBtn").disabled = false; $("status").innerHTML = '<span class="err">Upload failed: ' + esc(e.message) + (STATE.bearer ? '' : ' (no auth token — open this from the FHIR Management page).') + '</span>'; });
+  }
+
+  function clearFolder() {
+    if (!confirm("Delete all staged FHIR files from the server folder?")) return;
+    fetch(API + "/fhir/upload", { method: "DELETE", headers: authHeaders() })
+      .then(function (r) { return r.json(); })
+      .then(function (d) { $("status").innerHTML = '<span class="ok">' + esc(d.message || "Cleared.") + '</span>'; listFiles(); })
+      .catch(function (e) { $("status").innerHTML = '<span class="err">Clear failed: ' + esc(e.message) + '</span>'; });
+  }
+
+  $("uploadBtn").addEventListener("click", upload);
+  $("refreshBtn").addEventListener("click", listFiles);
+  $("clearBtn").addEventListener("click", clearFolder);
+  requestAuth().then(listFiles);
+})();
+</script>
+</body>
+</html>

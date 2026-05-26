@@ -41,6 +41,7 @@
     var CHAT_OVERLAY_ID = 'agentic-chat-overlay';
     var AUD_MARK = 'agentic-hdr-audit';  // mat-toolbar-row audit icon marker
     var AUD_NAV_MARK = 'agentic-nav-audit';  // left mat-sidenav nav-list item marker
+    var LOAD_NAV_MARK = 'agentic-nav-load';  // left mat-sidenav "Load FHIR Data" item marker
     var AUD_OVERLAY_ID = 'agentic-audit-overlay';  // left-slide audit panel
     var CLEAN_PROD_MARK = 'agentic-clean-prod';
     var CLEAN_ART_MARK  = 'agentic-clean-art';
@@ -267,6 +268,7 @@
             'body.agentic-login-mode .' + TAB_MARK + ',',
             'body.agentic-login-mode .' + HDR_MARK + ',',
             'body.agentic-login-mode .' + AUD_NAV_MARK + ',',
+            'body.agentic-login-mode .' + LOAD_NAV_MARK + ',',
             'body.agentic-login-mode .' + CLEAN_PROD_MARK + ',',
             'body.agentic-login-mode .' + CLEAN_ART_MARK + ',',
             'body.agentic-login-mode #' + CONFIG_OVERLAY_ID + ',',
@@ -421,10 +423,10 @@
         overlay.innerHTML =
             '<div class="panel">' +
               '<div class="bar">' +
-                '<span>FHIR Server Audit</span>' +
+                '<span class="agentic-lp-title">FHIR Server Audit</span>' +
                 '<button class="close" type="button" title="Close">✕</button>' +
               '</div>' +
-              '<iframe src="about:blank" title="FHIR Server Audit"></iframe>' +
+              '<iframe src="about:blank" title="FHIR panel"></iframe>' +
             '</div>';
         document.body.appendChild(overlay);
         overlay.querySelector('.close').addEventListener('click', closeAudit);
@@ -434,14 +436,19 @@
         });
     }
 
-    function openAudit() {
+    // Generic left-slide panel — used by both the Audit and Load FHIR Data
+    // menu items (one panel at a time). src = page to load, title = bar label.
+    function openLeftPanel(src, title) {
         buildAuditOverlay();
         var overlay = document.getElementById(AUD_OVERLAY_ID);
-        var iframe = overlay.querySelector('iframe');
         var ns = currentNamespace();
-        iframe.src = '/agentic/audit/index.html?t=' + Date.now() + (ns ? '&ns=' + encodeURIComponent(ns) : '');
+        var t = overlay.querySelector('.agentic-lp-title');
+        if (t) t.textContent = title || 'FHIR';
+        overlay.querySelector('iframe').src = src + (src.indexOf('?') < 0 ? '?' : '&') + 't=' + Date.now() + (ns ? '&ns=' + encodeURIComponent(ns) : '');
         overlay.classList.add('open');
     }
+    function openAudit() { openLeftPanel('/agentic/audit/index.html', 'FHIR Server Audit'); }
+    function openLoad()  { openLeftPanel('/agentic/upload/index.html', 'Load FHIR Data'); }
 
     function closeAudit() {
         var overlay = document.getElementById(AUD_OVERLAY_ID);
@@ -699,43 +706,43 @@
     // Angular Material sidenav (mat-sidenav > mat-nav-list). Only for the
     // FHIR Management injection. Clones an existing nav item so it matches
     // the app's styling, then rebinds it to open the audit panel.
-    function ensureSideNavAudit() {
+    // Generic: add a left-nav (mat-sidenav > mat-nav-list) menu item by cloning
+    // an existing item for styling, then rebinding it. Used for both the FHIR
+    // Audit and Load FHIR Data items. Only for the FHIR Management injection.
+    function ensureNavItem(marker, label, titleAttr, onClick) {
         if (CHATBOT_KEY !== 'fhir-management') return false;
         var navList = document.querySelector('mat-sidenav mat-nav-list')
                    || document.querySelector('mat-sidenav-container mat-nav-list')
                    || document.querySelector('mat-nav-list');
         if (!navList) return false;
-        if (navList.querySelector('.' + AUD_NAV_MARK)) return true;
+        if (navList.querySelector('.' + marker)) return true;
         var sample = navList.querySelector('a[mat-list-item], a.mat-mdc-list-item, [mat-list-item], .mat-mdc-list-item, mat-list-item');
         var item;
         if (sample) {
             item = sample.cloneNode(true);
-            // Strip routing so the clone does not navigate the Angular router.
             item.removeAttribute('href');
             item.removeAttribute('routerlink');
             item.removeAttribute('ng-reflect-router-link');
             item.removeAttribute('ng-reflect-router-link-active');
-            // Replace the visible label text.
             var txt = item.querySelector('.mdc-list-item__primary-text')
                    || item.querySelector('.mat-mdc-list-item-unscoped-content')
                    || item.querySelector('.mdc-list-item__content')
                    || item;
-            try { txt.textContent = 'FHIR Audit'; } catch (e) {}
+            try { txt.textContent = label; } catch (e) {}
         } else {
             item = document.createElement('a');
-            item.textContent = 'FHIR Audit';
+            item.textContent = label;
             item.style.cssText = 'display:block;padding:12px 16px;color:inherit;text-decoration:none;';
         }
-        item.classList.add(AUD_NAV_MARK);
+        item.classList.add(marker);
         item.style.cursor = 'pointer';
-        item.setAttribute('title', 'FHIR Server performance and storage audit');
-        item.addEventListener('click', function (e) {
-            e.preventDefault(); e.stopPropagation();
-            openAudit();
-        });
+        item.setAttribute('title', titleAttr);
+        item.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); onClick(); });
         navList.appendChild(item);
         return true;
     }
+    function ensureSideNavAudit() { return ensureNavItem(AUD_NAV_MARK, 'FHIR Audit', 'FHIR Server performance and storage audit', openAudit); }
+    function ensureSideNavLoad() { return ensureNavItem(LOAD_NAV_MARK, 'Load FHIR Data', 'Upload FHIR JSON files to a server folder for loading', openLoad); }
 
     /* ---------------- floating launcher (host-agnostic) ---------------- */
 
@@ -790,6 +797,7 @@
             ensureHeaderChat();
             ensureHeaderAudit();
             ensureSideNavAudit();
+            ensureSideNavLoad();
         } else {
             ensureTab();
             ensureCleanupButtons();

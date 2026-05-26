@@ -202,6 +202,30 @@ and status. Nothing below is built yet unless marked DONE.
    FHIR, storage shows the FHIR database). The response carries both `namespace`
    (audited) and `requestedNamespace`.
 
+## 5c. Load FHIR Data menu (upload to a server folder)
+
+Problem: the FHIR server's DataLoader (`LoadFHIRDirectory`) can only read files
+on the IRIS server filesystem, and the container has no mount to the user's
+machine — so host files were unreachable without `docker cp`. CORE note: there
+is no FHIR API for "upload host files to the server", so this is a small
+file-staging feature, separate from the FHIR repository.
+
+- REST (`Dispatch`): `POST /api/agentic/fhir/upload` (multipart) writes the
+  uploaded `.json` files to a server staging folder
+  `<mgr>/Temp/agentic-fhir-upload/` using the CORE CSP upload API
+  (`%request.NextMimeData`/`CountMimeData`/`GetMimeData` → `%Stream.FileBinary`).
+  Files are owned by the IRIS process user, so the FHIR server can read them (no
+  chmod/root needed, unlike docker cp). `GET` lists the folder; `DELETE` clears
+  it. It does NOT POST into the FHIR repository — staging only.
+- UI: a "Load FHIR Data" item in the FHIR Management left nav opens a panel
+  (`/agentic/upload/`) with a multi-file picker, Upload, the resulting server
+  folder path, the staged-files list, a Clear button, and the exact instruction
+  to then tell the FHIR Assistant to load that folder (`LoadFHIRDirectory`,
+  which orders infrastructure bundles first).
+- Verified end to end via curl: POST stages a file at
+  `/usr/irissys/mgr/Temp/agentic-fhir-upload/` (owned by irisowner), GET lists
+  it, DELETE clears it.
+
 ## 5. Status legend
 - DONE: GetFHIRLoadMetrics, GetFHIRServerStats, /fhir/audit, audit panel,
   CORE refactor (GetAllPackages), FHIRServerBug.md.

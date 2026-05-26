@@ -28,6 +28,9 @@ XData UrlMap [ XMLNamespace = "http://www.intersystems.com/urlmap" ]
     <Route Url="/whoami"             Method="GET"  Call="WhoAmI" />
     <Route Url="/debug"              Method="GET"  Call="Debug" />
     <Route Url="/fhir/audit"         Method="GET"  Call="FHIRAudit" />
+    <Route Url="/fhir/upload"        Method="GET"    Call="FHIRUploadList" />
+    <Route Url="/fhir/upload"        Method="POST"   Call="FHIRUpload" />
+    <Route Url="/fhir/upload"        Method="DELETE" Call="FHIRUploadClear" />
 
     <!-- Registries (for UI dropdowns) -->
     <!-- Class source viewer (read-only UDL for the inline panel) -->
@@ -505,6 +508,130 @@ ClassMethod FHIRAudit() As %Status
     Try { Set out.stats = ##class(AgenticInterop.Tool.FHIRServer).GetFHIRServerStats(url, "", ns) } Catch ex { Set out.statsError = $extract(ex.DisplayString(), 1, 300) }
     Try { Set out.loadMetrics = ##class(AgenticInterop.Tool.FHIRServer).GetFHIRLoadMetrics("", ns) } Catch ex { Set out.loadError = $extract(ex.DisplayString(), 1, 300) }
     Set out.ok = 1
+    Do ..%WriteJSON(out)
+    Quit $$$OK
+}
+
+/// Server-readable staging folder for uploaded FHIR files. Lives under the
+/// instance manager directory (mgr/Temp), owned by the IRIS process, so the
+/// FHIR server's DataLoader (LoadFHIRDirectory) can read it. NOT the FHIR
+/// repository — just a folder on the server filesystem.
+ClassMethod FHIRUploadDir() As %String
+{
+    Quit ##class(%Library.File).NormalizeDirectory("Temp/agentic-fhir-upload", ##class(%Library.File).ManagerDirectory())
+}
+
+/// POST /fhir/upload — receive uploaded FHIR JSON files (multipart/form-data)
+/// and write them to the server staging folder. Does NOT POST them into the
+/// FHIR repository; loading the folder into a FHIR server is a separate step
+/// (the FHIR Assistant's LoadFHIRDirectory). Returns the folder path + files.
+ClassMethod FHIRUpload() As %Status
+{
+    Set out = {}
+    Set dir = ..FHIRUploadDir()
+    Set out.directory = dir
+    Set out.files = []
+    Set out.failed = []
+    Set count = 0
+    Try {
+        Do ##class(%Library.File).CreateDirectoryChain(dir)
+        Set name = ""
+        For  {
+            Set name = %request.NextMimeData(name)
+            Quit:name=""
+            Set n = %request.CountMimeData(name)
+            For i=1:1:n {
+                Set stream = %request.GetMimeData(name, "", i)
+                If '$isobject(stream) { Continue }
+                Set fn = stream.FileName
+                If fn = "" { Set fn = name }
+                ; basename + sanitize for the filesystem
+                Set fn = $piece(fn, "/", *) Set fn = $piece(fn, "\", *)
+                Set fn = $translate(fn, "<>:""|?*", "_______")
+                If fn = "" { Set fn = "upload_" _ (count + 1) _ ".json" }
+                Set ok = 0
+                Try {
+                    Set file = ##class(%Stream.FileBinary).%New()
+                    Set file.Filename = dir _ fn
+                    Do stream.Rewind()
+                    Do file.CopyFrom(stream)
+                    Set ok = file.%Save()
+                } Catch  { Set ok = 0 }
+                If ok {
+                    Set f = {}
+                    Set f.name = fn
+                    Set f.bytes = file.Size
+                    Do out.files.%Push(f)
+                    Set count = count + 1
+                } Else {
+                    Do out.failed.%Push(fn)
+                }
+            }
+        }
+        Set out.uploaded = count
+        Set out.ok = 1
+        Set out.message = count _ " file(s) staged in " _ dir _ ". To load them, ask the FHIR Assistant to load this directory into the FHIR server (it uses LoadFHIRDirectory; infrastructure bundles load first)."
+    } Catch ex {
+        Set out.ok = 0
+        Set out.error = $extract(ex.DisplayString(), 1, 400)
+    }
+    Do ..%WriteJSON(out)
+    Quit $$$OK
+}
+
+/// GET /fhir/upload — list the staged FHIR files in the server folder.
+ClassMethod FHIRUploadList() As %Status
+{
+    Set out = {}
+    Set dir = ..FHIRUploadDir()
+    Set out.directory = dir
+    Set out.files = []
+    Set total = 0, bytes = 0
+    Try {
+        If ##class(%Library.File).DirectoryExists(dir) {
+            Set rs = ##class(%ResultSet).%New("%File:FileSet")
+            Do rs.Execute(dir, "*.json", "Name", 1)
+            While rs.Next() {
+                Set f = {}
+                Set f.name = rs.Get("ItemName")
+                Set f.bytes = +rs.Get("Size")
+                Do out.files.%Push(f)
+                Set total = total + 1, bytes = bytes + (+rs.Get("Size"))
+            }
+        }
+        Set out.total = total
+        Set out.totalMB = $normalize(bytes / 1048576, 2)
+        Set out.ok = 1
+    } Catch ex {
+        Set out.ok = 0
+        Set out.error = $extract(ex.DisplayString(), 1, 400)
+    }
+    Do ..%WriteJSON(out)
+    Quit $$$OK
+}
+
+/// DELETE /fhir/upload — clear the staged FHIR files from the server folder.
+ClassMethod FHIRUploadClear() As %Status
+{
+    Set out = {}
+    Set dir = ..FHIRUploadDir()
+    Set out.directory = dir
+    Set deleted = 0
+    Try {
+        If ##class(%Library.File).DirectoryExists(dir) {
+            Set rs = ##class(%ResultSet).%New("%File:FileSet")
+            Do rs.Execute(dir, "*.json", "Name", 1)
+            Set list = ""
+            While rs.Next() { Set list = list _ $listbuild(rs.Get("Name")) }
+            For li=1:1:$listlength(list) { If ##class(%Library.File).Delete($list(list, li)) { Set deleted = deleted + 1 } }
+        }
+        Set out.deleted = deleted
+        Set out.ok = 1
+        Set out.message = "Cleared " _ deleted _ " file(s) from " _ dir _ "."
+    } Catch ex {
+        Set out.ok = 0
+        Set out.error = $extract(ex.DisplayString(), 1, 400)
+    }
     Do ..%WriteJSON(out)
     Quit $$$OK
 }
