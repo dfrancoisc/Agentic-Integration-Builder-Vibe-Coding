@@ -269,16 +269,21 @@ ClassMethod ChatStream(pResponse As %CSP.Response, pBodyStream) As %Status
     ;                             after sessionId is established).
     Set isMultipart = ($get(%request.ContentType) [ "multipart/form-data")
     Set req = ""
-    If isMultipart {
-        Set bodyData = %request.GetMimeData("body", "", 1)
-        If $isobject(bodyData) || (bodyData '= "") {
-            Try { Set req = ##class(%DynamicAbstractObject).%FromJSON(bodyData) } Catch  { Set req = "" }
+    Try {
+        If isMultipart {
+            Set bodyData = %request.GetMimeData("body", "", 1)
+            If $isobject(bodyData) || (bodyData '= "") {
+                Set req = ##class(%DynamicAbstractObject).%FromJSON(bodyData)
+            }
+        } Else {
+            Set req = $classmethod(util, "ParseBody", pBodyStream)
         }
-    } Else {
-        Set req = $classmethod(util, "ParseBody", pBodyStream)
+    } Catch parseEx {
+        Do ..SSEEvent("error", {"error":("Body parse failed ("_$select(isMultipart:"multipart",1:"json")_"): "_$extract(parseEx.DisplayString(),1,300)),"stage":"parse"})
+        Return $$$OK
     }
     If '$isobject(req) {
-        Do ..SSEEvent("error", {"error":"Invalid JSON body","stage":"parse"})
+        Do ..SSEEvent("error", {"error":("Invalid body — multipart="_isMultipart_", req-isobj=0, contentType="_$get(%request.ContentType)),"stage":"parse"})
         Quit $$$OK
     }
     Set message = $classmethod(util, "DObj", req, "message")
@@ -316,12 +321,18 @@ ClassMethod ChatStream(pResponse As %CSP.Response, pBodyStream) As %Status
     ; Per-attachment text is capped at 150 000 chars to keep the LLM
     ; context bounded; truncation is annotated inline.
     Set attachmentNames = ""
+    Set attachStep = "(none)"
     If isMultipart {
+     Try {
+        Set attachStep = "begin"
+        Set fileCount = +%request.CountMimeData("files")
+        Do ..WriteLiveFeed("trace", {"msg":("Attachment ingest: contentType="_$get(%request.ContentType)_" files="_fileCount)})
+        Set attachStep = "stageDir"
         Set stageDir = ##class(%File).NormalizeDirectory("Temp/agentic-attach/" _ %agenticChatSessionId, ##class(%File).ManagerDirectory())
         Do ##class(%File).CreateDirectoryChain(stageDir)
         Set blocks = ""
-        Set fileCount = %request.CountMimeData("files")
         For i=1:1:fileCount {
+            Set attachStep = "iter"_i
             Set fstream = %request.GetMimeData("files", "", i)
             If '$isobject(fstream) { Continue }
             Set fname = fstream.FileName
@@ -363,6 +374,12 @@ ClassMethod ChatStream(pResponse As %CSP.Response, pBodyStream) As %Status
             Set message = message _ blocks
             Do ..WriteLiveFeed("trace", {"msg":("Attachments staged: " _ attachmentNames)})
         }
+     } Catch attachEx {
+        ; Any uncaught exception in the attachment block becomes a visible
+        ; SSE error event so the user sees what failed instead of an HTTP 500.
+        Do ..SSEEvent("error", {"error":("Attachment processing failed at "_attachStep_": "_$extract(attachEx.DisplayString(),1,400)),"stage":"attachments"})
+        Return $$$OK
+     }
     }
 
     ; Resolve the agent: an explicit agentClass wins; otherwise the
