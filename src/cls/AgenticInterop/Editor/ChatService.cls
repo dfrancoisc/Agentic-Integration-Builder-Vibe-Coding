@@ -236,7 +236,7 @@ ClassMethod ResolvedDefaultName() As %String
 ///   event: error      { error, stage }
 ///
 /// Body shape mirrors POST /chat — message, history, agentClass, connection.
-ClassMethod ChatStream(pResponse As %CSP.Response, pBodyStream = "") As %Status
+ClassMethod ChatStream(pResponse As %CSP.Response, pBodyStream) As %Status
 {
     ; pBodyStream is forwarded from the dispatcher (REST.Dispatch.ChatStream
     ; passes %request.Content here). For multipart turns it is empty because
@@ -249,9 +249,16 @@ ClassMethod ChatStream(pResponse As %CSP.Response, pBodyStream = "") As %Status
     ; called from there with two args; dropping one breaks that call with a
     ; hard ObjectScript error -> HTTP 500 with nothing logged.
     Set util = "AgenticInterop.Editor.Util"
+    ; Read the content type DEFENSIVELY — $get(%request.ContentType)
+    ; throws (the same OREF-property quirk that hits %DynamicObject), and
+    ; that throw at the top of the method killed every chat turn with a
+    ; 500 that never even reached the SSE headers. Wrapping the property
+    ; access in Try/Catch is the safe pattern here.
+    Set chatCT = ""
+    Try { Set chatCT = %request.ContentType } Catch  {}
     ; Diagnostic breadcrumb global. Read after a failed run with:
     ;   set k="" for { set k=$order(^AgInt.ChatTrace(k)) quit:k=""  write !,k,": ",^AgInt.ChatTrace(k) }
-    Set ^AgInt.ChatTrace($i(^AgInt.ChatTrace))=$zdt($h,3,1)_": ChatStream entry user="_$username_" ct="_$get(%request.ContentType)
+    Set ^AgInt.ChatTrace($i(^AgInt.ChatTrace))=$zdt($h,3,1)_": ChatStream entry user="_$username_" ct="_chatCT
     // SSE response shape. The CSP framework auto-emits the HTTP
     // response header line + Content-Type + our SetHeader() values
     // when the first byte hits the wire — DO NOT call
@@ -280,7 +287,7 @@ ClassMethod ChatStream(pResponse As %CSP.Response, pBodyStream = "") As %Status
     ;   multipart/form-data    -> 'body' part carries the JSON, 'files'
     ;                             parts carry the attachments (handled
     ;                             after sessionId is established).
-    Set isMultipart = ($get(%request.ContentType) [ "multipart/form-data")
+    Set isMultipart = (chatCT [ "multipart/form-data")
     Set ^AgInt.ChatTrace($i(^AgInt.ChatTrace))=$zdt($h,3,1)_": before body-parse multipart="_isMultipart
     Set req = ""
     Try {
@@ -298,7 +305,7 @@ ClassMethod ChatStream(pResponse As %CSP.Response, pBodyStream = "") As %Status
     }
     Set ^AgInt.ChatTrace($i(^AgInt.ChatTrace))=$zdt($h,3,1)_": after body-parse reqIsObj="_$isobject(req)
     If '$isobject(req) {
-        Do ..SSEEvent("error", {"error":("Invalid body — multipart="_isMultipart_", req-isobj=0, contentType="_$get(%request.ContentType)),"stage":"parse"})
+        Do ..SSEEvent("error", {"error":("Invalid body — multipart="_isMultipart_", req-isobj=0, contentType="_chatCT),"stage":"parse"})
         Quit $$$OK
     }
     Set message = $classmethod(util, "DObj", req, "message")
@@ -344,7 +351,7 @@ ClassMethod ChatStream(pResponse As %CSP.Response, pBodyStream = "") As %Status
         Set ^AgInt.ChatTrace($i(^AgInt.ChatTrace))=$zdt($h,3,1)_": attach-try-entered"
         Set fileCount = +%request.CountMimeData("files")
         Set ^AgInt.ChatTrace($i(^AgInt.ChatTrace))=$zdt($h,3,1)_": attach-files-count="_fileCount
-        Do ..WriteLiveFeed("trace", {"msg":("Attachment ingest: contentType="_$get(%request.ContentType)_" files="_fileCount)})
+        Do ..WriteLiveFeed("trace", {"msg":("Attachment ingest: contentType="_chatCT_" files="_fileCount)})
         Set attachStep = "stageDir"
         Set stageDir = ##class(%File).NormalizeDirectory("Temp/agentic-attach/" _ %agenticChatSessionId, ##class(%File).ManagerDirectory())
         Do ##class(%File).CreateDirectoryChain(stageDir)
