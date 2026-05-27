@@ -486,11 +486,42 @@ ClassMethod ChatStream(pResponse As %CSP.Response, pBodyStream) As %Status
             Set ^AgInt.ChatTrace($i(^AgInt.ChatTrace))=$zdt($h,3,1)_": approval-turn injection; isApproval=0 (revision) specLen="_$length(specFromHistory)
         }
     } ElseIf anySpecStubbed {
-        ; Subsequent turn — the agent already responded after approval. Just
-        ; stub the old spec turn(s) and let the agent keep the plan in
-        ; history. No injection: the plan IS the new source of truth and the
-        ; user is now answering questions the agent asked during the build.
-        Set ^AgInt.ChatTrace($i(^AgInt.ChatTrace))=$zdt($h,3,1)_": post-approval turn — spec stubbed, no injection (preserve plan context)"
+        ; Subsequent turn after the agent already responded post-approval.
+        ; Empirical: Bedrock+Sonnet hangs not just on [[SPEC]] in history but
+        ; on ANY multi-thousand-character assistant turn. The PLAN response
+        ; (3-5K chars) reliably hangs the next "yes" turn. So on a post-
+        ; approval approval-equivalent message ("yes", "ok", "proceed",
+        ; "build it"), clear history and inject a compact build instruction
+        ; carrying the original spec. The agent's system prompt knows what
+        ; to do on approval: research is already cached in its skills, plan
+        ; need not be repeated, just call creation tools.
+        Set msgLower = $zconvert(message, "L")
+        Set isApproval = (msgLower [ "approve") || (msgLower = "yes") || (msgLower [ "yes,") || (msgLower [ "yes ") || (msgLower [ "go ahead") || (msgLower [ "looks good") || (msgLower [ "build it") || (msgLower = "ok") || (msgLower = "okay") || (msgLower = "proceed") || (msgLower [ "go for it")
+        If isApproval, specFromHistory '= "" {
+            Set req.history = []
+            Set message = "I confirmed your plan and authorize you to build now. Build the integration per the approved specification below, using your existing creation tools (BuildDTLXml, CreateDTL, CreateRoutingRule, CreateProduction, AddBusinessHost, UpdateBusinessHostSettings, EnsureDirectory, StartProduction, BuildAndSendHL7TestMessage, PostBuildValidation). Do NOT re-present the plan. Do NOT ask for further confirmation. Just call the tools in order and report what you built." _ $char(10,10) _ "Approved specification:" _ $char(10,10) _ specFromHistory
+            Set ^AgInt.ChatTrace($i(^AgInt.ChatTrace))=$zdt($h,3,1)_": post-approval build-go injection; cleared history, injected spec+build instruction; specLen="_$length(specFromHistory)
+        } Else {
+            ; Non-approval post-approval turn (e.g., "thanks", "now fix X").
+            ; Truncate any long assistant turns to keep Bedrock from hanging
+            ; while still letting the agent see what it did. Cap at 1500
+            ; chars + an explicit truncation marker.
+            Set truncCount = 0
+            Try {
+                Set hIter2 = req.history.%GetIterator()
+                While hIter2.%GetNext(.hKey2, .hTurn2) {
+                    If '$isobject(hTurn2) { Continue }
+                    Set hRole2 = "" Try { Set hRole2 = hTurn2.role } Catch  {}
+                    If hRole2 '= "assistant" { Continue }
+                    Set hContent2 = "" Try { Set hContent2 = hTurn2.content } Catch  {}
+                    If $length(hContent2) > 2000 {
+                        Set hTurn2.content = $extract(hContent2, 1, 1500) _ $char(10) _ "[...truncated for LLM context; full content visible in chat UI...]"
+                        Set truncCount = truncCount + 1
+                    }
+                }
+            } Catch  {}
+            Set ^AgInt.ChatTrace($i(^AgInt.ChatTrace))=$zdt($h,3,1)_": post-approval turn (non-approval msg); truncated "_truncCount_" long assistant turn(s) to avoid Bedrock hang"
+        }
     }
 
     ; Resolve the agent: an explicit agentClass wins; otherwise the
