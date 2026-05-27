@@ -236,15 +236,18 @@ ClassMethod ResolvedDefaultName() As %String
 ///   event: error      { error, stage }
 ///
 /// Body shape mirrors POST /chat — message, history, agentClass, connection.
-ClassMethod ChatStream(pResponse As %CSP.Response) As %Status
+ClassMethod ChatStream(pResponse As %CSP.Response, pBodyStream = "") As %Status
 {
-    ; NOTE: we deliberately do NOT take pBodyStream as a parameter — when a
-    ; %CSP.REST route handler has a stream-typed body parameter, the
-    ; framework hands the raw body through it and does NOT parse multipart
-    ; into %request.MIMEData (FHIRUpload works precisely because its
-    ; signature has no body param). Removing the parameter lets the
-    ; framework parse the multipart upload normally, and we read the JSON
-    ; body from %request.Content for the non-multipart path.
+    ; pBodyStream is forwarded from the dispatcher (REST.Dispatch.ChatStream
+    ; passes %request.Content here). For multipart turns it is empty because
+    ; the framework parses parts into %request.MIMEData; we use that path
+    ; below. For JSON turns it is the request body stream which we hand to
+    ; Util.ParseBody. Earlier we tried removing this parameter to "let
+    ; multipart be parsed" — but %CSP.REST's parsing decision is driven by
+    ; the ROUTE handler's signature (REST.Dispatch.ChatStream takes no body
+    ; param, so the framework already parses multipart). This method is
+    ; called from there with two args; dropping one breaks that call with a
+    ; hard ObjectScript error -> HTTP 500 with nothing logged.
     Set util = "AgenticInterop.Editor.Util"
     ; Diagnostic breadcrumb global. Read after a failed run with:
     ;   set k="" for { set k=$order(^AgInt.ChatTrace(k)) quit:k=""  write !,k,": ",^AgInt.ChatTrace(k) }
@@ -287,7 +290,7 @@ ClassMethod ChatStream(pResponse As %CSP.Response) As %Status
                 Set req = ##class(%DynamicAbstractObject).%FromJSON(bodyData)
             }
         } Else {
-            Set req = $classmethod(util, "ParseBody", %request.Content)
+            Set req = $classmethod(util, "ParseBody", pBodyStream)
         }
     } Catch parseEx {
         Do ..SSEEvent("error", {"error":("Body parse failed ("_$select(isMultipart:"multipart",1:"json")_"): "_$extract(parseEx.DisplayString(),1,300)),"stage":"parse"})
