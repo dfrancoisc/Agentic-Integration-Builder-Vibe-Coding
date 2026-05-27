@@ -306,7 +306,16 @@ ClassMethod ChatStream(pResponse As %CSP.Response, pBodyStream) As %Status
     Set req = ""
     Try {
         If isMultipart {
-            Set bodyData = %request.GetMimeData("body", "", 1)
+            ; multipart TEXT parts (no filename) land in %request.Data,
+            ; not in %request.MIMEData. The 'body' field carrying our JSON
+            ; payload is a text part — so read it from Data. File parts
+            ; (with filenames) remain in MIMEData and are handled below.
+            Set bodyData = ""
+            Try { Set bodyData = $get(%request.Data("body", 1)) } Catch  {}
+            ; Fallback: some IRIS builds put text parts in MIMEData. Try
+            ; that if Data was empty so a single client works on both.
+            If bodyData = "" { Try { Set bodyData = %request.GetMimeData("body", "", 1) } Catch  {} }
+            Set ^AgInt.ChatTrace($i(^AgInt.ChatTrace))=$zdt($h,3,1)_":   body part: isobj="_$isobject(bodyData)_" len="_$length($select($isobject(bodyData):"",1:bodyData))
             If $isobject(bodyData) || (bodyData '= "") {
                 Set req = ##class(%DynamicAbstractObject).%FromJSON(bodyData)
             }
