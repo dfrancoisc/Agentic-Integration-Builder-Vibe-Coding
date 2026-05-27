@@ -236,9 +236,19 @@ ClassMethod ResolvedDefaultName() As %String
 ///   event: error      { error, stage }
 ///
 /// Body shape mirrors POST /chat — message, history, agentClass, connection.
-ClassMethod ChatStream(pResponse As %CSP.Response, pBodyStream) As %Status
+ClassMethod ChatStream(pResponse As %CSP.Response) As %Status
 {
+    ; NOTE: we deliberately do NOT take pBodyStream as a parameter — when a
+    ; %CSP.REST route handler has a stream-typed body parameter, the
+    ; framework hands the raw body through it and does NOT parse multipart
+    ; into %request.MIMEData (FHIRUpload works precisely because its
+    ; signature has no body param). Removing the parameter lets the
+    ; framework parse the multipart upload normally, and we read the JSON
+    ; body from %request.Content for the non-multipart path.
     Set util = "AgenticInterop.Editor.Util"
+    ; Diagnostic breadcrumb global. Read after a failed run with:
+    ;   set k="" for { set k=$order(^AgInt.ChatTrace(k)) quit:k=""  write !,k,": ",^AgInt.ChatTrace(k) }
+    Set ^AgInt.ChatTrace($i(^AgInt.ChatTrace))=$zdt($h,3,1)_": ChatStream entry user="_$username_" ct="_$get(%request.ContentType)
     // SSE response shape. The CSP framework auto-emits the HTTP
     // response header line + Content-Type + our SetHeader() values
     // when the first byte hits the wire — DO NOT call
@@ -268,6 +278,7 @@ ClassMethod ChatStream(pResponse As %CSP.Response, pBodyStream) As %Status
     ;                             parts carry the attachments (handled
     ;                             after sessionId is established).
     Set isMultipart = ($get(%request.ContentType) [ "multipart/form-data")
+    Set ^AgInt.ChatTrace($i(^AgInt.ChatTrace))=$zdt($h,3,1)_": before body-parse multipart="_isMultipart
     Set req = ""
     Try {
         If isMultipart {
@@ -276,12 +287,13 @@ ClassMethod ChatStream(pResponse As %CSP.Response, pBodyStream) As %Status
                 Set req = ##class(%DynamicAbstractObject).%FromJSON(bodyData)
             }
         } Else {
-            Set req = $classmethod(util, "ParseBody", pBodyStream)
+            Set req = $classmethod(util, "ParseBody", %request.Content)
         }
     } Catch parseEx {
         Do ..SSEEvent("error", {"error":("Body parse failed ("_$select(isMultipart:"multipart",1:"json")_"): "_$extract(parseEx.DisplayString(),1,300)),"stage":"parse"})
         Return $$$OK
     }
+    Set ^AgInt.ChatTrace($i(^AgInt.ChatTrace))=$zdt($h,3,1)_": after body-parse reqIsObj="_$isobject(req)
     If '$isobject(req) {
         Do ..SSEEvent("error", {"error":("Invalid body — multipart="_isMultipart_", req-isobj=0, contentType="_$get(%request.ContentType)),"stage":"parse"})
         Quit $$$OK
@@ -322,10 +334,13 @@ ClassMethod ChatStream(pResponse As %CSP.Response, pBodyStream) As %Status
     ; context bounded; truncation is annotated inline.
     Set attachmentNames = ""
     Set attachStep = "(none)"
+    Set ^AgInt.ChatTrace($i(^AgInt.ChatTrace))=$zdt($h,3,1)_": before-attach-block isMultipart="_isMultipart
     If isMultipart {
      Try {
         Set attachStep = "begin"
+        Set ^AgInt.ChatTrace($i(^AgInt.ChatTrace))=$zdt($h,3,1)_": attach-try-entered"
         Set fileCount = +%request.CountMimeData("files")
+        Set ^AgInt.ChatTrace($i(^AgInt.ChatTrace))=$zdt($h,3,1)_": attach-files-count="_fileCount
         Do ..WriteLiveFeed("trace", {"msg":("Attachment ingest: contentType="_$get(%request.ContentType)_" files="_fileCount)})
         Set attachStep = "stageDir"
         Set stageDir = ##class(%File).NormalizeDirectory("Temp/agentic-attach/" _ %agenticChatSessionId, ##class(%File).ManagerDirectory())
