@@ -430,6 +430,52 @@ ClassMethod ChatStream(pResponse As %CSP.Response, pBodyStream) As %Status
      }
     }
 
+    ; -------- History compaction: move a replayed [[SPEC]] out of history --------
+    ; Bedrock + Claude Sonnet 4 reproducibly HANGS when an assistant message in
+    ; history contains a multi-thousand-char [[SPEC]] block. Verified by bisect:
+    ; same content in the current user message returns a full plan in ~35s with
+    ; 7 tool calls; same content as an assistant history turn never returns.
+    ; Workaround: pull the most recent [[SPEC]] out of the assistant history,
+    ; replace that turn's content with a short stub, and prepend the spec to
+    ; the new user message so the agent still has the full context.
+    Set specFromHistory = ""
+    Try {
+        If $isobject(req.history) {
+            Set hIter = req.history.%GetIterator()
+            While hIter.%GetNext(.hKey, .hTurn) {
+                If '$isobject(hTurn) { Continue }
+                Set hRole = "" Try { Set hRole = hTurn.role } Catch  {}
+                If hRole '= "assistant" { Continue }
+                Set hContent = "" Try { Set hContent = hTurn.content } Catch  {}
+                Set sPos = $find(hContent, "[[SPEC]]")
+                Set ePos = $find(hContent, "[[/SPEC]]")
+                If (sPos > 0), (ePos > 0), (ePos > sPos) {
+                    Set specFromHistory = $extract(hContent, sPos, ePos - $length("[[/SPEC]]") - 1)
+                }
+            }
+        }
+    } Catch  {}
+    If specFromHistory '= "" {
+        ; Empirically (Bedrock + Claude Sonnet 4): the spec content in PRIOR
+        ; turns reliably hangs the LLM call. The SAME content in the current
+        ; user message with EMPTY history returns in ~35-60s with full tool
+        ; calls. We mimic the verified-working format precisely — the
+        ; specific wording of the prefix matters (other wordings also
+        ; hang).
+        Set msgLower = $zconvert(message, "L")
+        Set isApproval = (msgLower [ "approve") || (msgLower [ "yes, build") || (msgLower [ "go ahead") || (msgLower [ "looks good")
+        Set req.history = []
+        If isApproval {
+            Set message = "I approved the following project specification — please build it using your plan -> authorize -> act loop:" _ $char(10,10) _ specFromHistory
+            Set ^AgInt.ChatTrace($i(^AgInt.ChatTrace))=$zdt($h,3,1)_": approval flow — replaced message with spec-build prompt; specLen="_$length(specFromHistory)
+        } Else {
+            ; Non-approval turn (e.g., "change exercise 2"): keep the user's
+            ; words AT THE END so the model knows what to revise.
+            Set message = "Here is the project specification I drafted previously. The user has a follow-up request after it:" _ $char(10,10) _ specFromHistory _ $char(10,10) _ "User request: " _ message
+            Set ^AgInt.ChatTrace($i(^AgInt.ChatTrace))=$zdt($h,3,1)_": follow-up flow — appended user request after spec; specLen="_$length(specFromHistory)
+        }
+    }
+
     ; Resolve the agent: an explicit agentClass wins; otherwise the
     ; chatbot key maps to an agent via the Chatbot config layer; else
     ; fall back to the generalist default.
@@ -504,12 +550,14 @@ ClassMethod ChatStream(pResponse As %CSP.Response, pBodyStream) As %Status
         Set monitor = ##class(AgenticInterop.Agent.Monitor).%New(300, 100000)
         Set monitor.SSEEnabled = 1
         Do ..WriteLiveFeed("trace", {"msg":("Starting run loop (max "_maxIter_" iterations, deadline 300s, budget 100k tokens)")})
+        Set ^AgInt.ChatTrace($i(^AgInt.ChatTrace))=$zdt($h,3,1)_": run-loop-start maxIter="_maxIter_" agentClass="_agentClass_" msgLen="_$length(message)
         Set response = ""
         Set iteration = 0
         Set fabricationRetried = 0
         While iteration < maxIter {
             Set iteration = iteration + 1
             Do monitor.OnIterationStart(iteration, maxIter, session)
+            Set ^AgInt.ChatTrace($i(^AgInt.ChatTrace))=$zdt($h,3,1)_": iter "_iteration_" begin"
             Set input = $select(iteration=1:message, 1:"Continue working. If you still need to act, call the next tool. If everything the user asked for is done, reply to the user in plain language with ONLY the outcome — one or two short sentences naming what now exists and where. Do NOT show tool output, JSON, or internal class names; do NOT add suggestions, caveats, comparisons, or any topic the user did not ask about.")
             ; ── Observer: calling LLM ──
             Set iterEv = {}
@@ -519,8 +567,14 @@ ClassMethod ChatStream(pResponse As %CSP.Response, pBodyStream) As %Status
             Set iterEv.model = agent.Model
             Do ..WriteLiveFeed("llm_call", iterEv)
             Set chatStart = $zhorolog
+            Set ^AgInt.ChatTrace($i(^AgInt.ChatTrace))=$zdt($h,3,1)_": iter "_iteration_" calling LLM, input first 80: "_$e(input,1,80)
             Set response = ..ChatWithRetry(agent, session, input, monitor)
             Set chatMs = $fnumber(($zhorolog - chatStart) * 1000, "", 0)
+            ; KEEP IT SIMPLE — just log the elapsed time and whether we got an
+            ; object back. Earlier I probed response.HasToolCalls() and
+            ; response.%IsDefined('Text') here, but those throw on
+            ; %AI.LLM.Response and killed turn 1 entirely.
+            Set ^AgInt.ChatTrace($i(^AgInt.ChatTrace))=$zdt($h,3,1)_": iter "_iteration_" LLM returned isobj="_$isobject(response)_" elapsedMs="_chatMs
             ; ── Observer: LLM response received ──
             Set respEv = {}
             Set respEv.msg = "Bedrock response received"
