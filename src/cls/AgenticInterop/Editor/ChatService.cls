@@ -438,7 +438,16 @@ ClassMethod ChatStream(pResponse As %CSP.Response, pBodyStream) As %Status
     ; Workaround: pull the most recent [[SPEC]] out of the assistant history,
     ; replace that turn's content with a short stub, and prepend the spec to
     ; the new user message so the agent still has the full context.
+    ; Walk history. Always strip [[SPEC]] from any assistant turn (Bedrock
+    ; hangs on it). Track whether the MOST RECENT assistant turn was a spec —
+    ; that means this is the approval turn (one-shot) and we need to inject
+    ; the spec into the current user message. If the most recent assistant
+    ; was something else (e.g. the build plan), the agent is already past
+    ; approval — we just strip the older spec turn(s) and leave the rest of
+    ; history alone, so the agent keeps its plan context and doesn't loop.
     Set specFromHistory = ""
+    Set mostRecentAssistantHasSpec = 0
+    Set anySpecStubbed = 0
     Try {
         If $isobject(req.history) {
             Set hIter = req.history.%GetIterator()
@@ -451,29 +460,37 @@ ClassMethod ChatStream(pResponse As %CSP.Response, pBodyStream) As %Status
                 Set ePos = $find(hContent, "[[/SPEC]]")
                 If (sPos > 0), (ePos > 0), (ePos > sPos) {
                     Set specFromHistory = $extract(hContent, sPos, ePos - $length("[[/SPEC]]") - 1)
+                    Set mostRecentAssistantHasSpec = 1
+                    Set anySpecStubbed = 1
+                    Set hTurn.content = "I drafted a project specification for the user's review."
+                } Else {
+                    ; Newer assistant turn that isn't a spec — agent has already
+                    ; moved past the spec phase. Note: this overwrites the spec
+                    ; flag if a more recent assistant message exists.
+                    Set mostRecentAssistantHasSpec = 0
                 }
             }
         }
     } Catch  {}
-    If specFromHistory '= "" {
-        ; Empirically (Bedrock + Claude Sonnet 4): the spec content in PRIOR
-        ; turns reliably hangs the LLM call. The SAME content in the current
-        ; user message with EMPTY history returns in ~35-60s with full tool
-        ; calls. We mimic the verified-working format precisely — the
-        ; specific wording of the prefix matters (other wordings also
-        ; hang).
+    ; Approval turn (most recent assistant = the spec): inject and clear so
+    ; Bedrock sees the verified-working "I approved the following..." shape.
+    If mostRecentAssistantHasSpec, specFromHistory '= "" {
         Set msgLower = $zconvert(message, "L")
-        Set isApproval = (msgLower [ "approve") || (msgLower [ "yes, build") || (msgLower [ "go ahead") || (msgLower [ "looks good")
+        Set isApproval = (msgLower [ "approve") || (msgLower = "yes") || (msgLower [ "yes,") || (msgLower [ "yes ") || (msgLower [ "go ahead") || (msgLower [ "looks good") || (msgLower [ "build it") || (msgLower = "ok") || (msgLower = "okay")
         Set req.history = []
         If isApproval {
             Set message = "I approved the following project specification — please build it using your plan -> authorize -> act loop:" _ $char(10,10) _ specFromHistory
-            Set ^AgInt.ChatTrace($i(^AgInt.ChatTrace))=$zdt($h,3,1)_": approval flow — replaced message with spec-build prompt; specLen="_$length(specFromHistory)
+            Set ^AgInt.ChatTrace($i(^AgInt.ChatTrace))=$zdt($h,3,1)_": approval-turn injection; isApproval=1 specLen="_$length(specFromHistory)
         } Else {
-            ; Non-approval turn (e.g., "change exercise 2"): keep the user's
-            ; words AT THE END so the model knows what to revise.
             Set message = "Here is the project specification I drafted previously. The user has a follow-up request after it:" _ $char(10,10) _ specFromHistory _ $char(10,10) _ "User request: " _ message
-            Set ^AgInt.ChatTrace($i(^AgInt.ChatTrace))=$zdt($h,3,1)_": follow-up flow — appended user request after spec; specLen="_$length(specFromHistory)
+            Set ^AgInt.ChatTrace($i(^AgInt.ChatTrace))=$zdt($h,3,1)_": approval-turn injection; isApproval=0 (revision) specLen="_$length(specFromHistory)
         }
+    } ElseIf anySpecStubbed {
+        ; Subsequent turn — the agent already responded after approval. Just
+        ; stub the old spec turn(s) and let the agent keep the plan in
+        ; history. No injection: the plan IS the new source of truth and the
+        ; user is now answering questions the agent asked during the build.
+        Set ^AgInt.ChatTrace($i(^AgInt.ChatTrace))=$zdt($h,3,1)_": post-approval turn — spec stubbed, no injection (preserve plan context)"
     }
 
     ; Resolve the agent: an explicit agentClass wins; otherwise the
