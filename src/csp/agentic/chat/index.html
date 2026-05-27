@@ -47,10 +47,15 @@
     </section>
 
     <form class="composer" id="composer" autocomplete="off">
-      <div class="composer-shell">
-        <textarea id="input" placeholder="Ask anything about your interop work — or type / for commands" rows="2" autofocus></textarea>
+      <div class="composer-shell" id="composer-shell">
+        <div id="attach-chips" class="attach-chips" hidden></div>
+        <textarea id="input" placeholder="Ask anything about your interop work — or type / for commands · drop a PDF, xlsx, txt or md to attach" rows="2" autofocus></textarea>
         <div class="composer-actions">
-          <span class="composer-hint">↵ to send · ⇧↵ for newline</span>
+          <button id="btn-attach" type="button" class="ghost" title="Attach file (PDF, .xlsx, .txt, .md)">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16.5 6v11a4.5 4.5 0 0 1-9 0V6.5a3 3 0 1 1 6 0V16a1.5 1.5 0 0 1-3 0V7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <input type="file" id="file-picker" multiple accept=".pdf,.xlsx,.xlsm,.txt,.md,.markdown" hidden>
+          <span class="composer-hint">↵ to send · ⇧↵ for newline · drop files to attach</span>
           <button id="btn-send" type="submit" class="primary">Send</button>
         </div>
       </div>

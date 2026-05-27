@@ -262,7 +262,21 @@ ClassMethod ChatStream(pResponse As %CSP.Response, pBodyStream) As %Status
     Set %agenticChatSSE = 1
 
     ; Parse body first so we can read the client-supplied observerId.
-    Set req = $classmethod(util, "ParseBody", pBodyStream)
+    ; Two transports are accepted:
+    ;   application/json       -> existing pBodyStream path, no attachments.
+    ;   multipart/form-data    -> 'body' part carries the JSON, 'files'
+    ;                             parts carry the attachments (handled
+    ;                             after sessionId is established).
+    Set isMultipart = ($get(%request.ContentType) [ "multipart/form-data")
+    Set req = ""
+    If isMultipart {
+        Set bodyData = %request.GetMimeData("body", "", 1)
+        If $isobject(bodyData) || (bodyData '= "") {
+            Try { Set req = ##class(%DynamicAbstractObject).%FromJSON(bodyData) } Catch  { Set req = "" }
+        }
+    } Else {
+        Set req = $classmethod(util, "ParseBody", pBodyStream)
+    }
     If '$isobject(req) {
         Do ..SSEEvent("error", {"error":"Invalid JSON body","stage":"parse"})
         Quit $$$OK
@@ -291,6 +305,65 @@ ClassMethod ChatStream(pResponse As %CSP.Response, pBodyStream) As %Status
     Set startInfo.user = $username
     Set startInfo.namespace = $namespace
     Do ..WriteLiveFeed("session_start", startInfo)
+
+    ; -------- Attachment ingestion (multipart only) --------
+    ; Stage each uploaded file under <mgr>/Temp/agentic-attach/<sessionId>/,
+    ; extract its text via AttachmentExtractor (PyMuPDF/openpyxl/passthrough),
+    ; and append the extracted text to the user's message as one
+    ;   <attachment name="X" type="pdf" pages="N">...</attachment>
+    ; block per file. The agent sees these in iteration 1 and synthesizes
+    ; a Project Specification (per its INSTRUCTIONS) before any action.
+    ; Per-attachment text is capped at 150 000 chars to keep the LLM
+    ; context bounded; truncation is annotated inline.
+    Set attachmentNames = ""
+    If isMultipart {
+        Set stageDir = ##class(%File).NormalizeDirectory("Temp/agentic-attach/" _ %agenticChatSessionId, ##class(%File).ManagerDirectory())
+        Do ##class(%File).CreateDirectoryChain(stageDir)
+        Set blocks = ""
+        Set fileCount = %request.CountMimeData("files")
+        For i=1:1:fileCount {
+            Set fstream = %request.GetMimeData("files", "", i)
+            If '$isobject(fstream) { Continue }
+            Set fname = fstream.FileName
+            If fname = "" { Continue }
+            Set safeName = $piece(fname, "/", *)
+            Set safeName = $piece(safeName, "\", *)
+            Set safeName = $translate(safeName, "<>:""|?*", "______")
+            If '##class(AgenticInterop.Editor.AttachmentExtractor).IsSupported(safeName) {
+                Do ..WriteLiveFeed("trace", {"msg":("Skipping unsupported attachment: " _ safeName)})
+                Continue
+            }
+            Set targetPath = stageDir _ safeName
+            Try {
+                Set f = ##class(%Stream.FileBinary).%New()
+                Set f.Filename = targetPath
+                Do fstream.Rewind()
+                Do f.CopyFrom(fstream)
+                Set sc = f.%Save()
+                If 'sc { Continue }
+                Set ext = ##class(AgenticInterop.Editor.AttachmentExtractor).Extract(targetPath, safeName)
+                If 'ext.ok {
+                    Do ..WriteLiveFeed("trace", {"msg":("Attachment extract failed: " _ safeName _ " — " _ $select(ext.%IsDefined("error"):ext.error, 1:"unknown"))})
+                    Continue
+                }
+                Set extractedText = ext.text
+                If $length(extractedText) > 150000 {
+                    Set origLen = $length(extractedText)
+                    Set extractedText = $extract(extractedText, 1, 150000) _ $char(10) _ "[... truncated; original " _ origLen _ " chars]"
+                }
+                Set extra = ""
+                If ext.%IsDefined("pages"), ext.pages '= "" { Set extra = extra _ " pages=""" _ ext.pages _ """" }
+                If ext.%IsDefined("sheets"), ext.sheets '= "" { Set extra = extra _ " sheets=""" _ ext.sheets _ """" }
+                Set block = "<attachment name=""" _ safeName _ """ type=""" _ ext.type _ """" _ extra _ ">" _ $char(10) _ extractedText _ $char(10) _ "</attachment>"
+                Set blocks = blocks _ $char(10,10) _ block
+                Set attachmentNames = attachmentNames _ $select(attachmentNames="":"",1:",") _ safeName
+            } Catch  {}
+        }
+        If blocks '= "" {
+            Set message = message _ blocks
+            Do ..WriteLiveFeed("trace", {"msg":("Attachments staged: " _ attachmentNames)})
+        }
+    }
 
     ; Resolve the agent: an explicit agentClass wins; otherwise the
     ; chatbot key maps to an agent via the Chatbot config layer; else

@@ -854,3 +854,132 @@ body[data-rail="closed"] .history-rail { transform: translateX(-100%); pointer-e
 .fhir-load.is-done .fhir-load-count { color: #3fb950; }
 .fhir-load.is-error .fhir-load-fill { background: #f85149; }
 .fhir-load.is-error .fhir-load-count { color: #f85149; }
+
+/* ----- composer attachments (paperclip + chips + drag-drop) ----- */
+
+#btn-attach {
+    background: transparent;
+    border: 1px solid transparent;
+    cursor: pointer;
+    padding: 6px 8px;
+    color: var(--muted-2);
+    border-radius: 6px;
+    margin-right: auto;
+}
+#btn-attach:hover { background: var(--panel-3); color: var(--text); border-color: var(--border); }
+#btn-attach svg { width: 18px; height: 18px; display: block; }
+
+.attach-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 6px 4px 4px;
+}
+.attach-chips[hidden] { display: none; }
+.attach-chip {
+    background: var(--panel-3);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 3px 4px 3px 10px;
+    font-size: 12px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--text-soft);
+    max-width: 340px;
+}
+.attach-chip-name {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.attach-chip-size { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.attach-chip-x {
+    background: transparent;
+    border: none;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 1;
+    padding: 2px 6px;
+    border-radius: 50%;
+}
+.attach-chip-x:hover { color: var(--text); background: rgba(255,255,255,0.06); }
+
+.composer-shell.drag-over {
+    outline: 2px dashed var(--primary, #6366f1);
+    outline-offset: -2px;
+}
+
+.user-attachments {
+    font-size: 11px;
+    color: var(--muted, #8b95a6);
+    margin-bottom: 4px;
+    font-style: italic;
+}
+
+/* ----- spec card (rendered when assistant emits [[SPEC]]…[[/SPEC]]) ----- */
+
+.spec-card {
+    background: var(--panel-2, #1c2129);
+    border: 1px solid var(--border, #262d39);
+    border-left: 3px solid var(--primary, #6366f1);
+    border-radius: 8px;
+    padding: 14px 16px 12px;
+    margin: 10px 0;
+}
+.spec-card-head {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    margin-bottom: 8px;
+}
+.spec-card-head .label {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--muted, #8b95a6);
+    text-transform: uppercase;
+    letter-spacing: .6px;
+}
+.spec-card-body {
+    font-size: 13px;
+    line-height: 1.55;
+    color: var(--text, #e6e8eb);
+}
+.spec-card-body h1 { font-size: 15px; margin: 4px 0 8px; font-weight: 600; }
+.spec-card-body h2 { font-size: 13px; margin: 10px 0 4px; font-weight: 600; color: var(--text-soft, #c2c8d2); text-transform: none; }
+.spec-card-body h3 { font-size: 13px; margin: 8px 0 3px; font-weight: 600; color: var(--text, #e6e8eb); }
+.spec-card-body p { margin: 4px 0; }
+.spec-card-body ul, .spec-card-body ol { margin: 4px 0 6px 20px; padding: 0; }
+.spec-card-body li { margin: 2px 0; }
+.spec-card-actions { display: flex; gap: 8px; margin-top: 12px; }
+.spec-card-actions button {
+    border-radius: 6px;
+    padding: 6px 14px;
+    font: 600 12px/1 system-ui, sans-serif;
+    cursor: pointer;
+}
+.spec-card-actions .approve {
+    background: var(--primary, #6366f1);
+    color: white;
+    border: 1px solid var(--primary, #6366f1);
+}
+.spec-card-actions .approve:hover { filter: brightness(1.08); }
+.spec-card-actions .edit {
+    background: transparent;
+    color: var(--text-soft, #c2c8d2);
+    border: 1px solid var(--border, #262d39);
+}
+.spec-card-actions .edit:hover { background: var(--panel-3); color: var(--text); }
+.spec-edit-area {
+    width: 100%;
+    margin-top: 10px;
+    background: var(--code, #0a0d12);
+    color: var(--text, #e6e8eb);
+    border: 1px solid var(--border, #262d39);
+    border-radius: 6px;
+    padding: 10px;
+    font: 12px/1.5 ui-monospace, "SF Mono", Menlo, monospace;
+    min-height: 220px;
+    resize: vertical;
+}

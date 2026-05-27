@@ -41,6 +41,24 @@ const history = [];
 // for API compatibility; the array is always empty.
 let approvedTokens = [];
 
+// Composer attachments: queued in the composer (chips visible), sent on the
+// next submit, then cleared. Server-side AttachmentExtractor handles the
+// same whitelist (pdf / xlsx / txt / md). 10 MB per file is a defensive
+// client cap — the gateway's no-cache + the CSP multipart limit handle
+// the rest.
+let pendingAttachments = [];
+const ATTACH_EXTS = ['.pdf', '.xlsx', '.xlsm', '.txt', '.md', '.markdown'];
+const ATTACH_MAX_BYTES = 10 * 1024 * 1024;
+function attachExtOK(name) {
+    const lower = String(name || '').toLowerCase();
+    return ATTACH_EXTS.some(e => lower.endsWith(e));
+}
+function formatBytes(n) {
+    if (n < 1024) return n + ' B';
+    if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+    return (n / 1048576).toFixed(1) + ' MB';
+}
+
 // Curated example prompts. The empty-state shows the first 6;
 // `/examples` shows the full set. Each entry is { cat, title, prompt };
 // `cat` is a short uppercase category label (BUILD / TRANSFORM /
@@ -602,7 +620,7 @@ function fmtInline(text) {
     return s;
 }
 
-function appendUserMessage(content) {
+function appendUserMessage(content, attachments) {
     const empty = $('empty-state');
     if (empty) empty.remove();
     const el = document.createElement('div');
@@ -611,6 +629,16 @@ function appendUserMessage(content) {
     role.className = 'role';
     role.textContent = 'you';
     el.appendChild(role);
+    // Show a small "Attached:" line above the message text so the user
+    // sees in the transcript that they sent files. The actual file
+    // contents are not shown here — the agent's reply will quote them.
+    if (attachments && attachments.length) {
+        const names = Array.prototype.map.call(attachments, function (f) { return f.name; }).join(', ');
+        const att = document.createElement('div');
+        att.className = 'user-attachments';
+        att.textContent = 'Attached: ' + names;
+        el.appendChild(att);
+    }
     el.appendChild(document.createTextNode(content));
     $('messages').appendChild(el);
     $('messages').scrollTop = $('messages').scrollHeight;
@@ -922,12 +950,13 @@ async function* readSSE(res) {
     }
 }
 
-async function send(message) {
+async function send(message, attachments) {
     if (pending) return;
     pending = true;
     $('btn-send').disabled = true;
     $('input').disabled = true;
-    appendUserMessage(message);
+    const hasAttachments = !!(attachments && attachments.length);
+    appendUserMessage(message, attachments);
     const bubble = newAssistantBubble();
     const toolCardsByName = new Map();
     let assistantText = '';
@@ -936,7 +965,11 @@ async function send(message) {
         // Dispatch.OnPreDispatch gate fires. If the user has no
         // permission for that namespace, the gate refuses with 403
         // BEFORE the chat method runs.
-        const headers = { 'Content-Type': 'application/json', 'Authorization': authHeader() };
+        // When attachments are present we send multipart/form-data and the
+        // browser MUST be the one to set the Content-Type header (so it
+        // includes the multipart boundary). Do not set it ourselves.
+        const headers = { 'Authorization': authHeader() };
+        if (!hasAttachments) headers['Content-Type'] = 'application/json';
         if (bridgeNamespace) headers['X-IRIS-Namespace'] = bridgeNamespace;
         // Pull the approved tokens captured since the last send and
         // clear the queue — they apply to THIS turn only.
@@ -956,11 +989,26 @@ async function send(message) {
         if (observerChannel) {
             try { observerChannel.postMessage({ type: 'session', id: observerId }); } catch {}
         }
+        // Build a fresh body each retry — FormData (when attachments) is a
+        // one-shot stream, so it must be reconstructed each time fetch
+        // consumes one. The JSON path is also rebuilt for consistency.
+        const payload = { message, history, approvedTokens: tokensThisTurn, observerId, chatbot: CHATBOT };
+        const bodyMaker = () => {
+            if (hasAttachments) {
+                const fd = new FormData();
+                fd.append('body', JSON.stringify(payload));
+                for (let i = 0; i < attachments.length; i++) {
+                    fd.append('files', attachments[i], attachments[i].name);
+                }
+                return fd;
+            }
+            return JSON.stringify(payload);
+        };
         const streamUrl = API + '/chat/stream?_t=' + Date.now();
         let res = await fetch(streamUrl, {
             method: 'POST',
             headers,
-            body: JSON.stringify({ message, history, approvedTokens: tokensThisTurn, observerId, chatbot: CHATBOT })
+            body: bodyMaker()
         });
         // 401 recovery: the CSP session or bridge bearer expired.
         // Try increasingly aggressive recovery before showing the
@@ -972,7 +1020,7 @@ async function send(message) {
             headers['Authorization'] = authHeader();
             res = await fetch(API + '/chat/stream?_t=' + Date.now(), {
                 method: 'POST', headers,
-                body: JSON.stringify({ message, history, approvedTokens: tokensThisTurn, observerId, chatbot: CHATBOT })
+                body: bodyMaker()
             });
         }
         if (res.status === 401) {
@@ -984,7 +1032,7 @@ async function send(message) {
                     headers['Authorization'] = bridgeBearer;
                     res = await fetch(API + '/chat/stream?_t=' + Date.now(), {
                         method: 'POST', headers,
-                        body: JSON.stringify({ message, history, approvedTokens: tokensThisTurn, observerId, chatbot: CHATBOT })
+                        body: bodyMaker()
                     });
                 }
             }
@@ -999,7 +1047,7 @@ async function send(message) {
                 headers['Authorization'] = stored;
                 res = await fetch(API + '/chat/stream?_t=' + Date.now(), {
                     method: 'POST', headers,
-                    body: JSON.stringify({ message, history, approvedTokens: tokensThisTurn, observerId, chatbot: CHATBOT })
+                    body: bodyMaker()
                 });
             }
         }
@@ -1025,7 +1073,7 @@ async function send(message) {
             headers['Authorization'] = authHeader();
             res = await fetch(API + '/chat/stream?_t=' + Date.now(), {
                 method: 'POST', headers,
-                body: JSON.stringify({ message, history, approvedTokens: tokensThisTurn, observerId, chatbot: CHATBOT })
+                body: bodyMaker()
             });
         }
         if (res.status === 401) {
@@ -1144,6 +1192,10 @@ async function send(message) {
         // streamed text into real HTML so the user sees proper bold,
         // headings, and bullets instead of raw asterisks.
         formatBubbleText(bubble.text);
+        // Attachment workflow: if the assistant wrapped a Project
+        // Specification in [[SPEC]] … [[/SPEC]] markers, replace those
+        // markers with a structured card carrying Approve / Edit buttons.
+        maybeRenderSpecCard(bubble, assistantText);
         // Persist the turn for replay on the next message.
         history.push({ role: 'user', content: message });
         history.push({ role: 'assistant', content: assistantText });
@@ -1264,19 +1316,218 @@ async function loadNamespaces() {
 $('composer').addEventListener('submit', (e) => {
     e.preventDefault();
     const txt = $('input').value.trim();
-    if (!txt) return;
+    // Allow a turn with attachments and no message text (the agent will
+    // synthesize a spec from the attachments alone).
+    if (!txt && !pendingAttachments.length) return;
     $('input').value = '';
     hideSlashMenu();
     // Slash commands run side-channel — they must NOT round-trip
     // through send(), the LLM, or the conversation history. The
     // dispatcher below renders a synthetic system card and returns.
-    if (maybeRunSlashCommand(txt)) return;
-    send(txt);
+    // Slash commands ignore attachments by design.
+    if (txt && maybeRunSlashCommand(txt)) return;
+    const filesThisTurn = pendingAttachments.slice();
+    pendingAttachments = [];
+    renderAttachChips();
+    send(txt, filesThisTurn);
 });
+
+// ---------- composer attachments: chips + picker + drag-drop ----------
+
+function renderAttachChips() {
+    const el = $('attach-chips');
+    if (!el) return;
+    if (!pendingAttachments.length) {
+        el.innerHTML = '';
+        el.hidden = true;
+        return;
+    }
+    el.hidden = false;
+    el.innerHTML = '';
+    pendingAttachments.forEach((f, idx) => {
+        const chip = document.createElement('span');
+        chip.className = 'attach-chip';
+        const name = document.createElement('span');
+        name.className = 'attach-chip-name';
+        name.textContent = f.name;
+        const size = document.createElement('span');
+        size.className = 'attach-chip-size';
+        size.textContent = formatBytes(f.size);
+        const x = document.createElement('button');
+        x.type = 'button';
+        x.className = 'attach-chip-x';
+        x.textContent = '×';
+        x.title = 'Remove';
+        x.addEventListener('click', () => {
+            pendingAttachments.splice(idx, 1);
+            renderAttachChips();
+        });
+        chip.appendChild(name);
+        chip.appendChild(size);
+        chip.appendChild(x);
+        el.appendChild(chip);
+    });
+}
+
+function tryAddAttachment(file) {
+    if (!file || !file.name) return false;
+    if (!attachExtOK(file.name)) {
+        toast('Unsupported: ' + file.name + ' — accept pdf, xlsx, txt, md.', 'err');
+        return false;
+    }
+    if (file.size > ATTACH_MAX_BYTES) {
+        toast(file.name + ' is ' + formatBytes(file.size) + ' — 10 MB per file maximum.', 'err');
+        return false;
+    }
+    // Dedupe by name+size so the same file dropped twice doesn't double up.
+    if (pendingAttachments.some(p => p.name === file.name && p.size === file.size)) {
+        return false;
+    }
+    pendingAttachments.push(file);
+    renderAttachChips();
+    return true;
+}
+
+if ($('btn-attach')) {
+    $('btn-attach').addEventListener('click', () => $('file-picker').click());
+}
+if ($('file-picker')) {
+    $('file-picker').addEventListener('change', (e) => {
+        const files = e.target.files;
+        if (files) for (let i = 0; i < files.length; i++) tryAddAttachment(files[i]);
+        e.target.value = ''; // allow re-selecting the same file later
+    });
+}
+
+// Drag-and-drop on the composer shell and the messages area, so the user
+// can drop a PDF anywhere in the chat panel and have it queue up as an
+// attachment for the next message. drag-over class outlines the composer
+// to confirm the drop target.
+(function wireDropZones() {
+    const targets = ['composer-shell', 'messages'].map(id => $(id)).filter(Boolean);
+    const shell = $('composer-shell');
+    let depth = 0;
+    targets.forEach(el => {
+        el.addEventListener('dragenter', (e) => {
+            if (!e.dataTransfer || !e.dataTransfer.types) return;
+            if (!Array.prototype.includes.call(e.dataTransfer.types, 'Files')) return;
+            e.preventDefault();
+            depth++;
+            if (shell) shell.classList.add('drag-over');
+        });
+        el.addEventListener('dragover', (e) => {
+            if (!e.dataTransfer || !e.dataTransfer.types) return;
+            if (!Array.prototype.includes.call(e.dataTransfer.types, 'Files')) return;
+            e.preventDefault();
+        });
+        el.addEventListener('dragleave', () => {
+            depth = Math.max(0, depth - 1);
+            if (depth === 0 && shell) shell.classList.remove('drag-over');
+        });
+        el.addEventListener('drop', (e) => {
+            if (!e.dataTransfer || !e.dataTransfer.files || !e.dataTransfer.files.length) return;
+            e.preventDefault();
+            depth = 0;
+            if (shell) shell.classList.remove('drag-over');
+            for (let i = 0; i < e.dataTransfer.files.length; i++) {
+                tryAddAttachment(e.dataTransfer.files[i]);
+            }
+        });
+    });
+})();
 
 // Auto-grow: expand textarea height to fit content (up to CSS max-height),
 // shrink back when text is removed. Also runs when a prompt is loaded
 // from /examples. The user can still drag the resize handle to override.
+// ---------- spec card (Project Specification with Approve / Edit) ----------
+// The assistant wraps a synthesized Project Specification in
+// [[SPEC]] … [[/SPEC]] markers (per its INSTRUCTIONS). After the streamed
+// text has been markdown-formatted, scan the raw text for those markers and
+// replace the marker pair in the bubble with a structured card carrying
+// two actions:
+//   Approve, build it -> sends "approve, build it" as the next user message.
+//   Edit              -> loads the spec markdown into the composer input so
+//                        the user can revise it inline and send the changes.
+// The agent's prompt handles the rest.
+
+function maybeRenderSpecCard(bubble, rawText) {
+    if (!rawText || rawText.indexOf('[[SPEC]]') < 0) return;
+    const re = /\[\[SPEC\]\]([\s\S]*?)\[\[\/SPEC\]\]/;
+    const m = re.exec(rawText);
+    if (!m) return;
+    const specMarkdown = m[1].trim();
+    const before = rawText.slice(0, m.index);
+    const after = rawText.slice(m.index + m[0].length);
+    // Rebuild the bubble: before-text + card + after-text. Each free-text
+    // segment is markdown-rendered with the existing formatter so the rest
+    // of the assistant response still looks correct.
+    bubble.text.innerHTML = '';
+    appendFormatted(bubble.text, before);
+    bubble.text.appendChild(buildSpecCard(specMarkdown));
+    appendFormatted(bubble.text, after);
+}
+
+function appendFormatted(parent, text) {
+    if (!text || !text.trim()) return;
+    const tmp = document.createElement('div');
+    tmp.textContent = text;
+    try { formatBubbleText(tmp); } catch (e) {}
+    while (tmp.firstChild) parent.appendChild(tmp.firstChild);
+}
+
+function buildSpecCard(specMarkdown) {
+    const card = document.createElement('div');
+    card.className = 'spec-card';
+    card.dataset.specMarkdown = specMarkdown;
+
+    const head = document.createElement('div');
+    head.className = 'spec-card-head';
+    const label = document.createElement('span');
+    label.className = 'label';
+    label.textContent = 'Project Specification — draft';
+    head.appendChild(label);
+    card.appendChild(head);
+
+    const body = document.createElement('div');
+    body.className = 'spec-card-body';
+    appendFormatted(body, specMarkdown);
+    card.appendChild(body);
+
+    const actions = document.createElement('div');
+    actions.className = 'spec-card-actions';
+    actions.appendChild(makeBtn('approve', 'Approve, build it', () => specApprove(card)));
+    actions.appendChild(makeBtn('edit', 'Edit', () => specEdit(card)));
+    card.appendChild(actions);
+    return card;
+}
+
+function makeBtn(cls, text, onClick) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = cls;
+    b.textContent = text;
+    b.addEventListener('click', onClick);
+    return b;
+}
+
+function specApprove(card) {
+    card.querySelectorAll('button').forEach(b => b.disabled = true);
+    $('input').value = 'approve, build it';
+    $('composer').dispatchEvent(new Event('submit', { cancelable: true }));
+}
+
+function specEdit(card) {
+    const specMarkdown = card.dataset.specMarkdown || '';
+    // Load the spec back into the composer so the user can revise inline and
+    // hit Send. We wrap it with a short instruction so the agent treats the
+    // result as the new authoritative spec text rather than free-form text.
+    $('input').value =
+        'Revise the Project Specification to match the text below exactly, then re-emit it inside [[SPEC]] markers so I can review:\n\n' +
+        specMarkdown;
+    $('input').focus();
+    try { autoGrow($('input')); } catch (e) {}
+}
+
 function autoGrow(el) {
     el.style.height = 'auto';
     el.style.height = Math.min(el.scrollHeight, el.parentElement.clientHeight * 0.6 || 9999) + 'px';
