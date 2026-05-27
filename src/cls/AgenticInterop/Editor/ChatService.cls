@@ -289,6 +289,20 @@ ClassMethod ChatStream(pResponse As %CSP.Response, pBodyStream) As %Status
     ;                             after sessionId is established).
     Set isMultipart = (chatCT [ "multipart/form-data")
     Set ^AgInt.ChatTrace($i(^AgInt.ChatTrace))=$zdt($h,3,1)_": before body-parse multipart="_isMultipart
+    ; Dump every multipart part name and count so we can see what the
+    ; framework actually parsed. If this list is empty for a multipart
+    ; request, %CSP.REST is not parsing the body into MIMEData.
+    If isMultipart {
+        Set mpartName = ""
+        For  {
+            Set mpartName = %request.NextMimeData(mpartName)
+            Quit:mpartName=""
+            Set ^AgInt.ChatTrace($i(^AgInt.ChatTrace))=$zdt($h,3,1)_":   mpart name='"_mpartName_"' count="_%request.CountMimeData(mpartName)
+        }
+        Set hasContent = $isobject(%request.Content) Try { Set hasContent = hasContent_" contentSize="_%request.Content.Size } Catch  {}
+        Set ^AgInt.ChatTrace($i(^AgInt.ChatTrace))=$zdt($h,3,1)_":   %request.Content isobj+size: "_hasContent
+        Try { Set ^AgInt.ChatTrace($i(^AgInt.ChatTrace))=$zdt($h,3,1)_":   pBodyStream type: "_$select($isobject(pBodyStream):pBodyStream.%ClassName(1)_" size="_pBodyStream.Size,1:"not-object value="_$e(pBodyStream,1,80)) } Catch {}
+    }
     Set req = ""
     Try {
         If isMultipart {
