@@ -122,10 +122,25 @@ def main():
         click_tab(page, 7)
         shot(page, "12_transforms_empty")
 
-        # 13. Transforms with HL7 v2 -> FHIR R4
-        page.select_option("#tf-sel-src", "HL7 v2")
-        page.select_option("#tf-sel-tgt", "FHIR R4")
-        shot(page, "13_transforms_hl7_fhir", wait=2.5)
+        # 13. Transforms with HL7 v2 -> FHIR R4.
+        # The selector IDs changed when the Transforms tab was redesigned.
+        # Try the new IDs first; fall back to the old ones; if neither
+        # works, skip this shot (don't block the rest of the capture).
+        try:
+            for src_sel, tgt_sel in (
+                ("#tf-sel-src", "#tf-sel-tgt"),
+                ("#tf-source", "#tf-target"),
+                ("select[name='source']", "select[name='target']"),
+            ):
+                if page.locator(src_sel).count() > 0 and page.locator(tgt_sel).count() > 0:
+                    page.select_option(src_sel, "HL7 v2")
+                    page.select_option(tgt_sel, "FHIR R4")
+                    shot(page, "13_transforms_hl7_fhir", wait=2.5)
+                    break
+            else:
+                print("  WARN: skipping 13_transforms_hl7_fhir — Transforms tab selectors not found (UI changed)")
+        except Exception as e:
+            print(f"  WARN: skipping 13_transforms_hl7_fhir — {e}")
 
         # 14. Audit tab
         click_tab(page, 8)
