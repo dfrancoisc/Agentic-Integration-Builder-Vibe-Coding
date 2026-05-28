@@ -62,6 +62,33 @@ To add a setting to a class, add a property and list its name in `Parameter SETT
 
 Access settings programmatically: `$$$ConfigProdSetting("name")` for production settings. Wrap in `$GET` for safety. For business hosts and adapters use `Ens.Director` getters: `GetHostSettings`, `GetHostSettingValue`, `GetAdapterSettings`, `GetAdapterSettingValue`, `GetCurrProductionSettings`, `GetCurrProductionSettingValue`, `GetProductionSettings`, `GetProductionSettingValue`. Setters: `SetHostSettingValue`, `SetAdapterSettingValue`, `SetItemSettingValue`. Item full name format is `productionName||itemName`.
 
+## System Default Settings — environment-specific overrides
+
+System Default Settings live in the `Ens.Config.DefaultSettings` table (and the underlying global `^Ens.Config.DefaultSettingsD`). They are the recommended mechanism for promoting a production across environments (dev → test → live) without editing the production class. Use them for everything that varies per environment: file paths, TCP/IP addresses, ports, credentials, FHIR endpoint URLs, OAuth client names.
+
+Each row keys on `(ProductionName, ItemName, HostClassName, SettingName)` and stores `SettingValue` + `Deployable` (boolean — whether the row goes into deployment packages) + an optional `Description`.
+
+Wildcards: any of ProductionName / ItemName / HostClassName may be `*`. Lookup tries 8 combinations from most specific to fully wildcarded:
+
+1. `(prod, item, hostClass, setting)` — exact.
+2. `(*, item, hostClass, setting)` — any production.
+3. `(prod, *, hostClass, setting)` — any host in this production with this class.
+4. `(*, *, hostClass, setting)` — any host of this class anywhere.
+5. `(prod, item, *, setting)` — this host regardless of class.
+6. `(*, item, *, setting)` — any host named this anywhere.
+7. `(prod, *, *, setting)` — any host in this production.
+8. `(*, *, *, setting)` — system-wide default.
+
+First match wins. The SettingName may be prefixed with `Host:` or `Adapter:` to target a specific level; bare names match either target.
+
+Critical workflow:
+- Develop the production with placeholder values or System Default Settings rows that point at dev resources.
+- Export the production via `Interoperability > List > Productions > Export`. Choose "Deployable Settings" to include only the System Default rows marked `Deployable=1`.
+- Import on test/live. Then EITHER re-import a target-environment Deployable Settings XML OR set the values manually via `SetSystemDefaultSetting` calls (the equivalent of `Interoperability > Configure > System Default Settings`).
+- The production class itself is identical across environments.
+
+System Default Settings have full programmatic CRUD via the tools below; `Ens.Config.DefaultSettings.%Export(filename, deployableOnly)` + `%Import(filename)` handle XML round-trip.
+
 ## Universal settings reference
 
 Production:
@@ -464,6 +491,161 @@ Complete HL7 routing production example — wiring summary:
 3. Promote system default settings (per-namespace environment values like file paths and ports) separately from the production definition — that's the whole point of System Default Settings.
 
 Source control affects the Production Configuration page, BPL editor, DTL editor, Business Rule editor, Record Maps, Workflow pages. When a production is under source control, you cannot modify the definition without checking it out, but you can use the Action tab's Stop / Start / Restart buttons for hosts with `Pool Size > 1` (or hosts using the queue invocation) — these don't touch the class.
+
+## Reply Code Actions — complete grammar
+
+Set on business processes and business operations. Comma-separated list of `code=actions` pairs. The framework retries automatically on adapter-level errors (timeouts, connect failures) regardless of this setting — Reply Code Actions controls handling of message-handler errors and missing replies.
+
+Reply codes:
+
+| Code | Means |
+|---|---|
+| `E` | Error status returned from the message handler. |
+| `E#statuscode` | Error status whose %Status equals statuscode. |
+| `E*text` | Error status text containing the substring text. |
+| `X` | No reply message object at all. |
+
+Actions (combine letters to compose):
+
+| Action | Effect |
+|---|---|
+| `C` | Treat the message as Completed OK. |
+| `W` | Log a warning, still treat as Completed OK. |
+| `R` | Retry per Retry Interval / Failure Timeout, then move on with status = Completed. Combine with `F` (i.e. `RF`) if you want a final error status. |
+| `S` | Suspend the message, log an error, move to the next. |
+| `D` | Disable the host, log an error, restore the message to the front of the queue. For business processes, requires Pool Size ≥ 1 — Pool Size 0 disables every process sharing the actor pool. |
+| `F` | Fail or retry depending on the host's Retry property (not exposed as a setting). Retry=0 fails immediately; Retry=1 retries before failing. |
+
+Default: `E=F`.
+
+Evaluation order: all `W`-only entries fire first (warnings are non-blocking). Then remaining entries evaluate left-to-right; first non-warning match wins. So `E#6301=R,E*ErrGeneral=R,E=F` means "retry on status 6301", "retry on any error mentioning ErrGeneral", "fail everything else".
+
+## Pool Size + Actor Pool Size
+
+Recommended Pool Size = number of CPU cores on the IRIS host. Higher values cause OS swap/OOM behavior under burst load — not better throughput.
+
+`Actor Pool Size` is the production-wide shared job pool used by any business process whose private `Pool Size = 0`. Default Actor Pool Size = 2. Maximum useful value = number of CPUs (extra jobs never run concurrently).
+
+Special semantics:
+
+- Business service Pool Size = 0 means "adapterless service" — invoked from outside IRIS via CreateBusinessService() (CSP, SOAP, language binding, ObjectScript routine). Setting Pool Size = 0 on a regular service stops it from running.
+- Business operation Pool Size = 0 means "in-process invocation" (INVOCATION = InProc) — no background job, no message queue; runs in the caller's job. Required for in-process operations; stops a queued operation from running.
+- Business process Pool Size = 0 means "use the shared actor pool". The queue name becomes `Ens.Actor`, not the process name. Disabling a process with Pool Size = 0 stops EVERY process sharing the pool.
+
+To safely disable a single business process: set its Pool Size to 1 first, then clear Enabled.
+
+## Inactivity Timeout
+
+A business host is marked Inactive after this many seconds without receiving messages. Default 0 = never marked Inactive. The Monitor Service polls statuses every few seconds, so Inactive is approximate.
+
+## Failure Timeout (business operations)
+
+Number of seconds to keep retrying a connection before giving up and discarding the message. Default 30. For healthcare and any flow where no message can be lost: set Failure Timeout = -1 (never time out). The operation will keep retrying forever; the downstream backlog is the user's signal to investigate.
+
+## FIFO Groups — preserving order with parallelism
+
+Two ways to maintain First-In-First-Out:
+
+1. Force overall FIFO — Pool Size = 1 on every host, Actor Pool Size = 0. For BPL processes also use `<code> SendRequestSync` calls or restrict to FIFO-internal targets. Simple but kills parallelism.
+
+2. FIFO Groups — identify messages by a logical group (e.g. patient MRN) and let the framework hold late siblings until their predecessors complete. Parallel processing across groups, FIFO within each group.
+
+FIFO Groups workflow:
+
+a. Identify the field(s) that derive the group identifier (e.g. PID:3 MRN for HL7).
+b. Identify the starting host (where grouping is first needed — usually the routing process).
+c. Identify the completion host(s) (where the group hold can be released — usually a downstream operation that confirmed delivery).
+d. Write a DTL whose source = the request type at the starting host and target = `Ens.Queue.FIFOMessageGroup.Data`. Set:
+   - `target.Identifier` (required) — the group key. Use the macro `$$$EnsFMGSingleThreadIdentifier` (resolves to `_SingleThreadOverride`) when no group can be computed; this serialises that one message but lets others proceed.
+   - `target.Dependencies` (optional) — comma-separated other group IDs that must complete before this one is released.
+   - `target.CompletionHosts` (optional) — comma-separated host names allowed to release the hold.
+   On the DTL `<transform>`, use `create='new'` for target. `aux` is undefined.
+e. Configure the starting host's settings:
+   - `Group Calculation` (FMGCalculation) — name of the DTL.
+   - `Group Completion Hosts` (FMGCompletionHosts) — comma-separated list of completion host names.
+
+Custom-code alternative (skip the DTL) — set the macros from inside a BPL `<code>` block or custom business process:
+
+```
+ Set $$$EnsThisFIFOMessageGroup = identifier
+ Set $$$EnsThisFIFOMessageGroupDependencies = dependencies
+ Set $$$EnsThisFMGCompletionHosts = completionhosts
+```
+
+Operational recovery — `Ens.Queue.FIFOMessageGroup.ReleaseHoldByHeaderId(headerId, signalQueue=1)` releases the hold associated with one message header; `ReleaseHoldForAll(queueName, onlyCompletedSessions=1)` walks every held header on the queue. Both are wrapped by the ReleaseFIFOHold / ReleaseAllFIFOHolds tools.
+
+## Filename time-stamp specifications
+
+File and FTP business hosts accept time-stamp specifications in File Name / Archive Path / Working Path settings. The same syntax is supported by `Ens.Util.File.CreateTimestamp` and the PreviewTimestampSpec tool.
+
+Frequently used codes:
+
+| Code | Substitution |
+|---|---|
+| `%f` | Source filename (or IP+port for TCP), stripped of unsafe chars (`|?\/:[]<>&,;` and control chars), spaces → `_`, `/` → `-`, `:` → `.`. |
+| `%#f` | Source filename minus its last extension (`Summary.docx` → `Summary`). |
+| `%$f` | Just the source's last extension including the dot (`.dat`). |
+| `%F` / `%#F` / `%$F` | Same as `%f` / `%#f` / `%$f` but uppercased. |
+| `%Y` `%m` `%d` `%H` `%M` `%S` `%N` | Year (4), month (2), day (2), hour-24 (2), minute (2), second (2), millisecond (3). |
+| `%#Y` etc. | Same without leading zeros. |
+| `%q` / `%q(0)` | HL7 datetime — `YYYYMMDDHHMMSS`. |
+| `%q(1)` / `%Q` | ODBC datetime — `YYYY-MM-DD HH:MM:SS.NNN`. |
+| `%q(2)` | ISO 8601 date — `YYYY-MM-DD`. |
+| `%q(3)` | `$HOROLOG`. |
+| `%q(4)` | `$ZTIMESTAMP`. |
+| `%q(5)` | A GUID. |
+| `%K(n)` | At start of spec only — convert to time zone n (Server, UTC, `+5`, `-4.5`, `+0530`, etc.). Produces no output. |
+| `%L(n)` | At start of spec only — switch locale n. Produces no output. |
+| `%c` / `%c(d,t,p)` | Local date+time, optionally with `dformat`, `tformat`, `precision` per `$ZDATETIME`. |
+| `%+(nn)` | Auto-incrementing counter with uniqueness check on local files. `$` prefix uses a global counter (required for FTP), `!` only appends when needed, `#` omits leading zeros. Only allowed once per spec. |
+| `%t` | Tab character. |
+| `%%` | Literal `%`. `%(` literal `(`. `%_` reserved — passes through. |
+
+Common patterns:
+
+- `%f_%Q` — default for File adapters; source name + ODBC timestamp + millis.
+- `%#F_%Y%m%d%H%M%S` — uppercase source basename + compact HL7-style timestamp.
+- `%K(UTC)%Y-%m-%dT%H:%M:%SZ` — ISO 8601 UTC.
+- `%#F_%Q_%+(a0)%$f` — source + ODBC time + a-z counter + extension (collision-safe for high-volume).
+
+Always validate a spec with PreviewTimestampSpec before configuring the host — many specs that look right have a subtle bug (missing `%`, wrong case on `%q` vs `%Q`, counter outside the unique part).
+
+## Tools you have for productions and settings
+
+Production class lifecycle:
+- ListProductions / GetProduction — inventory and inspect.
+- CreateProduction / DeleteProduction — class definition CRUD.
+- StartProduction / StopProduction — runtime control with the same preconditions the docs warn about (services need TargetConfigNames + MessageSchemaCategory; routers need BusinessRuleName + Validation=""; file hosts need their directories to exist).
+- PostBuildValidation — after-build sanity report: production exists, is active, hosts enabled, no recent event-log errors, messages flowed.
+
+Business hosts:
+- AddBusinessHost / RemoveBusinessHost / UpdateBusinessHostSettings — generic CRUD for any host class.
+- ConfigureHL7TCPService / ConfigureHL7TCPOperation — HL7-correct defaults for TCP services/operations (MLLP framing, PoolSize=1, MessageSchemaCategory required).
+- ConfigureHL7Router — adds EnsLib.HL7.MsgRouter.RoutingEngine with Validation="" baked in (the production-safe default per the docs).
+- ConfigureSDAToFHIRProcess / ConfigureFHIRToSDAProcess — set up the HS.FHIR.DTL.Util.HC.* business processes with TargetConfigName, FHIRMetadataSet, FHIREndpoint, TransmissionMode, OutputToQuickStream, TransformClass.
+- EnableHL7TraceOperations — adds HS.Util.Trace.Operations and sets the TraceOperations level on a named HS.* host. OFF in prod.
+
+Routing rules:
+- ListBusinessRules / CreateRoutingRule (idempotent) / GetRoutingRule / DeleteRoutingRule.
+
+System Default Settings (environment promotion):
+- ListSystemDefaultSettings(productionFilter?, itemFilter?, settingFilter?) — inventory rows with substring filters.
+- GetSystemDefaultSetting(productionName, itemName, hostClassName, settingName, targetType?='Host') — read one row using the 8-step wildcard lookup chain. Returns `found` boolean + `value`.
+- SetSystemDefaultSetting(productionName, itemName, hostClassName, settingName, settingValue, deployable?=1, description?) — idempotent upsert. Wildcards `*` allowed for productionName/itemName/hostClassName; SettingName can be prefixed with `Host:` or `Adapter:`.
+- DeleteSystemDefaultSetting(productionName, itemName, hostClassName, settingName) — by exact key.
+- GetEffectiveSetting(production, hostName, settingName, targetType?='Host') — resolves through the 3-source chain (production class → System Default Setting → InitialExpression). Returns the value plus a `source` field so you can explain to the user "why" the runtime sees this value. Pass `hostName=""` for production-level settings (uses Ens.Director.GetProductionSettingValue under the hood).
+
+Disk prep:
+- EnsureDirectory(path) — create directory + missing parents. Call for every FilePath on file-based hosts BEFORE StartProduction.
+- PreviewTimestampSpec(spec, sourceName?) — call Ens.Util.File.CreateTimestamp with the user's spec and a sample source name. Use this BEFORE configuring File Name / Archive Path / Working Path settings to verify the spec resolves the way the user expects.
+
+Runtime diagnostics + recovery:
+- ListProductionQueues(includeIdle?=1) — walk Ens.Queue:Enumerate, return name + count + creation timestamp for every queue. Use to find backlog hot spots.
+- ReleaseFIFOHold(messageHeaderId, signalQueue?=1) — release the FIFO hold blocking one specific message header (wraps Ens.Queue.FIFOMessageGroup.ReleaseHoldByHeaderId).
+- ReleaseAllFIFOHolds(queueName, onlyCompletedSessions?=1) — bulk-release every held header on a queue (wraps Ens.Queue.FIFOMessageGroup.ReleaseHoldForAll). Default keeps non-Complete sessions untouched.
+- ValidateScheduleSpec(schedule, referenceTime?) — parse the comma-separated START/STOP schedule grammar AND call Ens.Util.Schedule.Evaluate; returns a per-entry breakdown so the caller can fix the bad piece. Also reports whether the schedule would have the host running RIGHT NOW (referenceTime).
+
+DTL / BPL / FHIR Lookup / HL7 Search Table tools live on the Transform toolset — see the DTL, BPL, FHIRR4 skills for the full list.
 }
 
 }

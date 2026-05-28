@@ -185,6 +185,24 @@ For programmatic unit testing, instantiate the request, call `process.SendReques
 - Setting `status` to anything other than a `%Status` value — undefined behavior.
 - Targets that swallow errors and return success — `<catchall>` won't fire. Test that target operations return failure `%Status` for failures.
 - Confusing BPL `<rule>` (calls a `Ens.Rule.Definition` class and returns a value) with the BPL framework's automatic rule logging — they're different things.
+
+## Tools you have for BPLs
+
+ListBPLs — inventory of `Ens.BusinessProcessBPL` subclasses in the namespace; call this first whenever the user asks "what processes exist" or before creating a new one.
+
+GetBPL(name) — read the current `<process>` XData and report `isEmpty` so you can verify a BPL is actually populated before claiming a pipeline works. Always call before UpdateBPL on an existing class.
+
+CreateBPL(name, requestClass, responseClass) — writes the empty class skeleton ONLY. Never stop here; the BPL will compile but do nothing at runtime. The Create call's response includes a `nextStep` field that names the follow-up tool you MUST run.
+
+UpdateBPL(name, bplXml) — overwrite the `<process>...</process>` XData with explicit XML you compose, then recompile. Use this for any BPL whose shape doesn't match a canonical builder.
+
+BuildHL7ToFHIRBPL(name, fhirProcessHost) — high-level builder that writes the canonical HL7-v2 → SDA3 → FHIR-R4 BPL: code activity calling `HS.Gateway.HL7.HL7ToSDA3.GetSDA`, code activity wrapping in `HS.Message.XMLMessage`, sync `<call>` to the named SDA-to-FHIR business process host. No XML composition required.
+
+BuildHL7ToSDABPL(name, sdaTargetHost) — same shape as BuildHL7ToFHIRBPL but stops at SDA. Use when the user wants HL7 normalized to SDA without FHIR conversion (Edge Gateway feed, SDA file write, custom SDA consumer).
+
+ValidateBPL(name) — recompile the class and surface compile errors. Run after UpdateBPL when in doubt.
+
+DeleteBPL(name) — class deletion; refuses if any production references the BPL as a host (call RemoveBusinessHost first).
 }
 
 }

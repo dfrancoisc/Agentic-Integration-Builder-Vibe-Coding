@@ -8,17 +8,29 @@ The copilot bridges the gap between healthcare data expertise and InterSystems p
 
 ## Status
 
-All build phases complete (Phase 0 through Phase 7). The agent operates under the Daniel persona -- a senior system integrator and healthcare interoperability architect who plans before building, searches before creating, and tests before declaring success.
+Version 1.1 ships. All build phases complete (Phase 0 through Phase 7) plus the 1.1 build-quality round: 32 new tools across Transform and Production toolsets driven by the IRIS interop docs (BPL/DTL/FHIR/Production/HL7 reference material). The agent operates under the Daniel persona -- a senior system integrator and healthcare interoperability architect who plans before building, searches before creating, and tests before declaring success.
+
+## What's new in 1.1
+
+- BPL builders: `BuildHL7ToFHIRBPL`, `BuildHL7ToSDABPL`, generic `UpdateBPL`, plus `ListBPLs`/`GetBPL`/`DeleteBPL` — close the gap where `CreateBPL` alone left an empty `<sequence/>` and the agent claimed success.
+- DTL CRUD completeness: `GetDTL`, `DeleteDTL`, `ListHL7ToSDADTLs`, `SetCustomDTLPackage` (paired with the existing `GetCustomDTLPackage`).
+- FHIR pipeline configuration: `ConfigureSDAToFHIRProcess` / `ConfigureFHIRToSDAProcess` wrap the HS.FHIR.DTL.Util.HC.* business processes with TargetConfigName, FHIRMetadataSet, FHIREndpoint, TransmissionMode, OutputToQuickStream, TransformClass.
+- FHIR Lookup-table CRUD: `ListFHIRLookupTables` / `GetFHIRLookupTable` / `UpdateFHIRLookupTable` against `^HS.XF.LookupTable`, with disk persistence to the namespace-specific `Lookup.json`.
+- HL7 helper tools: `ConfigureHL7TCPService`, `ConfigureHL7TCPOperation`, `ConfigureHL7Router` (Validation="" baked in to avoid the `ErrMapSegUnrecog` trap), `EnableHL7TraceOperations`, `CreateHL7SearchTable`.
+- Production deployment workflow: `ListSystemDefaultSettings` / `GetSystemDefaultSetting` / `SetSystemDefaultSetting` / `DeleteSystemDefaultSetting` for the documented dev→test→live promotion via `Ens.Config.DefaultSettings` (8-step wildcard lookup), plus `GetEffectiveSetting` that resolves through the 3-source chain (production class → System Default → InitialExpression) and reports the source.
+- Routing rule CRUD: `GetRoutingRule`, `DeleteRoutingRule` (alongside the existing `CreateRoutingRule` and `ListBusinessRules`).
+- Runtime diagnostics: `ListProductionQueues`, `ReleaseFIFOHold`, `ReleaseAllFIFOHolds`, `ValidateScheduleSpec`, `PreviewTimestampSpec`.
+- Skill expansions: HL7v2 skill grew with ACK Mode / Framing / Batch Handling / Validation Flags / Reply Code Actions / Escape Sequences / Dual-ACK / Sequence Manager reference tables. Productions skill grew with System Default Settings precedence, Reply Code Actions full grammar, Pool Size + Actor Pool Size semantics, FIFO Groups workflow, and the filename time-stamp specification reference.
 
 | Metric | Value |
 |---|---|
-| ObjectScript classes | 78 |
+| ObjectScript classes | 82 |
 | Agents (%AI.Agent) | 2 (Health Interop generalist, FHIR Specialist) |
 | Tool classes (%AI.Tool) | 7 (Production, Transform, Testing, Catalog, Monitoring, FHIR Server, Bulk FHIR) |
-| Tools (public ClassMethods) | 86 |
+| Tools (public ClassMethods) | 118 |
 | ToolSets (%AI.ToolSet) | 7 |
 | MCP servers | 6 (Production, Transform, Testing, Catalog, FHIR Server, Bulk FHIR) |
-| Skills (%AI.Agent.Skill) | 15 |
+| Skills (%AI.Agent.Skill) | 15 domain + 1 abstract base |
 | Vector catalogs | 2 (search_ens: 164 classes, search_hs: 58 classes) |
 | Field-level mappings (Transformation and Mapping Catalog) | 1,538 |
 | Persistent data classes | 8 (Connection, AgentOverride, MCPOverride, ToolSetOverride, AuditLog, FieldMapping, Chatbot, FHIRLoadRun) |
@@ -27,7 +39,7 @@ All build phases complete (Phase 0 through Phase 7). The agent operates under th
 ## Features
 
 - Streaming chat with Server-Sent Events (SSE) -- token-by-token responses with inline tool-call cards
-- 86 tools across 7 domains: Production, Transform, Testing, Catalog, Monitoring, FHIR Server, Bulk FHIR
+- 118 tools across 7 domains: Production, Transform, Testing, Catalog, Monitoring, FHIR Server, Bulk FHIR
 - FHIR Server Audit panel: a left-nav menu in the FHIR Management app showing FHIR server storage (the per-endpoint repository databases via CORE `SYS.Database`, not the namespace DB), resource counts by type (CORE FHIR `_summary=count`), and ingestion performance (duration, resources/sec, bottlenecks) — backed by `GET /api/agentic/fhir/audit`
 - Load FHIR Data menu: a left-nav menu in the FHIR Management app to upload FHIR JSON files to a server-readable staging folder (`mgr/Temp/agentic-fhir-upload/`), so the FHIR Assistant can then load them into a FHIR server with `LoadFHIRDirectory` — backed by `POST/GET/DELETE /api/agentic/fhir/upload`
 - 15 domain skills covering Productions, DTL, BPL, Routing Rules, HL7v2, FHIR R4, FHIR Server, Bulk FHIR, FHIR SQL Builder, SDA, REST, ESB, X12/HIPAA, CDA/C-CDA, and Adapters
@@ -185,12 +197,12 @@ Features:
 
 ## Tools
 
-The agent's capabilities are organized into 7 Tool classes (86 tools total). Each Tool class is a `%AI.Tool` subclass where every public ClassMethod is a tool the LLM can call.
+The agent's capabilities are organized into 7 Tool classes (118 tools total). Each Tool class is a `%AI.Tool` subclass where every public ClassMethod is a tool the LLM can call.
 
 | Tool class | Tools | Purpose |
 |---|---|---|
-| Production | 13 | CRUD on productions, business host lifecycle, routing rules, post-build validation |
-| Transform | 14 | CRUD on DTL/BPL, dry-run execution, DTL XML builder, HL7 schema introspection, SDA-FHIR pipeline tracing |
+| Production | 29 | Production class CRUD, host lifecycle (Add/Remove/Update/Start/Stop/PostBuildValidation), routing-rule CRUD, HL7 helper builders (TCP service/operation, router with Validation=""), HS.Util.Trace.Operations enabler, System Default Settings CRUD + GetEffectiveSetting (production → SystemDefault → InitialExpression chain), Ens.Queue diagnostics, ReleaseFIFOHold/ReleaseAllFIFOHolds, PreviewTimestampSpec (Ens.Util.File.CreateTimestamp), ValidateScheduleSpec |
+| Transform | 30 | DTL CRUD + DryRunDTL + BuildDTLXml + SetCustomDTLPackage + ListHL7ToSDADTLs + ListSDAFHIRDTLs, BPL CRUD + UpdateBPL + BuildHL7ToFHIRBPL + BuildHL7ToSDABPL + ValidateBPL, ConfigureSDAToFHIRProcess + ConfigureFHIRToSDAProcess, FHIR Lookup table CRUD (List/Get/Update against ^HS.XF.LookupTable), CreateHL7SearchTable, HL7 schema introspection (GetHL7SchemaMap, GetHL7SegmentFields), DescribeTransformationPipeline |
 | Testing | 8 | Send and validate HL7 v2 and FHIR R4 messages, build test messages, compare messages |
 | Catalog | 7 | Vector search over Ens.* and HS.* catalogs, class introspection, namespace utilities, glossary |
 | Monitoring | 5 | Event log search, top-error grouping, message status, throughput summaries, queue depth |
@@ -268,7 +280,7 @@ ZN "<your-namespace>"
 zpm "load /path/to/agentic_interop"
 ```
 
-The module installs all 77 classes, two web apps (`/agentic/` for the UI, `/api/agentic/` for REST), seed data, and the curated class catalog. To install in multiple namespaces, run the command once per namespace.
+The module installs all 82 classes, two web apps (`/agentic/` for the UI, `/api/agentic/` for REST), seed data, and the curated class catalog. To install in multiple namespaces, run the command once per namespace.
 
 ## After install
 

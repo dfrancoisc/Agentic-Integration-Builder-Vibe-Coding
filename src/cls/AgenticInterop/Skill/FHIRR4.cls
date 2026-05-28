@@ -144,6 +144,20 @@ Configure via OAuth 2.0 Client + Server in the IRIS auth model. SMART on FHIR sc
 - Forgetting that FHIR R4 search defaults to JSON; XML responses need `_format=xml`.
 - Using $validate without a snapshot profile — only snapshots are supported.
 - Not searching the existing HS.FHIR.DTL.SDA3.vR4.* DTLs before writing custom transformations — most standard mappings already exist.
+
+## Tools you have for the FHIR pipeline
+
+ConfigureSDAToFHIRProcess(production, hostName, targetConfigName, fhirEndpoint?, fhirMetadataSet?, fhirFormat?, transmissionMode?, outputToQuickStream?, transformClass?) — add (or update) the `HS.FHIR.DTL.Util.HC.SDA3.FHIR.Process` host with all documented settings. Defaults: FHIRMetadataSet="HL7v40" (R4), FHIRFormat="JSON", TransmissionMode="transaction". Pass FHIREndpoint when the downstream target is `HS.FHIRServer.Interop.Operation` — without it the operation can't dispatch.
+
+ConfigureFHIRToSDAProcess(production, hostName, targetConfigName, fhirMetadataSet?, outputToQuickStream?, transformClass?) — symmetric for the reverse pipeline. Adds `HS.FHIR.DTL.Util.HC.FHIR.SDA3.Process`.
+
+BuildHL7ToFHIRBPL(name, fhirProcessHost) — the connecting BPL between an HL7 inbound service and the SDA-to-FHIR Process you configured above. Always pair with ConfigureSDAToFHIRProcess.
+
+ListFHIRLookupTables / GetFHIRLookupTable / UpdateFHIRLookupTable — customize the code mappings the SDA-FHIR DTLs consult (e.g., SDA Alert.Status "A" → FHIR event-status "in-progress"). The Update tool bootstraps the namespace's custom Lookup.json from the system default on first call.
+
+SetCustomDTLPackage("HS.Local.FHIR.DTL") — open the namespace's customization layer so any Save-As of a standard SDA-FHIR DTL into that package overrides it automatically.
+
+ListSDAFHIRDTLs(direction, fhirVersion, filter) — discover existing SDA-FHIR DTLs by resource type, FHIR version, or substring. Call before deciding to customize.
 }
 
 }

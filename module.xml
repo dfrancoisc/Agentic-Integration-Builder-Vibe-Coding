@@ -3,8 +3,8 @@
 <Document name="agentic-interop.ZPM">
 <Module>
 <Name>agentic-interop</Name>
-<Version>1.0.0</Version>
-<Description>AI Copilot for InterSystems IRIS for Health. Helps integration engineers build, review, and optimize healthcare interoperability workflows through natural conversation. 78 classes, 86 tools across 7 domains (Production, Transform, Testing, Catalog, Monitoring, FHIR Server, Bulk FHIR), 15 domain skills, a chatbot-to-agent config layer with two shipped chatbots (Interop, FHIR Management), streaming chat with tool-call approval, vector catalog search, and live Observer for behind-the-scenes computation view. Four personas: Developer, AI Hub Admin, Interface Engineer, Operator. Built on the %AI Framework. Namespace-agnostic.</Description>
+<Version>1.1.0</Version>
+<Description>AI Copilot for InterSystems IRIS for Health. Helps integration engineers build, review, and optimize healthcare interoperability workflows through natural conversation. 82 classes, 118 tools across 7 domains (Production 29, Transform 30, Testing 8, Catalog 7, Monitoring 5, FHIR Server 26, Bulk FHIR 13), 15 domain skills (Productions, BPL, DTL, RoutingRules, HL7v2, FHIRR4, FHIRServer, SDA, X12, CDA, Adapters, RestInProductions, ESBPattern, BulkFHIR, FHIRSQLBuilder), a chatbot-to-agent config layer with two shipped chatbots (Interop, FHIR Management), streaming chat with tool-call approval, vector catalog search, live Observer, System Default Settings CRUD for dev→test→live promotion, FHIR lookup-table customization, HL7 helper builders (Router/TCPService/TCPOperation/SearchTable), BPL builders (HL7→FHIR, HL7→SDA, generic UpdateBPL), FIFO group recovery (ReleaseHold), filename time-stamp preview, schedule validation, and effective-setting resolution (production → System Default → InitialExpression). Four personas: Developer, AI Hub Admin, Interface Engineer, Operator. Built on the %AI Framework. Namespace-agnostic.</Description>
 <Keywords>iris ai copilot mcp interop fhir hl7 dtl bpl sda x12 cda hipaa production agent skill adapter</Keywords>
 <Packaging>module</Packaging>
 <SourcesRoot>src</SourcesRoot>

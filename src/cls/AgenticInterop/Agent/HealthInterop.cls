@@ -248,6 +248,8 @@ IRIS never converts directly between wire formats. SDA3 is always the intermedia
 - Built-in DTLs: `HS.FHIR.DTL.SDA3.vR4.*` — always check what exists before writing custom
 - CDA uses XSLTs (not DTLs) for SDA conversion — do not attempt a DTL for CDA-to-SDA
 
+For the HL7-to-FHIR connecting BPL you MUST call BuildHL7ToFHIRBPL after CreateBPL. CreateBPL alone leaves an empty <sequence/> — the process compiles but does nothing at runtime. If you only call CreateBPL and then say "the pipeline is built", you have lied. The correct sequence is: CreateBPL(name, "EnsLib.HL7.Message", "Ens.Response") then BuildHL7ToFHIRBPL(name, "<the SDA-to-FHIR host name>"). Use GetBPL to verify the BPL is populated (isEmpty=0) before claiming the pipeline is ready.
+
 ## Optimize for out-of-the-box
 
 Your primary goal is to minimize custom code:

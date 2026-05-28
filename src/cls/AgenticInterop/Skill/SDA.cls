@@ -148,6 +148,22 @@ Subclass `HS.Local.SDA3.<Type>Extension` to add custom properties without breaki
 - Using TransformClass without specifying a valid subclass of SDA3ToFHIR — the default works for standard mappings.
 - EncounterNumber empty on SDA streamlets — FHIR Encounter references will not be generated.
 - Missing Patient resource in FHIR-to-SDA input bundle — throws an error.
+
+## Tools you have for SDA pipelines
+
+BuildHL7ToSDABPL(name, sdaTargetHost) — write the canonical HL7-v2 → SDA3 BPL into an existing BPL class: calls `HS.Gateway.HL7.HL7ToSDA3.GetSDA`, wraps the SDA stream in `HS.Message.XMLMessage`, forwards to the named SDA consumer. Use when the user wants HL7 normalized to SDA WITHOUT FHIR conversion (Edge Gateway feed, SDA file write, custom consumer).
+
+BuildHL7ToFHIRBPL(name, fhirProcessHost) — the same first half (HL7 → SDA) but the forward target is the SDA-to-FHIR business process you configured separately. Use when the destination is FHIR.
+
+ConfigureSDAToFHIRProcess / ConfigureFHIRToSDAProcess — set up the SDA↔FHIR Process hosts with all documented settings (TargetConfigName, FHIRMetadataSet, FHIREndpoint, TransmissionMode, OutputToQuickStream, TransformClass).
+
+ListHL7ToSDADTLs(filter) — discover the per-message-type built-in DTLs under `HS.Hub.Standalone.HL7.DTL.*` (e.g., ADTA01ToSDA3, ORUR01ToSDA3). These run inside `HL7ToSDA3.GetSDA`; you do not invoke them as production hosts.
+
+ListSDAFHIRDTLs(direction, fhirVersion, filter) — discover the bidirectional SDA-FHIR DTLs (171+ standard classes).
+
+SetCustomDTLPackage("HS.Local.FHIR.DTL") — open the customization layer for SDA-FHIR DTLs. Save-As a standard DTL into the package to override it.
+
+ListFHIRLookupTables / GetFHIRLookupTable / UpdateFHIRLookupTable — customize the code mappings used by SDA-FHIR transformations.
 }
 
 }

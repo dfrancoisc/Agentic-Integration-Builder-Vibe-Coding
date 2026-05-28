@@ -1,11 +1,11 @@
 # Agent Tool Catalog
 
-86 tools across 7 `%AI.Tool` subclasses. Each public ClassMethod on a Tool class becomes a tool the LLM can call. Tools are composed into `%AI.ToolSet` subclasses via the framework's `<Include Class="..."/>` directive and registered with the agent at build time by `AgenticInterop.Agent.Manager`.
+118 tools across 7 `%AI.Tool` subclasses. Each public ClassMethod on a Tool class becomes a tool the LLM can call. Tools are composed into `%AI.ToolSet` subclasses via the framework's `<Include Class="..."/>` directive and registered with the agent at build time by `AgenticInterop.Agent.Manager`.
 
 | Tool class | Tools | Domain |
 |---|---|---|
-| AgenticInterop.Tool.Production | 13 | Production CRUD, business host lifecycle, post-build validation |
-| AgenticInterop.Tool.Transform | 14 | DTL/BPL/routing rule CRUD, HL7 schema introspection, lookup tables, SDA-FHIR pipeline |
+| AgenticInterop.Tool.Production | 29 | Production class CRUD, business host lifecycle (Add/Remove/Update/Start/Stop/PostBuildValidation), routing-rule CRUD (List/Create/Get/Delete), HL7 helper builders (ConfigureHL7TCPService, ConfigureHL7TCPOperation, ConfigureHL7Router with Validation="", EnableHL7TraceOperations), System Default Settings CRUD + GetEffectiveSetting (production → SystemDefault → InitialExpression chain), Ens.Queue diagnostics (ListProductionQueues), FIFO group recovery (ReleaseFIFOHold, ReleaseAllFIFOHolds), PreviewTimestampSpec, ValidateScheduleSpec, EnsureDirectory |
+| AgenticInterop.Tool.Transform | 30 | DTL CRUD (List/Create/Get/Update/Delete) + DryRunDTL + BuildDTLXml + SetCustomDTLPackage + ListHL7ToSDADTLs + ListSDAFHIRDTLs, BPL CRUD (List/Create/Get/Update/Delete) + ValidateBPL + BuildHL7ToFHIRBPL + BuildHL7ToSDABPL, ConfigureSDAToFHIRProcess + ConfigureFHIRToSDAProcess, FHIR Lookup table CRUD (List/Get/Update against ^HS.XF.LookupTable), CreateHL7SearchTable, HL7 schema introspection (GetHL7SchemaMap, GetHL7SegmentFields), ListLookupTables, DescribeTransformationPipeline, GetCustomDTLPackage |
 | AgenticInterop.Tool.Testing | 8 | HL7/FHIR send, validation, comparison |
 | AgenticInterop.Tool.Catalog | 7 | Vector search, class introspection, namespace utilities, reference lookups |
 | AgenticInterop.Tool.Monitoring | 5 | Event log, error grouping, message status, throughput, queue depth |

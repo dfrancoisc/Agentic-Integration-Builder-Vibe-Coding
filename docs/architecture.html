@@ -637,7 +637,7 @@
 
       <!-- Tool.Production -->
       <div class="card card-fw card-third">
-        <div class="card-title">Tool.Production <span class="badge">13 tools</span></div>
+        <div class="card-title">Tool.Production <span class="badge">29 tools</span></div>
         <div class="card-extends">extends %AI.Tool</div>
         <div class="tool-pills">
           <span class="tool-pill">ListProductions</span>
@@ -652,29 +652,61 @@
           <span class="tool-pill">PostBuildValidation</span>
           <span class="tool-pill">ListBusinessRules</span>
           <span class="tool-pill">CreateRoutingRule</span>
+          <span class="tool-pill">GetRoutingRule</span>
+          <span class="tool-pill">DeleteRoutingRule</span>
+          <span class="tool-pill">ConfigureHL7TCPService</span>
+          <span class="tool-pill">ConfigureHL7TCPOperation</span>
+          <span class="tool-pill">ConfigureHL7Router</span>
+          <span class="tool-pill">EnableHL7TraceOperations</span>
+          <span class="tool-pill">ListSystemDefaultSettings</span>
+          <span class="tool-pill">GetSystemDefaultSetting</span>
+          <span class="tool-pill">SetSystemDefaultSetting</span>
+          <span class="tool-pill">DeleteSystemDefaultSetting</span>
+          <span class="tool-pill">GetEffectiveSetting</span>
+          <span class="tool-pill">ListProductionQueues</span>
+          <span class="tool-pill">ReleaseFIFOHold</span>
+          <span class="tool-pill">ReleaseAllFIFOHolds</span>
+          <span class="tool-pill">PreviewTimestampSpec</span>
+          <span class="tool-pill">ValidateScheduleSpec</span>
           <span class="tool-pill">EnsureDirectory</span>
         </div>
       </div>
 
       <!-- Tool.Transform -->
       <div class="card card-fw card-third">
-        <div class="card-title">Tool.Transform <span class="badge">14 tools</span></div>
+        <div class="card-title">Tool.Transform <span class="badge">30 tools</span></div>
         <div class="card-extends">extends %AI.Tool</div>
         <div class="tool-pills">
           <span class="tool-pill">ListDTLs</span>
           <span class="tool-pill">CreateDTL</span>
           <span class="tool-pill">UpdateDTL</span>
+          <span class="tool-pill">GetDTL</span>
+          <span class="tool-pill">DeleteDTL</span>
           <span class="tool-pill">CompileDTL</span>
           <span class="tool-pill">DryRunDTL</span>
           <span class="tool-pill">BuildDTLXml</span>
           <span class="tool-pill">GetHL7SchemaMap</span>
           <span class="tool-pill">GetHL7SegmentFields</span>
           <span class="tool-pill">ListLookupTables</span>
+          <span class="tool-pill">ListBPLs</span>
           <span class="tool-pill">CreateBPL</span>
+          <span class="tool-pill">GetBPL</span>
+          <span class="tool-pill">UpdateBPL</span>
+          <span class="tool-pill">DeleteBPL</span>
           <span class="tool-pill">ValidateBPL</span>
+          <span class="tool-pill">BuildHL7ToFHIRBPL</span>
+          <span class="tool-pill">BuildHL7ToSDABPL</span>
           <span class="tool-pill">ListSDAFHIRDTLs</span>
+          <span class="tool-pill">ListHL7ToSDADTLs</span>
           <span class="tool-pill">DescribeTransformationPipeline</span>
           <span class="tool-pill">GetCustomDTLPackage</span>
+          <span class="tool-pill">SetCustomDTLPackage</span>
+          <span class="tool-pill">ConfigureSDAToFHIRProcess</span>
+          <span class="tool-pill">ConfigureFHIRToSDAProcess</span>
+          <span class="tool-pill">ListFHIRLookupTables</span>
+          <span class="tool-pill">GetFHIRLookupTable</span>
+          <span class="tool-pill">UpdateFHIRLookupTable</span>
+          <span class="tool-pill">CreateHL7SearchTable</span>
         </div>
       </div>
 
@@ -995,11 +1027,13 @@
       <div class="card-title" style="font-size: 13px;">%AI.Tool (direct UseToolSet)</div>
       <div class="card-body" style="margin-top: 6px;">
         <ul>
-          <li>Tool.Production (13 methods)</li>
-          <li>Tool.Transform (14 methods)</li>
+          <li>Tool.Production (29 methods)</li>
+          <li>Tool.Transform (30 methods)</li>
           <li>Tool.Testing (8 methods)</li>
           <li>Tool.Catalog (7 methods)</li>
           <li>Tool.Monitoring (5 methods)</li>
+          <li>Tool.FHIRServer (26 methods)</li>
+          <li>Tool.BulkFHIR (13 methods)</li>
         </ul>
       </div>
     </div>

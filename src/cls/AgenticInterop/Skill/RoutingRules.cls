@@ -366,6 +366,16 @@ The CreateRoutingRule tool handles this encoding when you pass it the rule XML. 
 - Constraint `source` set to a routing process name when the message actually arrived from a BS — constraint won't match.
 - `<send target="X"/>` where X doesn't match any host config name in the production — the message silently drops.
 - Leaving the default `Validation` setting on an HL7 routing engine — the engine validates segment ordering against the schema, and real-world feeds routinely send segments out of order (e.g., GT1 after IN1). The engine rejects them with "ErrMapSegUnrecog: Unrecognized Segment" and they silently vanish. ALWAYS set Validation="" on `EnsLib.HL7.MsgRouter.RoutingEngine` hosts immediately after adding them.
+
+## Tools you have for routing rules
+
+ListBusinessRules — inventory of `Ens.Rule.Definition` subclasses in the namespace.
+
+GetRoutingRule(name) — read the `RuleDefinition` XData and parsed context attribute. Always call before UpdateRoutingRule to inspect the current rule.
+
+CreateRoutingRule(name, ruleXml) — idempotent: creates the class if missing, replaces its `RuleDefinition` XData if present, then recompiles. Use this for both create and update; there is no separate UpdateRoutingRule.
+
+DeleteRoutingRule(name) — class deletion; refuses if any production host's `BusinessRuleName` setting references the rule. Change the host setting first via UpdateBusinessHostSettings.
 }
 
 }

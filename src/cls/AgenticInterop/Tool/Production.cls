@@ -1307,6 +1307,142 @@ ClassMethod CreateRoutingRule(name As %String, ruleXml As %String) As %DynamicOb
     Quit out
 }
 
+/// Read the RuleDefinition XData of a routing/business rule class.
+/// CALL THIS before UpdateRoutingRule whenever the user wants to
+/// inspect or modify an existing rule. Returns the rule XML plus the
+/// rule's context attribute (which determines whether the rule
+/// works on HL7 virtual documents vs plain messages). Read-only.
+///
+/// name: fully-qualified rule class name.
+///
+/// Returns: { ok, namespace, name, exists, ruleXml?, context?,
+/// alias? }.
+ClassMethod GetRoutingRule(name As %String) As %DynamicObject
+{
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("GetRoutingRule")
+    Set out = {}
+    Set out.name = name
+    Set targetNs = ..%TargetNs()
+    Set out.namespace = targetNs
+    If $get(name) = "" {
+        Set out.ok = 0
+        Set out.error = "Pass `name` (the rule class)."
+        Quit out
+    }
+    New $namespace
+    Try { Set $namespace = targetNs } Catch  {
+        Set out.ok = 0
+        Set out.error = "Cannot access namespace: " _ targetNs
+        Quit
+    }
+    Try {
+        If '##class(%Dictionary.ClassDefinition).%ExistsId(name) {
+            Set out.ok = 1
+            Set out.exists = 0
+            Set out.error = "Class not found: " _ name
+            Quit
+        }
+        Set out.exists = 1
+        Set xd = ##class(%Dictionary.XDataDefinition).%OpenId(name _ "||RuleDefinition")
+        If '$isobject(xd) {
+            Set out.ok = 1
+            Set out.error = "Class exists but has no RuleDefinition XData block."
+            Quit
+        }
+        Set body = ""
+        Do xd.Data.Rewind()
+        While 'xd.Data.AtEnd { Set body = body _ xd.Data.Read(8000) }
+        Set out.ruleXml = body
+        ; Pull context + alias attributes for quick reference
+        For attr = "context","alias" {
+            Set p = $find(body, attr _ "=")
+            If p > 0 {
+                Set tail = $extract(body, p, $length(body))
+                Set q = $extract(tail, 1, 1)
+                If (q = "'") || (q = """") {
+                    Set rest = $extract(tail, 2, $length(tail))
+                    Set val = $piece(rest, q, 1)
+                    Do out.%Set(attr, val)
+                }
+            }
+        }
+        Set out.ok = 1
+    } Catch ex {
+        Set out.ok = 0
+        Set out.error = $extract(ex.DisplayString(), 1, 400)
+    }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("GetRoutingRule", out)
+    Quit out
+}
+
+/// Delete a routing/business rule class — class definition removed
+/// from the namespace. MUTATING — gated by the delete_ prefix.
+/// Refuses to delete if any business host in the active namespace
+/// references the rule via its BusinessRuleName setting — change or
+/// remove the host first.
+///
+/// name: fully-qualified rule class name.
+ClassMethod DeleteRoutingRule(name As %String) As %DynamicObject
+{
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("DeleteRoutingRule")
+    Set out = {}
+    Set out.tool = "delete_routing_rule"
+    Set out.name = name
+    Set targetNs = ..%TargetNs()
+    Set out.namespace = targetNs
+    If $get(name) = "" {
+        Set out.ok = 0
+        Set out.error = "Pass `name` (the rule class)."
+        Quit out
+    }
+    New $namespace
+    Try { Set $namespace = targetNs } Catch  {
+        Set out.ok = 0
+        Set out.error = "Cannot access namespace: " _ targetNs
+        Quit
+    }
+    Try {
+        If '##class(%Dictionary.ClassDefinition).%ExistsId(name) {
+            Set out.ok = 1
+            Set out.deleted = 0
+            Set out.error = "Class not found: " _ name
+            Quit
+        }
+        ; Refuse if any host setting (any production) sets BusinessRuleName to this rule
+        Set referrers = []
+        Set sql = "SELECT DISTINCT Production, Name FROM Ens_Config.Item_Settings WHERE Name = 'BusinessRuleName' AND Value = ?"
+        Set rs = ##class(%SQL.Statement).%ExecDirect(, sql, name)
+        While rs.%Next() {
+            Set r = {}
+            Set r.production = rs.%Get("Production")
+            Set r.hostName = rs.%Get("Name")
+            Do referrers.%Push(r)
+        }
+        If referrers.%Size() > 0 {
+            Set out.ok = 0
+            Set out.deleted = 0
+            Set out.error = "Rule still referenced by host BusinessRuleName settings — change them first."
+            Set out.referencedBy = referrers
+            Quit
+        }
+        Set sc = $SYSTEM.OBJ.Delete(name, "-d")
+        If 'sc {
+            Set out.ok = 0
+            Set out.deleted = 0
+            Set out.error = "Delete failed: " _ $system.Status.GetErrorText(sc)
+            Quit
+        }
+        Set out.ok = 1
+        Set out.deleted = 1
+        Set out.message = "Routing rule '" _ name _ "' deleted from " _ targetNs _ "."
+    } Catch ex {
+        Set out.ok = 0
+        Set out.error = $extract(ex.DisplayString(), 1, 400)
+    }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("DeleteRoutingRule", out)
+    Quit out
+}
+
 /// Create a directory (and any missing parent directories) on the
 /// IRIS server filesystem. Idempotent: succeeds if directory already
 /// exists. Call this for EVERY FilePath configured on file-based
@@ -1347,6 +1483,957 @@ ClassMethod EnsureDirectory(path As %String) As %DynamicObject
         Set out.error = $extract(ex.DisplayString(), 1, 400)
     }
     Do ##class(AgenticInterop.Agent.Manager).ToolDone("EnsureDirectory", out)
+    Quit out
+}
+
+/// Internal helper — calls AddBusinessHost if the host doesn't exist
+/// in the production, otherwise UpdateBusinessHostSettings. Returns
+/// the underlying tool's response unchanged, plus an `action` field
+/// of "added" or "updated". Centralises the host-exists check used
+/// by every Configure* helper.
+ClassMethod %AddOrUpdate(production As %String, hostName As %String, hostClass As %String, settings As %DynamicObject) As %DynamicObject [ Internal ]
+{
+    Set inv = ..GetProduction(production)
+    If 'inv.ok {
+        Set r = {}
+        Set r.ok = 0
+        Set r.error = $select(inv.%IsDefined("error"):inv.error, 1:"GetProduction failed")
+        Quit r
+    }
+    If $select(inv.%IsDefined("exists"):'inv.exists, 1:0) {
+        Set r = {}
+        Set r.ok = 0
+        Set r.error = "Production not found: " _ production
+        Quit r
+    }
+    Set hostExists = 0
+    If inv.%IsDefined("items") {
+        For i = 0:1:(inv.items.%Size()-1) {
+            If inv.items.%Get(i).name = hostName { Set hostExists = 1 Quit }
+        }
+    }
+    If 'hostExists {
+        Set r = ..AddBusinessHost(production, hostName, hostClass, settings)
+        If r.ok { Set r.action = "added" }
+        Quit r
+    }
+    Set r = ..UpdateBusinessHostSettings(production, hostName, settings)
+    If r.ok { Set r.action = "updated" }
+    Quit r
+}
+
+/// Add (or update) an EnsLib.HL7.Service.TCPService host in a
+/// production with HL7-correct defaults baked in. The docs document
+/// the trap of leaving MessageSchemaCategory blank (downstream rules
+/// silently fail to match) and the FIFO importance of PoolSize=1.
+/// This tool sets both correctly. MUTATING — gated by the configure_
+/// prefix.
+///
+/// production:        fully-qualified production class name.
+/// hostName:          logical host name (e.g. "HL7.Inbound.MLLP").
+/// port:              TCP port the service listens on.
+/// targetConfigNames: comma-separated downstream host names (typically
+///                    the routing engine or a BPL). REQUIRED.
+/// schemaCategory:    HL7 schema category. Default "2.5". Pass
+///                    "2.5.1" if any downstream expects SDA conversion
+///                    (HL7ToSDA3 only accepts 2.5.1). REQUIRED.
+/// framing:           Default "MLLP". See HL7 framing reference for
+///                    alternatives (Flexible, AsciiLF, etc.).
+/// ackMode:           Default "Immediate". For consumers that can
+///                    fail the message use "Application".
+/// batchHandling:     Default "Single-Session Batch". If your feed
+///                    isn't batched leave the default.
+/// poolSize:          Default 1 — required for FIFO ordering of
+///                    patient updates. Increase only if order
+///                    doesn't matter.
+/// jobPerConnection:  Default 1 (per HL7 TCP adapter convention).
+/// stayConnected:     Default -1 (stay connected indefinitely).
+ClassMethod ConfigureHL7TCPService(production As %String, hostName As %String, port As %String, targetConfigNames As %String, schemaCategory As %String = "2.5", framing As %String = "MLLP", ackMode As %String = "Immediate", batchHandling As %String = "Single-Session Batch", poolSize As %Integer = 1, jobPerConnection As %Boolean = 1, stayConnected As %Integer = -1) As %DynamicObject
+{
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("ConfigureHL7TCPService")
+    Set out = {}
+    Set out.tool = "configure_hl7_tcp_service"
+    Set out.production = production
+    Set out.hostName = hostName
+    Set out.namespace = ..%TargetNs()
+    If ($get(production) = "") || ($get(hostName) = "") || ($get(port) = "") || ($get(targetConfigNames) = "") {
+        Set out.ok = 0
+        Set out.error = "Pass production, hostName, port, targetConfigNames (all required). MessageSchemaCategory is set from schemaCategory and must not be empty — without it, downstream routing rules silently fail to match."
+        Quit out
+    }
+    Try {
+        Set settings = {}
+        Set hostSet = {}
+        Set hostSet.TargetConfigNames = targetConfigNames
+        Set hostSet.MessageSchemaCategory = schemaCategory
+        Set hostSet.AckMode = ackMode
+        Set hostSet.BatchHandling = batchHandling
+        Set hostSet.PoolSize = poolSize
+        Do settings.%Set("Host", hostSet)
+        Set adSet = {}
+        Set adSet.Port = port
+        Set adSet.Framing = framing
+        Set adSet.JobPerConnection = jobPerConnection
+        Set adSet.StayConnected = stayConnected
+        Do settings.%Set("Adapter", adSet)
+        Set r = ..%AddOrUpdate(production, hostName, "EnsLib.HL7.Service.TCPService", settings)
+        Set out.ok = r.ok
+        If r.%IsDefined("action") { Set out.action = r.action }
+        If r.%IsDefined("error") { Set out.error = r.error }
+        Set out.settingsApplied = settings
+        If out.ok { Set out.message = $select(r.action="added":"Added", 1:"Updated") _ " HL7 TCP service '" _ hostName _ "' on port " _ port _ " in '" _ production _ "'." }
+    } Catch ex {
+        Set out.ok = 0
+        Set out.error = $extract(ex.DisplayString(), 1, 400)
+    }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("ConfigureHL7TCPService", out)
+    Quit out
+}
+
+/// Add (or update) an EnsLib.HL7.Operation.TCPOperation host in a
+/// production with HL7-correct defaults. MUTATING — gated by the
+/// configure_ prefix.
+///
+/// production:       fully-qualified production class name.
+/// hostName:         logical host name (e.g. "HL7.Outbound.MLLP").
+/// ipAddress:        target host IP / DNS name. REQUIRED.
+/// port:             target TCP port. REQUIRED.
+/// framing:          Default "MLLP".
+/// getReply:         Default 1 (wait for reply per HL7 convention).
+/// replyCodeActions: Default ":?R=RF,:?E=S,:~=S,:?A=C,:*=S,:I?=W,:T?=C"
+///                   per the docs. Adjust :?R for targets that
+///                   legitimately reject duplicates.
+/// separators:       Default "|^~\\&" (escape backslash in JSON).
+/// stayConnected:    Default -1 (stay connected indefinitely).
+ClassMethod ConfigureHL7TCPOperation(production As %String, hostName As %String, ipAddress As %String, port As %String, framing As %String = "MLLP", getReply As %Boolean = 1, replyCodeActions As %String = ":?R=RF,:?E=S,:~=S,:?A=C,:*=S,:I?=W,:T?=C", separators As %String = "|^~\&", stayConnected As %Integer = -1) As %DynamicObject
+{
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("ConfigureHL7TCPOperation")
+    Set out = {}
+    Set out.tool = "configure_hl7_tcp_operation"
+    Set out.production = production
+    Set out.hostName = hostName
+    Set out.namespace = ..%TargetNs()
+    If ($get(production) = "") || ($get(hostName) = "") || ($get(ipAddress) = "") || ($get(port) = "") {
+        Set out.ok = 0
+        Set out.error = "Pass production, hostName, ipAddress, port (all required)."
+        Quit out
+    }
+    Try {
+        Set settings = {}
+        Set hostSet = {}
+        Set hostSet.ReplyCodeActions = replyCodeActions
+        Set hostSet.Separators = separators
+        Do settings.%Set("Host", hostSet)
+        Set adSet = {}
+        Set adSet.IPAddress = ipAddress
+        Set adSet.Port = port
+        Set adSet.Framing = framing
+        Set adSet.GetReply = getReply
+        Set adSet.StayConnected = stayConnected
+        Do settings.%Set("Adapter", adSet)
+        Set r = ..%AddOrUpdate(production, hostName, "EnsLib.HL7.Operation.TCPOperation", settings)
+        Set out.ok = r.ok
+        If r.%IsDefined("action") { Set out.action = r.action }
+        If r.%IsDefined("error") { Set out.error = r.error }
+        Set out.settingsApplied = settings
+        If out.ok { Set out.message = $select(r.action="added":"Added", 1:"Updated") _ " HL7 TCP operation '" _ hostName _ "' -> " _ ipAddress _ ":" _ port _ "." }
+    } Catch ex {
+        Set out.ok = 0
+        Set out.error = $extract(ex.DisplayString(), 1, 400)
+    }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("ConfigureHL7TCPOperation", out)
+    Quit out
+}
+
+/// Add (or update) an EnsLib.HL7.MsgRouter.RoutingEngine host in a
+/// production with `Validation=""` baked in. The docs explicitly warn
+/// that the default Validation rejects real-world HL7 traffic
+/// (segments arrive in non-standard orders). Use this tool instead of
+/// AddBusinessHost + a separate UpdateBusinessHostSettings call — you
+/// will forget Validation otherwise and the production will silently
+/// drop messages with ErrMapSegUnrecog. MUTATING — gated by the
+/// configure_ prefix.
+///
+/// production:        fully-qualified production class name.
+/// hostName:          logical host name (e.g. "HL7.Router").
+/// businessRuleName:  fully-qualified rule class name. REQUIRED.
+/// validation:        Default "" (recommended). Pass an explicit flag
+///                    string (e.g. "dm-z") only if you need
+///                    validation and accept the risk.
+/// alertOnBadMessage: Default 1.
+/// badMessageHandler: Optional — name of a downstream host that
+///                    receives validation failures.
+ClassMethod ConfigureHL7Router(production As %String, hostName As %String, businessRuleName As %String, validation As %String = "", alertOnBadMessage As %Boolean = 1, badMessageHandler As %String = "") As %DynamicObject
+{
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("ConfigureHL7Router")
+    Set out = {}
+    Set out.tool = "configure_hl7_router"
+    Set out.production = production
+    Set out.hostName = hostName
+    Set out.namespace = ..%TargetNs()
+    If ($get(production) = "") || ($get(hostName) = "") || ($get(businessRuleName) = "") {
+        Set out.ok = 0
+        Set out.error = "Pass production, hostName, businessRuleName (all required)."
+        Quit out
+    }
+    Try {
+        Set settings = {}
+        Set hostSet = {}
+        Set hostSet.BusinessRuleName = businessRuleName
+        Set hostSet.Validation = validation
+        Set hostSet.AlertOnBadMessage = alertOnBadMessage
+        If $get(badMessageHandler) '= "" { Set hostSet.BadMessageHandler = badMessageHandler }
+        Do settings.%Set("Host", hostSet)
+        Set r = ..%AddOrUpdate(production, hostName, "EnsLib.HL7.MsgRouter.RoutingEngine", settings)
+        Set out.ok = r.ok
+        If r.%IsDefined("action") { Set out.action = r.action }
+        If r.%IsDefined("error") { Set out.error = r.error }
+        Set out.settingsApplied = settings
+        If out.ok {
+            Set out.message = $select(r.action="added":"Added", 1:"Updated") _ " HL7 router '" _ hostName _ "' with rule '" _ businessRuleName _ "' and Validation='" _ validation _ "'."
+        }
+    } Catch ex {
+        Set out.ok = 0
+        Set out.error = $extract(ex.DisplayString(), 1, 400)
+    }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("ConfigureHL7Router", out)
+    Quit out
+}
+
+/// Enable enhanced trace operations for an HS.* business host. The
+/// HealthShare hosts (HS.FHIR.*, HS.Gateway.*, HS.SDA3.*, etc.) emit
+/// internal $$$HSTRACE events that are invisible by default. To
+/// surface them in the Visual Trace this tool (1) adds the
+/// HS.Util.Trace.Operations business operation to the production if
+/// not already present, and (2) sets the TraceOperations setting on
+/// the named HS.* host to the requested level.
+///
+/// CRITICAL: Turn this off in production environments — FULL tracing
+/// has a significant performance cost.
+///
+/// production:  fully-qualified production class name.
+/// hostName:    the HS.* host to instrument.
+/// level:       "ERRORSONLY" / "MINIMAL" / "FULL" (default) /
+///              empty (disable).
+ClassMethod EnableHL7TraceOperations(production As %String, hostName As %String, level As %String = "FULL") As %DynamicObject
+{
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("EnableHL7TraceOperations")
+    Set out = {}
+    Set out.tool = "enable_hl7_trace_operations"
+    Set out.production = production
+    Set out.hostName = hostName
+    Set out.level = level
+    Set out.namespace = ..%TargetNs()
+    If ($get(production) = "") || ($get(hostName) = "") {
+        Set out.ok = 0
+        Set out.error = "Pass production and hostName."
+        Quit out
+    }
+    Try {
+        ; Step 1: ensure HS.Util.Trace.Operations is in the production
+        Set inv = ..GetProduction(production)
+        If 'inv.ok {
+            Set out.ok = 0
+            Set out.error = $select(inv.%IsDefined("error"):inv.error, 1:"GetProduction failed")
+            Quit
+        }
+        If 'inv.exists {
+            Set out.ok = 0
+            Set out.error = "Production not found: " _ production
+            Quit
+        }
+        Set traceHostName = "HS.Util.Trace.Operations"
+        Set traceExists = 0
+        Set targetHostExists = 0
+        For i = 0:1:(inv.items.%Size()-1) {
+            Set it = inv.items.%Get(i)
+            If it.className = "HS.Util.Trace.Operations" { Set traceExists = 1 Set traceHostName = it.name }
+            If it.name = hostName { Set targetHostExists = 1 }
+        }
+        If 'targetHostExists {
+            Set out.ok = 0
+            Set out.error = "Host '" _ hostName _ "' not found in production. Add it first."
+            Quit
+        }
+        Set out.traceHostName = traceHostName
+        If 'traceExists {
+            Set addResult = ..AddBusinessHost(production, traceHostName, "HS.Util.Trace.Operations", "")
+            If 'addResult.ok {
+                Set out.ok = 0
+                Set out.error = "Could not add HS.Util.Trace.Operations: " _ $select(addResult.%IsDefined("error"):addResult.error, 1:"unknown")
+                Quit
+            }
+            Set out.traceHostAdded = 1
+        } Else {
+            Set out.traceHostAdded = 0
+        }
+        ; Step 2: set TraceOperations on the target host
+        Set settings = {}
+        Set hostSet = {}
+        Set hostSet.TraceOperations = level
+        Do settings.%Set("Host", hostSet)
+        Set updResult = ..UpdateBusinessHostSettings(production, hostName, settings)
+        If 'updResult.ok {
+            Set out.ok = 0
+            Set out.error = "Could not set TraceOperations on '" _ hostName _ "': " _ $select(updResult.%IsDefined("error"):updResult.error, 1:"unknown")
+            Quit
+        }
+        Set out.ok = 1
+        Set out.message = "Trace operations '" _ level _ "' enabled on '" _ hostName _ "'."
+    } Catch ex {
+        Set out.ok = 0
+        Set out.error = $extract(ex.DisplayString(), 1, 400)
+    }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("EnableHL7TraceOperations", out)
+    Quit out
+}
+
+/// List System Default Settings (Ens.Config.DefaultSettings rows).
+/// These are environment-specific values that override production
+/// definitions at runtime — the recommended mechanism for promoting
+/// productions between dev/test/live without editing the class.
+/// Wildcards `*` apply to ProductionName, ItemName, HostClassName.
+/// Read-only.
+///
+/// productionFilter: optional substring filter on ProductionName.
+/// itemFilter:       optional substring filter on ItemName.
+/// settingFilter:    optional substring filter on SettingName.
+///
+/// Returns: { ok, namespace, defaults:[{production, item, hostClass,
+/// setting, value, deployable, description?}], total }.
+ClassMethod ListSystemDefaultSettings(productionFilter As %String = "", itemFilter As %String = "", settingFilter As %String = "") As %DynamicObject
+{
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("ListSystemDefaultSettings")
+    Set out = {}
+    Set targetNs = ..%TargetNs()
+    Set out.namespace = targetNs
+    Set out.defaults = []
+    New $namespace
+    Try { Set $namespace = targetNs } Catch  {
+        Set out.ok = 0
+        Set out.error = "Cannot access namespace: " _ targetNs
+        Quit
+    }
+    Try {
+        Set sql = "SELECT ProductionName, ItemName, HostClassName, SettingName, SettingValue, Deployable, Description FROM Ens_Config.DefaultSettings ORDER BY ProductionName, ItemName, HostClassName, SettingName"
+        Set rs = ##class(%SQL.Statement).%ExecDirect(, sql)
+        Set count = 0
+        Set prodLow = $zconvert($get(productionFilter), "L")
+        Set itemLow = $zconvert($get(itemFilter), "L")
+        Set settLow = $zconvert($get(settingFilter), "L")
+        While rs.%Next() {
+            Set prod = rs.%Get("ProductionName")
+            Set item = rs.%Get("ItemName")
+            Set sett = rs.%Get("SettingName")
+            If prodLow '= "" { If '($zconvert(prod, "L") [ prodLow) { Continue } }
+            If itemLow '= "" { If '($zconvert(item, "L") [ itemLow) { Continue } }
+            If settLow '= "" { If '($zconvert(sett, "L") [ settLow) { Continue } }
+            Set d = {}
+            Set d.production = prod
+            Set d.item = item
+            Set d.hostClass = rs.%Get("HostClassName")
+            Set d.setting = sett
+            Set d.value = rs.%Get("SettingValue")
+            Set d.deployable = rs.%Get("Deployable")
+            Set desc = rs.%Get("Description")
+            If desc '= "" { Set d.description = $extract(desc, 1, 240) }
+            Do out.defaults.%Push(d)
+            Set count = count + 1
+        }
+        Set out.total = count
+        Set out.ok = 1
+        If count = 0 { Set out.hint = "No System Default Settings rows in this namespace. Use SetSystemDefaultSetting to add the first one. Wildcards: ProductionName='*' applies to every production; ItemName='*' applies to every host; HostClassName='*' applies regardless of host class." }
+    } Catch ex {
+        Set out.ok = 0
+        Set out.error = $extract(ex.DisplayString(), 1, 400)
+    }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("ListSystemDefaultSettings", out)
+    Quit out
+}
+
+/// Read a single System Default Setting row using the same lookup
+/// chain that runtime settings resolution uses — 8 wildcard
+/// combinations from most-specific to fully-wildcarded. Use this to
+/// answer "what value would this host get for setting X at startup
+/// if the production class itself doesn't specify it." Read-only.
+///
+/// productionName: exact production name (no wildcard here — pass the
+///                 actual production you want resolution for).
+/// itemName:       exact host name in the production.
+/// hostClassName:  exact host class name.
+/// settingName:    setting name (without the Host: or Adapter: prefix).
+/// targetType:     "Host" (default) or "Adapter". Determines whether
+///                 the lookup checks rows saved with the "Host:" or
+///                 "Adapter:" SettingName prefix first.
+///
+/// Returns: { ok, namespace, found, value?, productionName,
+/// itemName, hostClassName, targetType, settingName }.
+ClassMethod GetSystemDefaultSetting(productionName As %String, itemName As %String, hostClassName As %String, settingName As %String, targetType As %String = "Host") As %DynamicObject
+{
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("GetSystemDefaultSetting")
+    Set out = {}
+    Set targetNs = ..%TargetNs()
+    Set out.namespace = targetNs
+    Set out.productionName = productionName
+    Set out.itemName = itemName
+    Set out.hostClassName = hostClassName
+    Set out.settingName = settingName
+    Set out.targetType = targetType
+    If ($get(productionName) = "") || ($get(itemName) = "") || ($get(hostClassName) = "") || ($get(settingName) = "") {
+        Set out.ok = 0
+        Set out.error = "Pass productionName, itemName, hostClassName, settingName (all required). Use ListSystemDefaultSettings to discover available rows."
+        Quit out
+    }
+    New $namespace
+    Try { Set $namespace = targetNs } Catch  {
+        Set out.ok = 0
+        Set out.error = "Cannot access namespace: " _ targetNs
+        Quit
+    }
+    Try {
+        Set val = ""
+        Set found = ##class(Ens.Config.DefaultSettings).%GetSetting(productionName, itemName, hostClassName, $get(targetType, "Host"), settingName, .val)
+        Set out.ok = 1
+        Set out.found = found
+        If found { Set out.value = val }
+        If 'found { Set out.hint = "No System Default Setting matches this (production, item, hostClass, setting) tuple — neither exact nor wildcarded. Falls back to InitialExpression or the production-class value." }
+    } Catch ex {
+        Set out.ok = 0
+        Set out.error = $extract(ex.DisplayString(), 1, 400)
+    }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("GetSystemDefaultSetting", out)
+    Quit out
+}
+
+/// Create or update a System Default Setting row. The 4-part key
+/// (ProductionName, ItemName, HostClassName, SettingName) makes this
+/// idempotent — calling it twice with different values updates in
+/// place. Use `*` for any of the first three keys to match all
+/// productions / items / host classes. SettingName can be prefixed
+/// with "Host:" or "Adapter:" if you need to disambiguate target
+/// type. MUTATING — gated by the set_ prefix.
+///
+/// productionName: exact production name, or "*" for any production.
+/// itemName:       exact host name, or "*" for any host.
+/// hostClassName:  exact class name, or "*" for any class.
+/// settingName:    setting name. Prefix with "Host:" or "Adapter:"
+///                 to scope; bare names match either target.
+/// settingValue:   the value to store. Must be a string; non-string
+///                 values must be pre-formatted.
+/// deployable:     1 (default) means the row is included in
+///                 deployment packages; 0 keeps it environment-local.
+/// description:    optional human description.
+ClassMethod SetSystemDefaultSetting(productionName As %String, itemName As %String, hostClassName As %String, settingName As %String, settingValue As %String, deployable As %Boolean = 1, description As %String = "") As %DynamicObject
+{
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("SetSystemDefaultSetting")
+    Set out = {}
+    Set out.tool = "set_system_default_setting"
+    Set targetNs = ..%TargetNs()
+    Set out.namespace = targetNs
+    Set out.productionName = productionName
+    Set out.itemName = itemName
+    Set out.hostClassName = hostClassName
+    Set out.settingName = settingName
+    If ($get(productionName) = "") || ($get(itemName) = "") || ($get(hostClassName) = "") || ($get(settingName) = "") {
+        Set out.ok = 0
+        Set out.error = "Pass productionName, itemName, hostClassName, settingName (use `*` for wildcards on the first three)."
+        Quit out
+    }
+    If '$data(settingValue) {
+        Set out.ok = 0
+        Set out.error = "Pass `settingValue`. To remove a row, use DeleteSystemDefaultSetting instead."
+        Quit out
+    }
+    New $namespace
+    Try { Set $namespace = targetNs } Catch  {
+        Set out.ok = 0
+        Set out.error = "Cannot access namespace: " _ targetNs
+        Quit
+    }
+    Try {
+        ; Composite ID = ProductionName||ItemName||HostClassName||SettingName
+        Set id = productionName _ "||" _ itemName _ "||" _ hostClassName _ "||" _ settingName
+        Set existed = 0
+        Set ds = ##class(Ens.Config.DefaultSettings).%OpenId(id)
+        If $isobject(ds) {
+            Set existed = 1
+        } Else {
+            Set ds = ##class(Ens.Config.DefaultSettings).%New()
+            Set ds.ProductionName = productionName
+            Set ds.ItemName = itemName
+            Set ds.HostClassName = hostClassName
+            Set ds.SettingName = settingName
+        }
+        Set ds.SettingValue = settingValue
+        Set ds.Deployable = deployable
+        If $get(description) '= "" { Set ds.Description = description }
+        Set sc = ds.%Save()
+        If 'sc {
+            Set out.ok = 0
+            Set out.error = "%Save failed: " _ $system.Status.GetErrorText(sc)
+            Quit
+        }
+        Set out.ok = 1
+        Set out.action = $select(existed:"updated", 1:"created")
+        Set out.message = $select(existed:"Updated", 1:"Created") _ " default setting " _ productionName _ "/" _ itemName _ "/" _ hostClassName _ ":" _ settingName _ " = '" _ settingValue _ "'."
+    } Catch ex {
+        Set out.ok = 0
+        Set out.error = $extract(ex.DisplayString(), 1, 400)
+    }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("SetSystemDefaultSetting", out)
+    Quit out
+}
+
+/// Delete a single System Default Setting row by exact (production,
+/// item, hostClass, setting) key. Refuses if no matching row exists.
+/// MUTATING — gated by the delete_ prefix.
+///
+/// productionName: exact production name as stored.
+/// itemName:       exact item name as stored.
+/// hostClassName:  exact host class as stored.
+/// settingName:    exact setting name as stored.
+ClassMethod DeleteSystemDefaultSetting(productionName As %String, itemName As %String, hostClassName As %String, settingName As %String) As %DynamicObject
+{
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("DeleteSystemDefaultSetting")
+    Set out = {}
+    Set out.tool = "delete_system_default_setting"
+    Set out.productionName = productionName
+    Set out.itemName = itemName
+    Set out.hostClassName = hostClassName
+    Set out.settingName = settingName
+    Set targetNs = ..%TargetNs()
+    Set out.namespace = targetNs
+    If ($get(productionName) = "") || ($get(itemName) = "") || ($get(hostClassName) = "") || ($get(settingName) = "") {
+        Set out.ok = 0
+        Set out.error = "Pass productionName, itemName, hostClassName, settingName."
+        Quit out
+    }
+    New $namespace
+    Try { Set $namespace = targetNs } Catch  {
+        Set out.ok = 0
+        Set out.error = "Cannot access namespace: " _ targetNs
+        Quit
+    }
+    Try {
+        Set id = productionName _ "||" _ itemName _ "||" _ hostClassName _ "||" _ settingName
+        If '##class(Ens.Config.DefaultSettings).%ExistsId(id) {
+            Set out.ok = 1
+            Set out.deleted = 0
+            Set out.error = "No matching row found for (" _ productionName _ ", " _ itemName _ ", " _ hostClassName _ ", " _ settingName _ ")."
+            Quit
+        }
+        Set sc = ##class(Ens.Config.DefaultSettings).%DeleteId(id)
+        If 'sc {
+            Set out.ok = 0
+            Set out.deleted = 0
+            Set out.error = "%DeleteId failed: " _ $system.Status.GetErrorText(sc)
+            Quit
+        }
+        Set out.ok = 1
+        Set out.deleted = 1
+        Set out.message = "Deleted default setting " _ productionName _ "/" _ itemName _ "/" _ hostClassName _ ":" _ settingName _ "."
+    } Catch ex {
+        Set out.ok = 0
+        Set out.error = $extract(ex.DisplayString(), 1, 400)
+    }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("DeleteSystemDefaultSetting", out)
+    Quit out
+}
+
+/// Resolve the effective value of a setting at production runtime,
+/// using the documented 3-source chain: (1) the production class
+/// definition, (2) Ens.Config.DefaultSettings (System Default
+/// Settings), (3) the property's InitialExpression on the host class.
+/// Returns the value plus a `source` field so the agent can explain
+/// "why the value is X" to the user. Read-only.
+///
+/// For PRODUCTION-LEVEL settings (the production class's own
+/// settings like ShutdownTimeout, AlertNotificationManager), pass
+/// hostName="" — the tool reads the production's VirtualSettings
+/// collection.
+///
+/// For HOST-LEVEL settings (settings on a specific business host
+/// inside the production), pass hostName and the tool reads the
+/// item's effective settings.
+///
+/// production:  fully-qualified production class name.
+/// hostName:    host name within the production, or "" for
+///              production-level settings.
+/// settingName: setting name (no Host:/Adapter: prefix).
+/// targetType:  "Host" (default) or "Adapter" — only consulted when
+///              hostName is non-empty.
+///
+/// Returns: { ok, namespace, production, hostName, settingName,
+/// found, value?, source? }.
+ClassMethod GetEffectiveSetting(production As %String, hostName As %String = "", settingName As %String, targetType As %String = "Host") As %DynamicObject
+{
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("GetEffectiveSetting")
+    Set out = {}
+    Set out.production = production
+    Set out.hostName = hostName
+    Set out.settingName = settingName
+    Set out.targetType = targetType
+    Set targetNs = ..%TargetNs()
+    Set out.namespace = targetNs
+    If ($get(production) = "") || ($get(settingName) = "") {
+        Set out.ok = 0
+        Set out.error = "Pass production and settingName."
+        Quit out
+    }
+    New $namespace
+    Try { Set $namespace = targetNs } Catch  {
+        Set out.ok = 0
+        Set out.error = "Cannot access namespace: " _ targetNs
+        Quit
+    }
+    Try {
+        If $get(hostName) = "" {
+            ; Production-level setting
+            Set status = $$$OK
+            Set val = ##class(Ens.Director).GetProductionSettingValue(production, settingName, .status)
+            If 'status {
+                Set out.ok = 1
+                Set out.found = 0
+                Set out.error = "Production-level setting '" _ settingName _ "' not found for '" _ production _ "': " _ $system.Status.GetErrorText(status)
+                Quit
+            }
+            Set out.ok = 1
+            Set out.found = 1
+            Set out.value = val
+            Set out.source = "Production"
+            Quit
+        }
+        ; Host-level setting — walk the item's settings collection first
+        Set prod = ##class(Ens.Config.Production).%OpenId(production)
+        If '$isobject(prod) {
+            Set out.ok = 0
+            Set out.error = "Production class not found: " _ production
+            Quit
+        }
+        Set item = ""
+        For i = 1:1:prod.Items.Count() {
+            Set it = prod.Items.GetAt(i)
+            If it.Name = hostName { Set item = it Quit }
+        }
+        If '$isobject(item) {
+            Set out.ok = 0
+            Set out.error = "Host '" _ hostName _ "' not found in production '" _ production _ "'."
+            Quit
+        }
+        ; Production-class value: walk the item's Settings collection
+        For j = 1:1:item.Settings.Count() {
+            Set st = item.Settings.GetAt(j)
+            If (st.Name = settingName) && ((st.Target = targetType) || (targetType = "")) {
+                Set out.ok = 1
+                Set out.found = 1
+                Set out.value = st.Value
+                Set out.source = "Production"
+                Quit
+            }
+        }
+        If out.%IsDefined("found") { Quit }
+        ; System Default Setting
+        Set val = ""
+        Set found = ##class(Ens.Config.DefaultSettings).%GetSetting(production, hostName, item.ClassName, targetType, settingName, .val)
+        If found {
+            Set out.ok = 1
+            Set out.found = 1
+            Set out.value = val
+            Set out.source = "SystemDefault"
+            Quit
+        }
+        ; InitialExpression fallback — read the property's InitialExpression
+        Set initExpr = ""
+        Set propId = item.ClassName _ "||" _ settingName
+        Set pd = ##class(%Dictionary.PropertyDefinition).%OpenId(propId)
+        If $isobject(pd) {
+            Set initExpr = pd.InitialExpression
+        } Else {
+            ; Maybe it's on the adapter
+            Set hostClass = item.ClassName
+            Set adapterClass = ""
+            Try { Set adapterClass = $parameter(hostClass, "ADAPTER") } Catch  {}
+            If adapterClass '= "" {
+                Set pd2 = ##class(%Dictionary.PropertyDefinition).%OpenId(adapterClass _ "||" _ settingName)
+                If $isobject(pd2) { Set initExpr = pd2.InitialExpression }
+            }
+        }
+        If initExpr '= "" {
+            Set out.ok = 1
+            Set out.found = 1
+            Set out.value = initExpr
+            Set out.source = "InitialExpression"
+            Set out.note = "Value is the property's InitialExpression — the runtime evaluates this ObjectScript expression at startup."
+            Quit
+        }
+        Set out.ok = 1
+        Set out.found = 0
+        Set out.source = "NotSet"
+        Set out.note = "No value found anywhere in the resolution chain. Runtime will use the property's empty default."
+    } Catch ex {
+        Set out.ok = 0
+        Set out.error = $extract(ex.DisplayString(), 1, 400)
+    }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("GetEffectiveSetting", out)
+    Quit out
+}
+
+/// Resolve a filename time-stamp specification to the literal string
+/// IRIS would produce right now, by wrapping Ens.Util.File.CreateTimestamp.
+/// Use this whenever the user configures File Name / Archive Path /
+/// Working Path on a File or FTP business host and isn't sure how a
+/// spec like "%#F_%Q_%+(a0)%$f" will resolve. Read-only.
+///
+/// spec:       the time-stamp specification (e.g. "%f_%Q",
+///             "%Y%m%d-%H%M%S.txt"). Default "%f_%Q" matches the
+///             IRIS adapter default.
+/// sourceName: simulated source filename for the %f / %F substitutions
+///             (default "input.dat"). For TCP services the source is
+///             the IP+port concat — pass that here to preview TCP
+///             filenames.
+///
+/// Returns: { ok, namespace, spec, sourceName, resolved }. The
+/// resolved field is what Ens.Util.File.CreateTimestamp returned.
+ClassMethod PreviewTimestampSpec(spec As %String = "%f_%Q", sourceName As %String = "input.dat") As %DynamicObject
+{
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("PreviewTimestampSpec")
+    Set out = {}
+    Set out.spec = spec
+    Set out.sourceName = sourceName
+    Set out.namespace = ..%TargetNs()
+    Try {
+        Set resolved = ##class(Ens.Util.File).CreateTimestamp(sourceName, spec)
+        Set out.ok = 1
+        Set out.resolved = resolved
+        Set out.note = "Resolved using Ens.Util.File.CreateTimestamp — the same method the File/FTP adapters call at runtime. Format codes are documented in 'Time Stamp Specifications for Filenames'."
+    } Catch ex {
+        Set out.ok = 0
+        Set out.error = $extract(ex.DisplayString(), 1, 400)
+    }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("PreviewTimestampSpec", out)
+    Quit out
+}
+
+/// List the active production message queues in the namespace.
+/// Walks the `Ens.Queue:Enumerate` query, returning name, count, and
+/// creation timestamp for each queue. The queue name is usually the
+/// business host name (`Ens.Actor` for the shared actor pool). Use
+/// for runtime diagnostics: backlog detection, idle-host detection,
+/// validating that messages reach the expected host. Read-only.
+///
+/// includeIdle: 1 (default) returns every queue. 0 skips queues
+///              with Count=0.
+///
+/// Returns: { ok, namespace, queues:[{name, count, created}], total,
+/// totalMessages }.
+ClassMethod ListProductionQueues(includeIdle As %Boolean = 1) As %DynamicObject
+{
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("ListProductionQueues")
+    Set out = {}
+    Set out.namespace = ..%TargetNs()
+    Set out.queues = []
+    Try {
+        Set rs = ##class(%ResultSet).%New("Ens.Queue:Enumerate")
+        Set sc = rs.Execute()
+        If 'sc {
+            Set out.ok = 0
+            Set out.error = "Enumerate failed: " _ $system.Status.GetErrorText(sc)
+            Quit
+        }
+        Set count = 0, totalMsgs = 0
+        While rs.Next() {
+            Set qName = rs.GetData(1)
+            Set qCount = +rs.GetData(2)
+            Set qCreated = rs.GetData(3)
+            If 'includeIdle, qCount = 0 { Continue }
+            Set q = {}
+            Set q.name = qName
+            Set q.count = qCount
+            Set q.created = qCreated
+            Do out.queues.%Push(q)
+            Set count = count + 1
+            Set totalMsgs = totalMsgs + qCount
+        }
+        Set out.total = count
+        Set out.totalMessages = totalMsgs
+        Set out.ok = 1
+        If count = 0 { Set out.hint = "No queues found. If you expect queues, the production may not have started, or this namespace has no production." }
+    } Catch ex {
+        Set out.ok = 0
+        Set out.error = $extract(ex.DisplayString(), 1, 400)
+    }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("ListProductionQueues", out)
+    Quit out
+}
+
+/// Release the FIFO message-group hold associated with a specific
+/// message header. Wraps Ens.Queue.FIFOMessageGroup.ReleaseHoldByHeaderId.
+/// Use when a single stuck message is blocking a FIFO group from
+/// progressing (e.g. a downstream system rejected one message and
+/// the rest of the group is queued behind it). MUTATING — gated by
+/// the release_ prefix.
+///
+/// messageHeaderId: the Ens.MessageHeader %Id of the stuck message.
+///                  Obtain from the Message Viewer or via a SQL
+///                  query against Ens_MessageHeader.
+/// signalQueue:     1 (default) signals the queue to resume
+///                  processing; 0 clears the hold without notifying
+///                  the queue (useful when you're about to release
+///                  many holds and signal once at the end).
+ClassMethod ReleaseFIFOHold(messageHeaderId As %String, signalQueue As %Boolean = 1) As %DynamicObject
+{
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("ReleaseFIFOHold")
+    Set out = {}
+    Set out.tool = "release_fifo_hold"
+    Set out.messageHeaderId = messageHeaderId
+    Set out.signalQueue = signalQueue
+    Set out.namespace = ..%TargetNs()
+    If $get(messageHeaderId) = "" {
+        Set out.ok = 0
+        Set out.error = "Pass `messageHeaderId` — the Ens.MessageHeader Id."
+        Quit out
+    }
+    Try {
+        Set sc = ##class(Ens.Queue.FIFOMessageGroup).ReleaseHoldByHeaderId(messageHeaderId, signalQueue)
+        If 'sc {
+            Set out.ok = 0
+            Set out.error = "ReleaseHoldByHeaderId failed: " _ $system.Status.GetErrorText(sc)
+            Quit
+        }
+        Set out.ok = 1
+        Set out.message = "FIFO hold released for header " _ messageHeaderId _ "."
+    } Catch ex {
+        Set out.ok = 0
+        Set out.error = $extract(ex.DisplayString(), 1, 400)
+    }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("ReleaseFIFOHold", out)
+    Quit out
+}
+
+/// Release every FIFO message-group hold on a named queue. Wraps
+/// Ens.Queue.FIFOMessageGroup.ReleaseHoldForAll. Use for bulk
+/// recovery after a downstream outage when the FIFO discipline is
+/// no longer needed for the backlog. MUTATING — gated by the
+/// release_ prefix.
+///
+/// queueName:              the queue (usually a business-host name)
+///                         whose held messages should be released.
+/// onlyCompletedSessions:  1 (default) — only release messages whose
+///                         sessions are Complete. 0 — release every
+///                         held header on the queue regardless of
+///                         session state (use with care).
+ClassMethod ReleaseAllFIFOHolds(queueName As %String, onlyCompletedSessions As %Boolean = 1) As %DynamicObject
+{
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("ReleaseAllFIFOHolds")
+    Set out = {}
+    Set out.tool = "release_all_fifo_holds"
+    Set out.queueName = queueName
+    Set out.onlyCompletedSessions = onlyCompletedSessions
+    Set out.namespace = ..%TargetNs()
+    If $get(queueName) = "" {
+        Set out.ok = 0
+        Set out.error = "Pass `queueName`. Use ListProductionQueues to see available names."
+        Quit out
+    }
+    Try {
+        Set sc = ##class(Ens.Queue.FIFOMessageGroup).ReleaseHoldForAll(queueName, onlyCompletedSessions)
+        If 'sc {
+            Set out.ok = 0
+            Set out.error = "ReleaseHoldForAll failed: " _ $system.Status.GetErrorText(sc)
+            Quit
+        }
+        Set out.ok = 1
+        Set out.message = "All FIFO holds released on queue '" _ queueName _ "' (onlyCompletedSessions=" _ onlyCompletedSessions _ ")."
+    } Catch ex {
+        Set out.ok = 0
+        Set out.error = $extract(ex.DisplayString(), 1, 400)
+    }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("ReleaseAllFIFOHolds", out)
+    Quit out
+}
+
+/// Validate a Schedule setting string. Parses the documented
+/// comma-separated `ACTION:TIMESTAMP` grammar AND calls
+/// Ens.Util.Schedule.Evaluate to confirm IRIS accepts the spec at
+/// runtime. Returns a per-entry breakdown so the caller can fix the
+/// specific entry that's malformed. Read-only.
+///
+/// schedule:        the Schedule setting value. Empty string is
+///                  valid (no schedule = always running).
+/// referenceTime:   optional ODBC timestamp to evaluate the schedule
+///                  at (default = current time). Used to also report
+///                  whether the host would be running RIGHT NOW.
+///
+/// Returns: { ok, namespace, schedule, valid, entries:[{action,
+/// timestamp, valid, error?}], runtimeActive?, parseErrors:[...] }.
+ClassMethod ValidateScheduleSpec(schedule As %String, referenceTime As %String = "") As %DynamicObject
+{
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("ValidateScheduleSpec")
+    Set out = {}
+    Set out.schedule = schedule
+    Set out.namespace = ..%TargetNs()
+    Set out.entries = []
+    Set out.parseErrors = []
+    If $get(schedule) = "" {
+        Set out.ok = 1
+        Set out.valid = 1
+        Set out.note = "Empty schedule — the host is always running."
+        Do ##class(AgenticInterop.Agent.Manager).ToolDone("ValidateScheduleSpec", out)
+        Return out
+    }
+    Try {
+        Set valid = 1
+        For i = 1:1:$length(schedule, ",") {
+            Set piece = $zstrip($piece(schedule, ",", i), "<>W")
+            If piece = "" { Continue }
+            Set entry = {}
+            Set action = $piece(piece, ":", 1)
+            Set body = $piece(piece, ":", 2, 99)
+            Set entry.action = action
+            Set entry.timestamp = body
+            Set entry.valid = 1
+            If (action '= "START") && (action '= "STOP") {
+                Set entry.valid = 0
+                Set entry.error = "action must be START or STOP, got '" _ action _ "'"
+                Do out.parseErrors.%Push("Entry " _ i _ ": " _ entry.error)
+                Set valid = 0
+            } ElseIf body = "" {
+                Set entry.valid = 0
+                Set entry.error = "missing timestamp body after action"
+                Do out.parseErrors.%Push("Entry " _ i _ ": " _ entry.error)
+                Set valid = 0
+            } Else {
+                ; Body can be a literal ODBC datetime OR a WEEK-MM-DD weekly pattern OR contain `*` wildcards.
+                Set tsOk = 0
+                If body [ "WEEK" {
+                    Set tsOk = 1
+                } ElseIf body [ "*" {
+                    Set tsOk = 1
+                } Else {
+                    Set h = $zdatetimeh(body, 3, , , , , , , , -1)
+                    If h '= -1 { Set tsOk = 1 }
+                }
+                If 'tsOk {
+                    Set entry.valid = 0
+                    Set entry.error = "timestamp '" _ body _ "' is not parseable as ODBC (YYYY-MM-DDThh:mm:ss), WEEK-MM-DD, or a `*`-wildcard pattern"
+                    Do out.parseErrors.%Push("Entry " _ i _ ": " _ entry.error)
+                    Set valid = 0
+                }
+            }
+            Do out.entries.%Push(entry)
+        }
+        Set out.valid = valid
+        ; Also run a runtime Evaluate to confirm IRIS accepts it
+        Set refTs = $select($get(referenceTime)'="":referenceTime, 1:$zdatetime($horolog, 3))
+        Set runtimeActive = ##class(Ens.Util.Schedule).Evaluate(schedule, refTs)
+        Set out.runtimeActive = (runtimeActive = 1)
+        Set out.referenceTime = refTs
+        Set out.ok = 1
+    } Catch ex {
+        Set out.ok = 0
+        Set out.error = $extract(ex.DisplayString(), 1, 400)
+    }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("ValidateScheduleSpec", out)
     Quit out
 }
 

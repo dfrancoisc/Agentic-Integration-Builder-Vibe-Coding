@@ -3,9 +3,10 @@
 /// "what DTLs already exist for X?" and re-compile a DTL after a user
 /// edit so the next interop run picks up the change.
 ///
-/// Roadmap (not yet built): create_dtl, update_dtl, dry_run_dtl,
-/// list_lookup_tables, crud_lookup_table, list_bpls, create_bpl,
-/// validate_bpl, list_business_rules, evaluate_rule. See
+/// Roadmap (not yet built): dry_run_bpl, evaluate_rule.
+/// Recently shipped: list_bpls, get_bpl, update_bpl,
+/// build_hl7_to_fhir_bpl — the BPL editor primitives that close the
+/// gap where the agent could only create empty skeletons. See
 /// docs/TOOLS.md "ToolSet.Transform".
 /// %AI.Tool source for the Transform toolset. Each public ClassMethod
 /// is auto-discovered by the framework as a tool — the method name
@@ -507,9 +508,13 @@ ClassMethod ListLookupTables() As %DynamicObject
 
 /// Create a Business Process Language (BPL) class skeleton. The
 /// generated class extends Ens.BusinessProcessBPL and contains an
-/// empty <process> XData with an empty <sequence>. The user (or a
-/// follow-up tool) fills in the activities. MUTATING — gated by
-/// the create_ prefix.
+/// empty <process> XData with an empty <sequence>. THIS TOOL IS
+/// NOT ENOUGH on its own — an empty BPL has no activities and
+/// will do nothing at runtime. After CreateBPL you MUST call
+/// either UpdateBPL (with explicit BPL XML) or BuildHL7ToFHIRBPL
+/// (high-level convenience for HL7-to-FHIR pipelines). Calling
+/// CreateBPL alone and then reporting the pipeline as built is a
+/// bug — do not do that. MUTATING — gated by the create_ prefix.
 ///
 /// name:           fully-qualified BPL class name.
 /// requestClass:   request message class (default "Ens.Request").
@@ -568,7 +573,8 @@ ClassMethod CreateBPL(name As %String, requestClass As %String = "Ens.Request", 
         }
         Set out.ok = 1
         Set out.created = 1
-        Set out.message = "BPL '" _ name _ "' created (empty sequence). Use the BPL editor or update_bpl (roadmap) to add activities."
+        Set out.warning = "BPL skeleton only — empty <sequence/>. Activities MUST be added before this BPL does anything."
+        Set out.nextStep = "Call UpdateBPL(name, bplXml) with explicit activities, or BuildHL7ToFHIRBPL(name, fhirProcessHost) for the canonical HL7-to-FHIR pipeline. Reporting the pipeline as built without one of those calls is incorrect."
     } Catch ex {
         Set out.ok = 0
         Set out.error = $extract(ex.DisplayString(), 1, 400)
@@ -625,6 +631,336 @@ ClassMethod ValidateBPL(name As %String) As %DynamicObject
         Set out.error = $extract(ex.DisplayString(), 1, 400)
     }
     Do ##class(AgenticInterop.Agent.Manager).ToolDone("ValidateBPL", out)
+    Quit out
+}
+
+/// List Business Process Language (BPL) classes defined in the
+/// chat's active namespace. CALL THIS for "what BPLs exist", "is
+/// there already a process that does X", or any inventory query
+/// before creating a new BPL. Read-only.
+///
+/// Returns: { ok, namespace, bpls:[{name, super, description?}], total }.
+ClassMethod ListBPLs() As %DynamicObject
+{
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("ListBPLs")
+    Set out = {}
+    Set targetNs = ..%TargetNs()
+    Set out.namespace = targetNs
+    Set out.bpls = []
+    New $namespace
+    Try { Set $namespace = targetNs } Catch  {
+        Set out.ok = 0
+        Set out.error = "Cannot access namespace: " _ targetNs
+        Quit
+    }
+    Try {
+        Set sql = "SELECT Name, Super, Description FROM %Dictionary.CompiledClass "
+        Set sql = sql _ "WHERE Super = 'Ens.BusinessProcessBPL' OR Super [ 'Ens.BusinessProcessBPL,' "
+        Set sql = sql _ "OR Super [ ',Ens.BusinessProcessBPL' ORDER BY Name"
+        Set rs = ##class(%SQL.Statement).%ExecDirect(, sql)
+        Set count = 0
+        While rs.%Next() {
+            Set b = {}
+            Set b.name = rs.%Get("Name")
+            Set b.super = rs.%Get("Super")
+            Set desc = rs.%Get("Description")
+            If desc '= "" { Set b.description = $extract(desc, 1, 240) }
+            Do out.bpls.%Push(b)
+            Set count = count + 1
+        }
+        Set out.total = count
+        Set out.ok = 1
+    } Catch ex {
+        Set out.ok = 0
+        Set out.error = $extract(ex.DisplayString(), 1, 400)
+    }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("ListBPLs", out)
+    Quit out
+}
+
+/// Read the current <process> XML body of a BPL class. CALL THIS
+/// before UpdateBPL whenever the user asks to inspect or modify
+/// an existing process — never edit blind. Also call this to
+/// verify a BPL is actually populated (non-empty sequence) versus
+/// being an empty skeleton from CreateBPL. Read-only.
+///
+/// name: fully-qualified BPL class name.
+///
+/// Returns: { ok, namespace, name, exists, bplXml?, isEmpty?,
+/// requestClass?, responseClass? }.
+ClassMethod GetBPL(name As %String) As %DynamicObject
+{
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("GetBPL")
+    Set out = {}
+    Set out.name = name
+    Set targetNs = ..%TargetNs()
+    Set out.namespace = targetNs
+    If $get(name) = "" {
+        Set out.ok = 0
+        Set out.error = "Pass `name` (the BPL class)."
+        Quit out
+    }
+    New $namespace
+    Try { Set $namespace = targetNs } Catch  {
+        Set out.ok = 0
+        Set out.error = "Cannot access namespace: " _ targetNs
+        Quit
+    }
+    Try {
+        If '##class(%Dictionary.ClassDefinition).%ExistsId(name) {
+            Set out.ok = 1
+            Set out.exists = 0
+            Set out.error = "Class not found: " _ name
+            Quit
+        }
+        Set out.exists = 1
+        Set xd = ##class(%Dictionary.XDataDefinition).%OpenId(name _ "||BPL")
+        If '$isobject(xd) {
+            Set out.ok = 1
+            Set out.error = "Class exists but has no BPL XData block."
+            Quit
+        }
+        Set body = ""
+        Do xd.Data.Rewind()
+        While 'xd.Data.AtEnd { Set body = body _ xd.Data.Read(8000) }
+        Set out.bplXml = body
+        ; Detect canonical empty-sequence skeletons produced by CreateBPL
+        Set normalized = $zstrip(body, "*W")
+        Set out.isEmpty = ((normalized [ "<sequence") && (normalized [ "/>") && '(normalized [ "</sequence>"))
+                       || (normalized [ "<sequence></sequence>")
+        ; Pull request/response attributes for quick reference
+        Set p = $find(body, "request=")
+        If p > 0 {
+            Set tail = $extract(body, p, $length(body))
+            Set q = $extract(tail, 1, 1)
+            If (q = "'") || (q = """") {
+                Set rest = $extract(tail, 2, $length(tail))
+                Set out.requestClass = $piece(rest, q, 1)
+            }
+        }
+        Set p = $find(body, "response=")
+        If p > 0 {
+            Set tail = $extract(body, p, $length(body))
+            Set q = $extract(tail, 1, 1)
+            If (q = "'") || (q = """") {
+                Set rest = $extract(tail, 2, $length(tail))
+                Set out.responseClass = $piece(rest, q, 1)
+            }
+        }
+        Set out.ok = 1
+    } Catch ex {
+        Set out.ok = 0
+        Set out.error = $extract(ex.DisplayString(), 1, 400)
+    }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("GetBPL", out)
+    Quit out
+}
+
+/// Overwrite a BPL's <process> XData with the supplied XML and
+/// recompile. Use this to add activities to a BPL skeleton created
+/// by CreateBPL, or to edit an existing process. MUTATING — gated
+/// by the update_ prefix.
+///
+/// The caller is responsible for the BPL XML being well-formed —
+/// after the write the class is compiled with ck-d, and compile
+/// errors are returned in the response. For the canonical HL7-to-
+/// FHIR pipeline use BuildHL7ToFHIRBPL instead so the XML is built
+/// for you.
+///
+/// bplXml MUST be the full <process ...>...</process> element.
+/// Example for a code+call sequence:
+///
+///   <process language='objectscript' request='EnsLib.HL7.Message' response='Ens.Response'>
+///     <context>
+///       <property name='SDAStream' type='%Stream.GlobalCharacter' instantiate='0'/>
+///       <property name='XMLRequest' type='HS.Message.XMLMessage'/>
+///     </context>
+///     <sequence xend='200' yend='800'>
+///       <code name='HL7 to SDA' xpos='200' ypos='250'><![CDATA[
+///         Set tSC = ##class(HS.Gateway.HL7.HL7ToSDA3).GetSDA(request, .tStream)
+///         If $system.Status.IsError(tSC) Throw ##class(%Exception.StatusException).CreateFromStatus(tSC)
+///         Set context.SDAStream = tStream
+///       ]]></code>
+///       <call name='To FHIR' target='SDA.Transform.FHIR' async='0' xpos='200' ypos='400'>
+///         <request type='HS.Message.XMLMessage'>
+///           <assign property='callrequest' value='context.XMLRequest' action='set'/>
+///         </request>
+///         <response type='HS.Message.XMLMessage'/>
+///       </call>
+///     </sequence>
+///   </process>
+///
+/// name:   fully-qualified BPL class name (must already exist —
+///         call CreateBPL first).
+/// bplXml: full <process>...</process> element as a string.
+ClassMethod UpdateBPL(name As %String, bplXml As %String) As %DynamicObject
+{
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("UpdateBPL")
+    Set out = {}
+    Set out.tool = "update_bpl"
+    Set out.name = name
+    Set targetNs = ..%TargetNs()
+    Set out.namespace = targetNs
+    If $get(name) = "" {
+        Set out.ok = 0
+        Set out.error = "Pass `name` (the BPL class)."
+        Quit out
+    }
+    If $get(bplXml) = "" {
+        Set out.ok = 0
+        Set out.error = "Pass `bplXml` (the full <process>...</process> XML element)."
+        Quit out
+    }
+    ; Light-touch validation — must be a <process> element
+    If '(bplXml [ "<process") || '(bplXml [ "</process>") {
+        Set out.ok = 0
+        Set out.error = "bplXml must contain a <process>...</process> root element."
+        Quit out
+    }
+    New $namespace
+    Try { Set $namespace = targetNs } Catch  {
+        Set out.ok = 0
+        Set out.error = "Cannot access namespace: " _ targetNs
+        Quit
+    }
+    Try {
+        If '##class(%Dictionary.ClassDefinition).%ExistsId(name) {
+            Set out.ok = 0
+            Set out.error = "Class not found: " _ name _ ". Call CreateBPL first."
+            Quit
+        }
+        ; Locate (or create) the BPL XData block
+        Set xd = ##class(%Dictionary.XDataDefinition).%OpenId(name _ "||BPL")
+        Set created = 0
+        If '$isobject(xd) {
+            Set cdef = ##class(%Dictionary.ClassDefinition).%OpenId(name)
+            If '$isobject(cdef) {
+                Set out.ok = 0
+                Set out.error = "Cannot open class definition: " _ name
+                Quit
+            }
+            Set xd = ##class(%Dictionary.XDataDefinition).%New()
+            Set xd.Name = "BPL"
+            Set xd.XMLNamespace = "http://www.intersystems.com/bpl"
+            Set xd.parent = cdef
+            Do cdef.XDatas.Insert(xd)
+            Set created = 1
+        }
+        Do xd.Data.Clear()
+        Do xd.Data.Write(bplXml)
+        Set sc = xd.%Save()
+        If 'sc {
+            Set out.ok = 0
+            Set out.error = "%Save failed: " _ $system.Status.GetErrorText(sc)
+            Quit
+        }
+        Set sc = $SYSTEM.OBJ.Compile(name, "ck-d")
+        If 'sc {
+            Set out.ok = 0
+            Set out.updated = 1
+            Set out.compiled = 0
+            Set out.compileError = $extract($system.Status.GetErrorText(sc), 1, 1500)
+            Set out.hint = "BPL XData was written but the class failed to compile. Check the XML for malformed activities, missing CDATA, or unresolved class references in <code> blocks."
+            Quit
+        }
+        Set out.ok = 1
+        Set out.updated = 1
+        Set out.compiled = 1
+        Set out.xdataCreated = created
+        Set out.message = "BPL '" _ name _ "' updated and compiled."
+    } Catch ex {
+        Set out.ok = 0
+        Set out.error = $extract(ex.DisplayString(), 1, 400)
+    }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("UpdateBPL", out)
+    Quit out
+}
+
+/// Write the canonical HL7-v2-to-FHIR-R4 BPL body into an existing
+/// BPL class. This is the high-level convenience over UpdateBPL —
+/// the agent does not need to compose any XML. The emitted process
+/// (1) accepts EnsLib.HL7.Message, (2) calls
+/// HS.Gateway.HL7.HL7ToSDA3.GetSDA to produce an SDA3 stream,
+/// (3) wraps the stream in HS.Message.XMLMessage, and (4) calls
+/// the named SDA-to-FHIR process host (typically a
+/// HS.FHIR.DTL.Util.HC.SDA3.FHIR.Process host) synchronously.
+///
+/// CALL THIS instead of CreateBPL+silence whenever the user asks
+/// for an HL7-to-FHIR pipeline. CreateBPL alone leaves the BPL
+/// empty.
+///
+/// name:                fully-qualified BPL class name (must already
+///                      exist — call CreateBPL first with
+///                      requestClass='EnsLib.HL7.Message').
+/// fhirProcessHost:     logical host name in the production of the
+///                      SDA-to-FHIR business process — e.g.,
+///                      "SDA.Transform.FHIR".
+/// requestClass:        optional override (default 'EnsLib.HL7.Message').
+///
+/// Returns: { ok, namespace, name, updated, compiled, bplXml,
+/// compileError? }. MUTATING — gated by the build_ prefix.
+ClassMethod BuildHL7ToFHIRBPL(name As %String, fhirProcessHost As %String, requestClass As %String = "EnsLib.HL7.Message") As %DynamicObject
+{
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("BuildHL7ToFHIRBPL")
+    Set out = {}
+    Set out.tool = "build_hl7_to_fhir_bpl"
+    Set out.name = name
+    Set out.fhirProcessHost = fhirProcessHost
+    Set targetNs = ..%TargetNs()
+    Set out.namespace = targetNs
+    If $get(name) = "" {
+        Set out.ok = 0
+        Set out.error = "Pass `name` (the BPL class)."
+        Quit out
+    }
+    If $get(fhirProcessHost) = "" {
+        Set out.ok = 0
+        Set out.error = "Pass `fhirProcessHost` (the logical name of the SDA-to-FHIR business process host in the production, e.g. 'SDA.Transform.FHIR')."
+        Quit out
+    }
+    ; Build the canonical BPL body
+    Set NL = $char(10)
+    Set bpl = "<process language='objectscript' request='" _ requestClass _ "' response='Ens.Response' height='2000' width='2000'>" _ NL
+    Set bpl = bpl _ "  <context>" _ NL
+    Set bpl = bpl _ "    <property name='SDAStream' type='%Stream.GlobalCharacter' instantiate='0'/>" _ NL
+    Set bpl = bpl _ "    <property name='XMLRequest' type='HS.Message.XMLMessage'/>" _ NL
+    Set bpl = bpl _ "  </context>" _ NL
+    Set bpl = bpl _ "  <sequence xend='200' yend='800'>" _ NL
+    Set bpl = bpl _ "    <code name='Convert HL7 to SDA3' xpos='200' ypos='250'>" _ NL
+    Set bpl = bpl _ "      <annotation><![CDATA[Convert the incoming HL7 v2 message into an SDA3 XML stream via HS.Gateway.HL7.HL7ToSDA3.GetSDA. Works for all v2 message types (ADT, ORU, ORM, MDM, SIU, VXU, etc.).]]></annotation>" _ NL
+    Set bpl = bpl _ "      <![CDATA[" _ NL
+    Set bpl = bpl _ " Set tSC = ##class(HS.Gateway.HL7.HL7ToSDA3).GetSDA(request, .tSDAStream)" _ NL
+    Set bpl = bpl _ " If $system.Status.IsError(tSC) Throw ##class(%Exception.StatusException).CreateFromStatus(tSC)" _ NL
+    Set bpl = bpl _ " Set context.SDAStream = tSDAStream" _ NL
+    Set bpl = bpl _ "      ]]>" _ NL
+    Set bpl = bpl _ "    </code>" _ NL
+    Set bpl = bpl _ "    <code name='Wrap SDA in XMLMessage' xpos='200' ypos='400'>" _ NL
+    Set bpl = bpl _ "      <annotation><![CDATA[Wrap the SDA3 XML stream in HS.Message.XMLMessage — the payload type HS.FHIR.DTL.Util.HC.SDA3.FHIR.Process consumes.]]></annotation>" _ NL
+    Set bpl = bpl _ "      <![CDATA[" _ NL
+    Set bpl = bpl _ " Set context.XMLRequest = ##class(HS.Message.XMLMessage).%New()" _ NL
+    Set bpl = bpl _ " Do context.SDAStream.Rewind()" _ NL
+    Set bpl = bpl _ " Set tSC = context.XMLRequest.ContentStream.CopyFrom(context.SDAStream)" _ NL
+    Set bpl = bpl _ " If $system.Status.IsError(tSC) Throw ##class(%Exception.StatusException).CreateFromStatus(tSC)" _ NL
+    Set bpl = bpl _ "      ]]>" _ NL
+    Set bpl = bpl _ "    </code>" _ NL
+    Set bpl = bpl _ "    <call name='Forward to SDA-to-FHIR' target='" _ fhirProcessHost _ "' async='0' xpos='200' ypos='550'>" _ NL
+    Set bpl = bpl _ "      <annotation><![CDATA[Synchronously forward the wrapped SDA payload to the SDA-to-FHIR business process. That host emits a FHIR Bundle to its own TargetConfigNames (typically a FHIR REST operation).]]></annotation>" _ NL
+    Set bpl = bpl _ "      <request type='HS.Message.XMLMessage'>" _ NL
+    Set bpl = bpl _ "        <assign property='callrequest' value='context.XMLRequest' action='set'/>" _ NL
+    Set bpl = bpl _ "      </request>" _ NL
+    Set bpl = bpl _ "      <response type='HS.Message.XMLMessage'/>" _ NL
+    Set bpl = bpl _ "    </call>" _ NL
+    Set bpl = bpl _ "  </sequence>" _ NL
+    Set bpl = bpl _ "</process>"
+    Set out.bplXml = bpl
+    Set inner = ..UpdateBPL(name, bpl)
+    Set out.ok = inner.ok
+    Set out.updated = $select(inner.%IsDefined("updated"):inner.updated, 1:0)
+    Set out.compiled = $select(inner.%IsDefined("compiled"):inner.compiled, 1:0)
+    If inner.%IsDefined("compileError") { Set out.compileError = inner.compileError }
+    If inner.%IsDefined("error") { Set out.error = inner.error }
+    If out.ok { Set out.message = "Canonical HL7-to-FHIR BPL written into '" _ name _ "' — forwards to '" _ fhirProcessHost _ "'." }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("BuildHL7ToFHIRBPL", out)
     Quit out
 }
 
@@ -1505,6 +1841,980 @@ ClassMethod GetHL7SegmentFields(category As %String, segmentType As %String) As 
     }
     Do ##class(AgenticInterop.Agent.Manager).ToolDone("GetHL7SegmentFields", out)
     Return out
+}
+
+/// Delete a Business Process Language (BPL) class — class definition
+/// removed from the namespace. MUTATING — gated by the delete_ prefix.
+/// Refuses to delete if any production in the active namespace has a
+/// business host whose ClassName equals the BPL — call RemoveBusinessHost
+/// first.
+///
+/// name: fully-qualified BPL class name.
+ClassMethod DeleteBPL(name As %String) As %DynamicObject
+{
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("DeleteBPL")
+    Set out = {}
+    Set out.tool = "delete_bpl"
+    Set out.name = name
+    Set targetNs = ..%TargetNs()
+    Set out.namespace = targetNs
+    If $get(name) = "" {
+        Set out.ok = 0
+        Set out.error = "Pass `name` (the BPL class)."
+        Quit out
+    }
+    New $namespace
+    Try { Set $namespace = targetNs } Catch  {
+        Set out.ok = 0
+        Set out.error = "Cannot access namespace: " _ targetNs
+        Quit
+    }
+    Try {
+        If '##class(%Dictionary.ClassDefinition).%ExistsId(name) {
+            Set out.ok = 1
+            Set out.deleted = 0
+            Set out.error = "Class not found: " _ name
+            Quit
+        }
+        ; Refuse if any host in any production class references this BPL
+        Set referrers = []
+        Set sql = "SELECT DISTINCT Production FROM Ens_Config.Item WHERE ClassName = ?"
+        Set rs = ##class(%SQL.Statement).%ExecDirect(, sql, name)
+        While rs.%Next() { Do referrers.%Push(rs.%Get("Production")) }
+        If referrers.%Size() > 0 {
+            Set out.ok = 0
+            Set out.deleted = 0
+            Set out.error = "BPL still referenced by production(s) — remove the host first."
+            Set out.referencedBy = referrers
+            Quit
+        }
+        Set sc = $SYSTEM.OBJ.Delete(name, "-d")
+        If 'sc {
+            Set out.ok = 0
+            Set out.deleted = 0
+            Set out.error = "Delete failed: " _ $system.Status.GetErrorText(sc)
+            Quit
+        }
+        Set out.ok = 1
+        Set out.deleted = 1
+        Set out.message = "BPL '" _ name _ "' deleted from " _ targetNs _ "."
+    } Catch ex {
+        Set out.ok = 0
+        Set out.error = $extract(ex.DisplayString(), 1, 400)
+    }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("DeleteBPL", out)
+    Quit out
+}
+
+/// Write a canonical HL7-v2-to-SDA3 BPL body into an existing BPL
+/// class. Variant of BuildHL7ToFHIRBPL that stops at SDA — the
+/// resulting BPL emits HS.Message.XMLMessage (wrapping the SDA3
+/// stream) to the named target, which is typically an SDA-aware
+/// downstream host (HealthShare Edge Gateway, SDA file operation,
+/// custom SDA consumer) — NOT the SDA-to-FHIR Process. Use this when
+/// the user wants HL7 v2 normalized to SDA without going on to FHIR.
+///
+/// name:           fully-qualified BPL class name (must already exist).
+/// sdaTargetHost:  logical host name in the production that consumes
+///                 HS.Message.XMLMessage carrying an SDA3 stream.
+/// requestClass:   optional override (default 'EnsLib.HL7.Message').
+///
+/// Returns: { ok, namespace, name, updated, compiled, bplXml,
+/// compileError? }. MUTATING — gated by the build_ prefix.
+ClassMethod BuildHL7ToSDABPL(name As %String, sdaTargetHost As %String, requestClass As %String = "EnsLib.HL7.Message") As %DynamicObject
+{
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("BuildHL7ToSDABPL")
+    Set out = {}
+    Set out.tool = "build_hl7_to_sda_bpl"
+    Set out.name = name
+    Set out.sdaTargetHost = sdaTargetHost
+    Set targetNs = ..%TargetNs()
+    Set out.namespace = targetNs
+    If $get(name) = "" {
+        Set out.ok = 0
+        Set out.error = "Pass `name` (the BPL class)."
+        Quit out
+    }
+    If $get(sdaTargetHost) = "" {
+        Set out.ok = 0
+        Set out.error = "Pass `sdaTargetHost` — the logical host name that consumes HS.Message.XMLMessage carrying the SDA3 stream."
+        Quit out
+    }
+    Set NL = $char(10)
+    Set bpl = "<process language='objectscript' request='" _ requestClass _ "' response='Ens.Response' height='2000' width='2000'>" _ NL
+    Set bpl = bpl _ "  <context>" _ NL
+    Set bpl = bpl _ "    <property name='SDAStream' type='%Stream.GlobalCharacter' instantiate='0'/>" _ NL
+    Set bpl = bpl _ "    <property name='XMLRequest' type='HS.Message.XMLMessage'/>" _ NL
+    Set bpl = bpl _ "  </context>" _ NL
+    Set bpl = bpl _ "  <sequence xend='200' yend='800'>" _ NL
+    Set bpl = bpl _ "    <code name='Convert HL7 to SDA3' xpos='200' ypos='250'>" _ NL
+    Set bpl = bpl _ "      <annotation><![CDATA[Convert the incoming HL7 v2 message into an SDA3 XML stream via HS.Gateway.HL7.HL7ToSDA3.GetSDA. Works for all v2 message types that have built-in HL7-to-SDA mappings (ADT, ORU, ORM, MDM, SIU, VXU, etc.).]]></annotation>" _ NL
+    Set bpl = bpl _ "      <![CDATA[" _ NL
+    Set bpl = bpl _ " Set tSC = ##class(HS.Gateway.HL7.HL7ToSDA3).GetSDA(request, .tSDAStream)" _ NL
+    Set bpl = bpl _ " If $system.Status.IsError(tSC) Throw ##class(%Exception.StatusException).CreateFromStatus(tSC)" _ NL
+    Set bpl = bpl _ " Set context.SDAStream = tSDAStream" _ NL
+    Set bpl = bpl _ "      ]]>" _ NL
+    Set bpl = bpl _ "    </code>" _ NL
+    Set bpl = bpl _ "    <code name='Wrap SDA in XMLMessage' xpos='200' ypos='400'>" _ NL
+    Set bpl = bpl _ "      <annotation><![CDATA[Wrap the SDA3 XML stream in HS.Message.XMLMessage so it can flow to SDA-aware downstream hosts (file operation, Edge Gateway, custom consumer).]]></annotation>" _ NL
+    Set bpl = bpl _ "      <![CDATA[" _ NL
+    Set bpl = bpl _ " Set context.XMLRequest = ##class(HS.Message.XMLMessage).%New()" _ NL
+    Set bpl = bpl _ " Do context.SDAStream.Rewind()" _ NL
+    Set bpl = bpl _ " Set tSC = context.XMLRequest.ContentStream.CopyFrom(context.SDAStream)" _ NL
+    Set bpl = bpl _ " If $system.Status.IsError(tSC) Throw ##class(%Exception.StatusException).CreateFromStatus(tSC)" _ NL
+    Set bpl = bpl _ "      ]]>" _ NL
+    Set bpl = bpl _ "    </code>" _ NL
+    Set bpl = bpl _ "    <call name='Forward SDA Payload' target='" _ sdaTargetHost _ "' async='0' xpos='200' ypos='550'>" _ NL
+    Set bpl = bpl _ "      <annotation><![CDATA[Synchronously forward the SDA3 payload (wrapped in HS.Message.XMLMessage) to the SDA consumer host.]]></annotation>" _ NL
+    Set bpl = bpl _ "      <request type='HS.Message.XMLMessage'>" _ NL
+    Set bpl = bpl _ "        <assign property='callrequest' value='context.XMLRequest' action='set'/>" _ NL
+    Set bpl = bpl _ "      </request>" _ NL
+    Set bpl = bpl _ "      <response type='Ens.Response'/>" _ NL
+    Set bpl = bpl _ "    </call>" _ NL
+    Set bpl = bpl _ "  </sequence>" _ NL
+    Set bpl = bpl _ "</process>"
+    Set out.bplXml = bpl
+    Set inner = ..UpdateBPL(name, bpl)
+    Set out.ok = inner.ok
+    Set out.updated = $select(inner.%IsDefined("updated"):inner.updated, 1:0)
+    Set out.compiled = $select(inner.%IsDefined("compiled"):inner.compiled, 1:0)
+    If inner.%IsDefined("compileError") { Set out.compileError = inner.compileError }
+    If inner.%IsDefined("error") { Set out.error = inner.error }
+    If out.ok { Set out.message = "Canonical HL7-to-SDA BPL written into '" _ name _ "' — forwards SDA to '" _ sdaTargetHost _ "'." }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("BuildHL7ToSDABPL", out)
+    Quit out
+}
+
+/// Read the current source body of a DTL class. CALL THIS before
+/// UpdateDTL whenever the user asks to inspect or modify an existing
+/// DTL. Returns the DTL XData (the transformation logic) plus the
+/// declared source/target classes parsed from the class definition.
+/// Read-only.
+///
+/// name: fully-qualified DTL class name.
+///
+/// Returns: { ok, namespace, name, exists, dtlXml?, sourceClass?,
+/// targetClass?, sourceDocType?, targetDocType? }.
+ClassMethod GetDTL(name As %String) As %DynamicObject
+{
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("GetDTL")
+    Set out = {}
+    Set out.name = name
+    Set targetNs = ..%TargetNs()
+    Set out.namespace = targetNs
+    If $get(name) = "" {
+        Set out.ok = 0
+        Set out.error = "Pass `name` (the DTL class)."
+        Quit out
+    }
+    New $namespace
+    Try { Set $namespace = targetNs } Catch  {
+        Set out.ok = 0
+        Set out.error = "Cannot access namespace: " _ targetNs
+        Quit
+    }
+    Try {
+        If '##class(%Dictionary.ClassDefinition).%ExistsId(name) {
+            Set out.ok = 1
+            Set out.exists = 0
+            Set out.error = "Class not found: " _ name
+            Quit
+        }
+        Set out.exists = 1
+        Set xd = ##class(%Dictionary.XDataDefinition).%OpenId(name _ "||DTL")
+        If '$isobject(xd) {
+            Set out.ok = 1
+            Set out.error = "Class exists but has no DTL XData block."
+            Quit
+        }
+        Set body = ""
+        Do xd.Data.Rewind()
+        While 'xd.Data.AtEnd { Set body = body _ xd.Data.Read(8000) }
+        Set out.dtlXml = body
+        ; Pull attributes from the transform element
+        For attr = "sourceClass","targetClass","sourceDocType","targetDocType" {
+            Set p = $find(body, attr _ "=")
+            If p > 0 {
+                Set tail = $extract(body, p, $length(body))
+                Set q = $extract(tail, 1, 1)
+                If (q = "'") || (q = """") {
+                    Set rest = $extract(tail, 2, $length(tail))
+                    Set val = $piece(rest, q, 1)
+                    Do out.%Set(attr, val)
+                }
+            }
+        }
+        Set out.ok = 1
+    } Catch ex {
+        Set out.ok = 0
+        Set out.error = $extract(ex.DisplayString(), 1, 400)
+    }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("GetDTL", out)
+    Quit out
+}
+
+/// Delete a Data Transformation Language (DTL) class — class
+/// definition removed from the namespace. MUTATING — gated by the
+/// delete_ prefix. Refuses to delete if any compiled BPL, routing
+/// rule, or business host in the active namespace references the DTL
+/// by class name.
+///
+/// name: fully-qualified DTL class name.
+ClassMethod DeleteDTL(name As %String) As %DynamicObject
+{
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("DeleteDTL")
+    Set out = {}
+    Set out.tool = "delete_dtl"
+    Set out.name = name
+    Set targetNs = ..%TargetNs()
+    Set out.namespace = targetNs
+    If $get(name) = "" {
+        Set out.ok = 0
+        Set out.error = "Pass `name` (the DTL class)."
+        Quit out
+    }
+    New $namespace
+    Try { Set $namespace = targetNs } Catch  {
+        Set out.ok = 0
+        Set out.error = "Cannot access namespace: " _ targetNs
+        Quit
+    }
+    Try {
+        If '##class(%Dictionary.ClassDefinition).%ExistsId(name) {
+            Set out.ok = 1
+            Set out.deleted = 0
+            Set out.error = "Class not found: " _ name
+            Quit
+        }
+        ; Scan BPL classes whose body mentions this DTL — substring grep
+        Set bplReferrers = []
+        Set sql = "SELECT parent FROM %Dictionary.XDataDefinition WHERE Name = 'BPL'"
+        Set rs = ##class(%SQL.Statement).%ExecDirect(, sql)
+        While rs.%Next() {
+            Set bplName = rs.%Get("parent")
+            Set xd = ##class(%Dictionary.XDataDefinition).%OpenId(bplName _ "||BPL")
+            If $isobject(xd) {
+                Set body = ""
+                Do xd.Data.Rewind()
+                While 'xd.Data.AtEnd { Set body = body _ xd.Data.Read(8000) }
+                If body [ name { Do bplReferrers.%Push(bplName) }
+            }
+        }
+        ; Scan routing rules whose XData mentions this DTL
+        Set ruleReferrers = []
+        Set sql2 = "SELECT parent FROM %Dictionary.XDataDefinition WHERE Name = 'RuleDefinition'"
+        Set rs2 = ##class(%SQL.Statement).%ExecDirect(, sql2)
+        While rs2.%Next() {
+            Set ruleName = rs2.%Get("parent")
+            Set xd2 = ##class(%Dictionary.XDataDefinition).%OpenId(ruleName _ "||RuleDefinition")
+            If $isobject(xd2) {
+                Set body2 = ""
+                Do xd2.Data.Rewind()
+                While 'xd2.Data.AtEnd { Set body2 = body2 _ xd2.Data.Read(8000) }
+                If body2 [ name { Do ruleReferrers.%Push(ruleName) }
+            }
+        }
+        If (bplReferrers.%Size() > 0) || (ruleReferrers.%Size() > 0) {
+            Set out.ok = 0
+            Set out.deleted = 0
+            Set out.error = "DTL still referenced — update referrers first."
+            Set out.referencedByBPLs = bplReferrers
+            Set out.referencedByRules = ruleReferrers
+            Quit
+        }
+        Set sc = $SYSTEM.OBJ.Delete(name, "-d")
+        If 'sc {
+            Set out.ok = 0
+            Set out.deleted = 0
+            Set out.error = "Delete failed: " _ $system.Status.GetErrorText(sc)
+            Quit
+        }
+        Set out.ok = 1
+        Set out.deleted = 1
+        Set out.message = "DTL '" _ name _ "' deleted from " _ targetNs _ "."
+    } Catch ex {
+        Set out.ok = 0
+        Set out.error = $extract(ex.DisplayString(), 1, 400)
+    }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("DeleteDTL", out)
+    Quit out
+}
+
+/// Set the custom DTL package used by HS.FHIR.DTL.Util.HC.* transform
+/// processes for SDA-FHIR conversions. When set, the transformation
+/// framework checks the custom package for a matching DTL before
+/// falling back to the standard HS-supplied DTLs. Convention:
+/// "HS.Local.FHIR.DTL". MUTATING — gated by the set_ prefix.
+///
+/// packageName: full ObjectScript package name (e.g.,
+///              "HS.Local.FHIR.DTL"). Pass an empty string to clear
+///              the custom package (reverts to HS-supplied DTLs).
+///
+/// Returns: { ok, namespace, packageName, previous }.
+ClassMethod SetCustomDTLPackage(packageName As %String) As %DynamicObject
+{
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("SetCustomDTLPackage")
+    Set out = {}
+    Set out.tool = "set_custom_dtl_package"
+    Set out.packageName = packageName
+    Set targetNs = ..%TargetNs()
+    Set out.namespace = targetNs
+    New $namespace
+    Try { Set $namespace = targetNs } Catch  {
+        Set out.ok = 0
+        Set out.error = "Cannot access namespace: " _ targetNs
+        Quit
+    }
+    Try {
+        Set previous = ""
+        Try { Set previous = ##class(HS.FHIR.DTL.Util.API.ExecDefinition).GetCustomDTLPackage() } Catch  {}
+        Set out.previous = previous
+        Set sc = ##class(HS.FHIR.DTL.Util.API.ExecDefinition).SetCustomDTLPackage($get(packageName))
+        If 'sc {
+            Set out.ok = 0
+            Set out.error = "SetCustomDTLPackage failed: " _ $system.Status.GetErrorText(sc)
+            Quit
+        }
+        Set out.ok = 1
+        Set out.message = "Custom DTL package set to '" _ $get(packageName) _ "' (was '" _ previous _ "')."
+    } Catch ex {
+        Set out.ok = 0
+        Set out.error = $extract(ex.DisplayString(), 1, 400)
+    }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("SetCustomDTLPackage", out)
+    Quit out
+}
+
+/// List built-in HL7-v2-to-SDA3 DTL classes shipped with IRIS for
+/// Health. These are the per-message-type and per-segment DTLs under
+/// HS.Hub.Standalone.HL7.DTL.* (e.g., ADTA01ToSDA3, ORUR01ToSDA3,
+/// VXUV04ToSDA3, plus segment-level SubTransform.PIDToSDA3, etc.).
+/// CALL THIS when the user asks "what HL7 messages already convert
+/// to SDA" or before authoring a custom HL7-to-SDA mapping — there
+/// is almost always a built-in DTL already. Read-only.
+///
+/// filter: optional substring filter on class name (e.g., "ADT",
+///         "ORU", "PID").
+///
+/// Returns: { ok, namespace, direction: 'hl7v2_to_sda3', dtls:
+/// [{name, super, description?}], total }.
+ClassMethod ListHL7ToSDADTLs(filter As %String = "") As %DynamicObject
+{
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("ListHL7ToSDADTLs")
+    Set out = {}
+    Set targetNs = ..%TargetNs()
+    Set out.namespace = targetNs
+    Set out.direction = "hl7v2_to_sda3"
+    Set out.dtls = []
+    New $namespace
+    Try { Set $namespace = targetNs } Catch  {
+        Set out.ok = 0
+        Set out.error = "Cannot access namespace: " _ targetNs
+        Quit
+    }
+    Try {
+        Set sql = "SELECT Name, Super, Description FROM %Dictionary.CompiledClass "
+        Set sql = sql _ "WHERE (Super = 'Ens.DataTransformDTL' OR Super [ 'Ens.DataTransformDTL') "
+        Set sql = sql _ "AND (Name %STARTSWITH 'HS.Hub.Standalone.HL7.DTL.' OR Name %STARTSWITH 'HS.Gateway.HL7.') "
+        Set sql = sql _ "ORDER BY Name"
+        Set rs = ##class(%SQL.Statement).%ExecDirect(, sql)
+        Set count = 0
+        Set filterLow = $zconvert($get(filter), "L")
+        While rs.%Next() {
+            Set nm = rs.%Get("Name")
+            If filterLow '= "" {
+                If '($zconvert(nm, "L") [ filterLow) { Continue }
+            }
+            Set d = {}
+            Set d.name = nm
+            Set d.super = rs.%Get("Super")
+            Set desc = rs.%Get("Description")
+            If desc '= "" { Set d.description = $extract(desc, 1, 240) }
+            Do out.dtls.%Push(d)
+            Set count = count + 1
+        }
+        Set out.total = count
+        Set out.ok = 1
+        Set out.hint = "These are utility DTLs called from inside a custom BPL <code> block, not added as production hosts. For the end-to-end HL7-to-SDA pipeline call BuildHL7ToSDABPL — it uses HS.Gateway.HL7.HL7ToSDA3.GetSDA which dispatches to the right per-message-type DTL automatically."
+    } Catch ex {
+        Set out.ok = 0
+        Set out.error = $extract(ex.DisplayString(), 1, 400)
+    }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("ListHL7ToSDADTLs", out)
+    Quit out
+}
+
+/// Add (or update) an HS.FHIR.DTL.Util.HC.SDA3.FHIR.Process host in a
+/// production with the settings documented for SDA-to-FHIR pipelines.
+/// This is the second stage of the canonical HL7-to-FHIR pipeline:
+/// it accepts the HS.Message.XMLMessage produced by an HL7-to-SDA BPL
+/// and emits a FHIR Bundle to the downstream FHIR operation.
+///
+/// Settings documented by HS:
+///   - TargetConfigName  (Host)     — downstream host that receives the FHIR Bundle
+///   - FHIREndpoint      (Host)     — required if TargetConfigName is HS.FHIRServer.Interop.Operation
+///   - FHIRMetadataSet   (Host)     — FHIR version package ("HL7v40" = R4, "HL7v30" = STU3, etc.)
+///   - FHIRFormat        (Host)     — "JSON" or "XML"
+///   - TransmissionMode  (Host)     — "transaction" (default, all-or-nothing) or "individual"
+///   - OutputToQuickStream (Host)   — 1 = put payload in QuickStream, 0 = inline
+///   - TransformClass    (Host)     — override class (default HS.FHIR.DTL.Util.API.Transform.SDA3ToFHIR)
+///
+/// MUTATING — gated by the configure_ prefix. Forwards to
+/// AddBusinessHost (if the host doesn't exist) + UpdateBusinessHostSettings.
+///
+/// production:       fully-qualified production class name.
+/// hostName:         logical host name (e.g. "SDA.Transform.FHIR").
+/// targetConfigName: downstream host that receives the FHIR Bundle.
+/// fhirEndpoint:     FHIR endpoint URL (required if the target is an
+///                   HS.FHIRServer.Interop.Operation; leave empty
+///                   otherwise).
+/// fhirMetadataSet:  package name. Default "HL7v40" (FHIR R4).
+/// fhirFormat:       "JSON" (default) or "XML".
+/// transmissionMode: "transaction" (default) or "individual".
+/// outputToQuickStream: 0 (default) or 1.
+/// transformClass:   optional subclass override.
+ClassMethod ConfigureSDAToFHIRProcess(production As %String, hostName As %String, targetConfigName As %String, fhirEndpoint As %String = "", fhirMetadataSet As %String = "HL7v40", fhirFormat As %String = "JSON", transmissionMode As %String = "transaction", outputToQuickStream As %Boolean = 0, transformClass As %String = "") As %DynamicObject
+{
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("ConfigureSDAToFHIRProcess")
+    Set out = {}
+    Set out.tool = "configure_sda_to_fhir_process"
+    Set out.production = production
+    Set out.hostName = hostName
+    Set targetNs = ..%TargetNs()
+    Set out.namespace = targetNs
+    If $get(production) = "" {
+        Set out.ok = 0
+        Set out.error = "Pass `production`."
+        Quit out
+    }
+    If $get(hostName) = "" {
+        Set out.ok = 0
+        Set out.error = "Pass `hostName`."
+        Quit out
+    }
+    If $get(targetConfigName) = "" {
+        Set out.ok = 0
+        Set out.error = "Pass `targetConfigName` — the downstream host that receives the FHIR Bundle."
+        Quit out
+    }
+    Set settings = {}
+    Set hostSettings = {}
+    Set hostSettings.TargetConfigNames = targetConfigName
+    Set hostSettings.FHIRMetadataSet = fhirMetadataSet
+    Set hostSettings.FHIRFormat = fhirFormat
+    Set hostSettings.TransmissionMode = transmissionMode
+    Set hostSettings.OutputToQuickStream = outputToQuickStream
+    If $get(fhirEndpoint) '= "" { Set hostSettings.FHIREndpoint = fhirEndpoint }
+    If $get(transformClass) '= "" { Set hostSettings.TransformClass = transformClass }
+    Do settings.%Set("Host", hostSettings)
+    ; Decide whether the host already exists
+    Set added = 0
+    Try {
+        Set inv = ##class(AgenticInterop.Tool.Production).GetProduction(production)
+        Set hostExists = 0
+        If inv.%IsDefined("items") {
+            For i = 0:1:(inv.items.%Size()-1) {
+                If inv.items.%Get(i).name = hostName { Set hostExists = 1 Quit }
+            }
+        }
+        If 'hostExists {
+            Set addResult = ##class(AgenticInterop.Tool.Production).AddBusinessHost(production, hostName, "HS.FHIR.DTL.Util.HC.SDA3.FHIR.Process", settings)
+            If 'addResult.ok {
+                Set out.ok = 0
+                Set out.error = "AddBusinessHost failed: " _ $select(addResult.%IsDefined("error"):addResult.error, 1:"unknown")
+                Quit
+            }
+            Set added = 1
+        } Else {
+            Set updResult = ##class(AgenticInterop.Tool.Production).UpdateBusinessHostSettings(production, hostName, settings)
+            If 'updResult.ok {
+                Set out.ok = 0
+                Set out.error = "UpdateBusinessHostSettings failed: " _ $select(updResult.%IsDefined("error"):updResult.error, 1:"unknown")
+                Quit
+            }
+        }
+        Set out.ok = 1
+        Set out.added = added
+        Set out.settingsApplied = settings
+        Set out.message = $select(added:"Added", 1:"Updated") _ " SDA-to-FHIR Process host '" _ hostName _ "' in '" _ production _ "'."
+    } Catch ex {
+        Set out.ok = 0
+        Set out.error = $extract(ex.DisplayString(), 1, 400)
+    }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("ConfigureSDAToFHIRProcess", out)
+    Quit out
+}
+
+/// Add (or update) an HS.FHIR.DTL.Util.HC.FHIR.SDA3.Process host in a
+/// production with the documented FHIR-to-SDA settings. Use this for
+/// the reverse pipeline (FHIR → SDA): the process consumes a FHIR
+/// resource or bundle and emits an HS.Message.XMLMessage carrying an
+/// SDA3 stream to the named downstream host.
+///
+/// Settings documented by HS:
+///   - TargetConfigName    (Host) — downstream SDA consumer
+///   - FHIRMetadataSet     (Host) — incoming FHIR version
+///   - OutputToQuickStream (Host) — 1 to put SDA in QuickStream
+///   - TransformClass      (Host) — override (default HS.FHIR.DTL.Util.API.Transform.FHIRToSDA3)
+///
+/// MUTATING — gated by the configure_ prefix.
+///
+/// production:       fully-qualified production class name.
+/// hostName:         logical host name (e.g. "FHIR.Transform.SDA").
+/// targetConfigName: downstream host that consumes the SDA payload.
+/// fhirMetadataSet:  package name. Default "HL7v40" (FHIR R4).
+/// outputToQuickStream: 0 (default) or 1.
+/// transformClass:   optional subclass override.
+ClassMethod ConfigureFHIRToSDAProcess(production As %String, hostName As %String, targetConfigName As %String, fhirMetadataSet As %String = "HL7v40", outputToQuickStream As %Boolean = 0, transformClass As %String = "") As %DynamicObject
+{
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("ConfigureFHIRToSDAProcess")
+    Set out = {}
+    Set out.tool = "configure_fhir_to_sda_process"
+    Set out.production = production
+    Set out.hostName = hostName
+    Set targetNs = ..%TargetNs()
+    Set out.namespace = targetNs
+    If $get(production) = "" {
+        Set out.ok = 0
+        Set out.error = "Pass `production`."
+        Quit out
+    }
+    If $get(hostName) = "" {
+        Set out.ok = 0
+        Set out.error = "Pass `hostName`."
+        Quit out
+    }
+    If $get(targetConfigName) = "" {
+        Set out.ok = 0
+        Set out.error = "Pass `targetConfigName` — the downstream SDA consumer."
+        Quit out
+    }
+    Set settings = {}
+    Set hostSettings = {}
+    Set hostSettings.TargetConfigNames = targetConfigName
+    Set hostSettings.FHIRMetadataSet = fhirMetadataSet
+    Set hostSettings.OutputToQuickStream = outputToQuickStream
+    If $get(transformClass) '= "" { Set hostSettings.TransformClass = transformClass }
+    Do settings.%Set("Host", hostSettings)
+    Set added = 0
+    Try {
+        Set inv = ##class(AgenticInterop.Tool.Production).GetProduction(production)
+        Set hostExists = 0
+        If inv.%IsDefined("items") {
+            For i = 0:1:(inv.items.%Size()-1) {
+                If inv.items.%Get(i).name = hostName { Set hostExists = 1 Quit }
+            }
+        }
+        If 'hostExists {
+            Set addResult = ##class(AgenticInterop.Tool.Production).AddBusinessHost(production, hostName, "HS.FHIR.DTL.Util.HC.FHIR.SDA3.Process", settings)
+            If 'addResult.ok {
+                Set out.ok = 0
+                Set out.error = "AddBusinessHost failed: " _ $select(addResult.%IsDefined("error"):addResult.error, 1:"unknown")
+                Quit
+            }
+            Set added = 1
+        } Else {
+            Set updResult = ##class(AgenticInterop.Tool.Production).UpdateBusinessHostSettings(production, hostName, settings)
+            If 'updResult.ok {
+                Set out.ok = 0
+                Set out.error = "UpdateBusinessHostSettings failed: " _ $select(updResult.%IsDefined("error"):updResult.error, 1:"unknown")
+                Quit
+            }
+        }
+        Set out.ok = 1
+        Set out.added = added
+        Set out.settingsApplied = settings
+        Set out.message = $select(added:"Added", 1:"Updated") _ " FHIR-to-SDA Process host '" _ hostName _ "' in '" _ production _ "'."
+    } Catch ex {
+        Set out.ok = 0
+        Set out.error = $extract(ex.DisplayString(), 1, 400)
+    }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("ConfigureFHIRToSDAProcess", out)
+    Quit out
+}
+
+/// List the FHIR code-mapping lookup tables active in this namespace.
+/// SDA-FHIR transformations consult these tables to translate coded
+/// values (e.g., SDA Alert Status 'A' → FHIR event-status 'in-progress').
+/// Walks ^HS.XF.LookupTable, which is populated from
+/// dev/fhir/lookup/Lookup.json (and any namespace-specific
+/// customization at dev/fhir/lookup/custom/<NS>/Lookup.json). Use
+/// GetFHIRLookupTable to read individual code mappings, and
+/// UpdateFHIRLookupTable to customize them. Read-only.
+///
+/// Returns: { ok, namespace, tables:[{sourceSchema, targetSchema,
+/// sourceValueSet, targetValueSet, entries}], total }.
+ClassMethod ListFHIRLookupTables() As %DynamicObject
+{
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("ListFHIRLookupTables")
+    Set out = {}
+    Set targetNs = ..%TargetNs()
+    Set out.namespace = targetNs
+    Set out.tables = []
+    New $namespace
+    Try { Set $namespace = targetNs } Catch  {
+        Set out.ok = 0
+        Set out.error = "Cannot access namespace: " _ targetNs
+        Quit
+    }
+    Try {
+        Set count = 0
+        Set src = ""
+        For  {
+            Set src = $order(^HS.XF.LookupTable(src)) Quit:src=""
+            Set tgt = ""
+            For  {
+                Set tgt = $order(^HS.XF.LookupTable(src, tgt)) Quit:tgt=""
+                Set srcVS = ""
+                For  {
+                    Set srcVS = $order(^HS.XF.LookupTable(src, tgt, srcVS)) Quit:srcVS=""
+                    Set tgtVS = ""
+                    For  {
+                        Set tgtVS = $order(^HS.XF.LookupTable(src, tgt, srcVS, tgtVS)) Quit:tgtVS=""
+                        Set entries = 0
+                        Set code = ""
+                        For  {
+                            Set code = $order(^HS.XF.LookupTable(src, tgt, srcVS, tgtVS, code)) Quit:code=""
+                            Set entries = entries + 1
+                        }
+                        Set t = {}
+                        Set t.sourceSchema = src
+                        Set t.targetSchema = tgt
+                        Set t.sourceValueSet = srcVS
+                        Set t.targetValueSet = tgtVS
+                        Set t.entries = entries
+                        Do out.tables.%Push(t)
+                        Set count = count + 1
+                    }
+                }
+            }
+        }
+        Set out.total = count
+        Set out.ok = 1
+        If count = 0 {
+            Set out.hint = "Lookup tables are loaded from dev/fhir/lookup/Lookup.json on first FHIR-transformation use. If the global is empty, run HS.FHIR.DTL.Util.API.LookupTable.ImportLookupJSONToGlobal() or trigger a transformation."
+        }
+    } Catch ex {
+        Set out.ok = 0
+        Set out.error = $extract(ex.DisplayString(), 1, 400)
+    }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("ListFHIRLookupTables", out)
+    Quit out
+}
+
+/// Read the code mappings of a specific FHIR lookup table — the set
+/// of sourceCode → targetCode entries for a (sourceSchema,
+/// targetSchema, sourceValueSet, targetValueSet) tuple. Use
+/// ListFHIRLookupTables to discover available tuples. Read-only.
+///
+/// sourceSchema:   e.g., "SDA3"
+/// targetSchema:   e.g., "vR4"
+/// sourceValueSet: e.g., "HS.SDA3.Alert:Status"
+/// targetValueSet: e.g., "event-status"
+///
+/// Returns: { ok, namespace, sourceSchema, targetSchema,
+/// sourceValueSet, targetValueSet, entries:[{sourceCode, targetCode}],
+/// total }.
+ClassMethod GetFHIRLookupTable(sourceSchema As %String, targetSchema As %String, sourceValueSet As %String, targetValueSet As %String) As %DynamicObject
+{
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("GetFHIRLookupTable")
+    Set out = {}
+    Set out.sourceSchema = sourceSchema
+    Set out.targetSchema = targetSchema
+    Set out.sourceValueSet = sourceValueSet
+    Set out.targetValueSet = targetValueSet
+    Set targetNs = ..%TargetNs()
+    Set out.namespace = targetNs
+    Set out.entries = []
+    If ($get(sourceSchema) = "") || ($get(targetSchema) = "") || ($get(sourceValueSet) = "") || ($get(targetValueSet) = "") {
+        Set out.ok = 0
+        Set out.error = "Pass all four: sourceSchema, targetSchema, sourceValueSet, targetValueSet. Use ListFHIRLookupTables to discover the tuples."
+        Quit out
+    }
+    New $namespace
+    Try { Set $namespace = targetNs } Catch  {
+        Set out.ok = 0
+        Set out.error = "Cannot access namespace: " _ targetNs
+        Quit
+    }
+    Try {
+        Set count = 0
+        Set code = ""
+        For  {
+            Set code = $order(^HS.XF.LookupTable(sourceSchema, targetSchema, sourceValueSet, targetValueSet, code)) Quit:code=""
+            Set e = {}
+            Set e.sourceCode = code
+            Set e.targetCode = ^HS.XF.LookupTable(sourceSchema, targetSchema, sourceValueSet, targetValueSet, code)
+            Do out.entries.%Push(e)
+            Set count = count + 1
+        }
+        Set out.total = count
+        Set out.ok = 1
+        If count = 0 {
+            Set out.error = "No entries found for this tuple. Run ListFHIRLookupTables to see available source/target/valueSet combinations."
+        }
+    } Catch ex {
+        Set out.ok = 0
+        Set out.error = $extract(ex.DisplayString(), 1, 400)
+    }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("GetFHIRLookupTable", out)
+    Quit out
+}
+
+/// Add, change, or delete one code-to-code mapping in a FHIR lookup
+/// table. Wraps HS.FHIR.DTL.Util.API.LookupTable: loads the namespace
+/// Lookup.json into memory, applies UpdateLookupObjectItem, writes
+/// back via ExportObjectToLookupJSON, then refreshes the runtime
+/// global via ImportLookupJSONToGlobal so the new mapping takes
+/// effect immediately. MUTATING — gated by the update_ prefix.
+///
+/// sourceSchema:   e.g., "SDA3"
+/// targetSchema:   e.g., "vR4"
+/// sourceValueSet: e.g., "HS.SDA3.Alert:Status"
+/// targetValueSet: e.g., "event-status"
+/// sourceCode:     the code in the source vocabulary (e.g. "A").
+/// targetCode:     the code in the target vocabulary (e.g. "in-progress"),
+///                 OR empty if deleteItem=1.
+/// deleteItem:     1 to remove the sourceCode entry; 0 (default) to
+///                 add or replace it.
+ClassMethod UpdateFHIRLookupTable(sourceSchema As %String, targetSchema As %String, sourceValueSet As %String, targetValueSet As %String, sourceCode As %String, targetCode As %String = "", deleteItem As %Boolean = 0) As %DynamicObject
+{
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("UpdateFHIRLookupTable")
+    Set out = {}
+    Set out.tool = "update_fhir_lookup_table"
+    Set out.sourceSchema = sourceSchema
+    Set out.targetSchema = targetSchema
+    Set out.sourceValueSet = sourceValueSet
+    Set out.targetValueSet = targetValueSet
+    Set out.sourceCode = sourceCode
+    Set out.targetCode = targetCode
+    Set out.deleteItem = deleteItem
+    Set targetNs = ..%TargetNs()
+    Set out.namespace = targetNs
+    If ($get(sourceSchema) = "") || ($get(targetSchema) = "") || ($get(sourceValueSet) = "") || ($get(targetValueSet) = "") || ($get(sourceCode) = "") {
+        Set out.ok = 0
+        Set out.error = "Pass sourceSchema, targetSchema, sourceValueSet, targetValueSet, sourceCode (all required). Use ListFHIRLookupTables/GetFHIRLookupTable first to verify the tuple exists."
+        Quit out
+    }
+    If ('deleteItem) && ($get(targetCode) = "") {
+        Set out.ok = 0
+        Set out.error = "Pass `targetCode`, or pass deleteItem=1 to remove the entry."
+        Quit out
+    }
+    New $namespace
+    Try { Set $namespace = targetNs } Catch  {
+        Set out.ok = 0
+        Set out.error = "Cannot access namespace: " _ targetNs
+        Quit
+    }
+    Try {
+        ; 1. Locate Lookup.json — prefer namespace-specific custom copy.
+        ; Path resolution mirrors HS.FHIR.DTL.Util.API.LookupTable: the
+        ; HS macros $$$DurableSYSDir / $$$TransientRootDir both resolve
+        ; to the IRIS install root in non-durable installs (this
+        ; container included). For durable %SYS deployments override
+        ; via ISC_DATA_DIRECTORY; this tool currently assumes the
+        ; non-durable layout.
+        Set installRoot = $system.Util.InstallDirectory()
+        Set customDir = installRoot _ "dev/fhir/lookup/custom/" _ targetNs _ "/"
+        Set customFile = ##class(%Library.File).NormalizeFilename("Lookup.json", customDir)
+        If '##class(%Library.File).Exists(customFile) {
+            Set defaultDir = installRoot _ "dev/fhir/lookup/"
+            Set defaultFile = ##class(%Library.File).NormalizeFilename("Lookup.json", defaultDir)
+            If '##class(%Library.File).Exists(defaultFile) {
+                Set out.ok = 0
+                Set out.error = "Default Lookup.json not found at " _ defaultFile
+                Quit
+            }
+            If '##class(%Library.File).DirectoryExists(customDir) {
+                Set tCr = ##class(%Library.File).CreateDirectoryChain(customDir)
+                If 'tCr {
+                    Set out.ok = 0
+                    Set out.error = "Could not create custom lookup directory: " _ customDir
+                    Quit
+                }
+            }
+            Set copySc = ##class(%Library.File).CopyFile(defaultFile, customFile)
+            If 'copySc {
+                Set out.ok = 0
+                Set out.error = "Could not bootstrap custom Lookup.json from default."
+                Quit
+            }
+        }
+        ; 2. Load into a dynamic object
+        Set dynObj = ""
+        Set sc = ##class(HS.FHIR.DTL.Util.API.LookupTable).ImportLookupJSONToObject(customFile, .dynObj)
+        If 'sc {
+            Set out.ok = 0
+            Set out.error = "ImportLookupJSONToObject failed: " _ $system.Status.GetErrorText(sc)
+            Quit
+        }
+        ; 3. Mutate
+        Do ##class(HS.FHIR.DTL.Util.API.LookupTable).UpdateLookupObjectItem(dynObj, sourceSchema, targetSchema, sourceValueSet, targetValueSet, sourceCode, $get(targetCode), deleteItem)
+        ; 4. Persist back to Lookup.json + refresh runtime global
+        Set sc2 = ##class(HS.FHIR.DTL.Util.API.LookupTable).ExportObjectToLookupJSON(dynObj, targetNs)
+        If 'sc2 {
+            Set out.ok = 0
+            Set out.error = "ExportObjectToLookupJSON failed: " _ $system.Status.GetErrorText(sc2)
+            Quit
+        }
+        Set sc3 = ##class(HS.FHIR.DTL.Util.API.LookupTable).ImportLookupJSONToGlobal(targetNs)
+        If 'sc3 {
+            Set out.ok = 0
+            Set out.error = "ImportLookupJSONToGlobal failed: " _ $system.Status.GetErrorText(sc3)
+            Quit
+        }
+        Set out.ok = 1
+        Set out.updated = 1
+        Set out.message = $select(deleteItem:"Deleted", 1:"Wrote") _ " mapping " _ sourceSchema _ "/" _ sourceValueSet _ ":" _ sourceCode _ $select(deleteItem:"", 1:" -> " _ targetCode _ " (" _ targetSchema _ "/" _ targetValueSet _ ")") _ "."
+    } Catch ex {
+        Set out.ok = 0
+        Set out.error = $extract(ex.DisplayString(), 1, 400)
+    }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("UpdateFHIRLookupTable", out)
+    Quit out
+}
+
+/// Create (or update) an EnsLib.HL7.SearchTable subclass with a
+/// SearchSpec XData block driving custom HL7 message indexing.
+/// `EnsLib.HL7.SearchTable` already indexes MSHTypeName,
+/// MSHControlID, PatientID, PatientName, PatientAcct by default —
+/// this tool adds your own fields on top. Use it when the user wants
+/// to search HL7 messages by something the defaults don't cover (e.g.
+/// AccountNumber, InsuranceCo, encounter visit number).
+///
+/// MUTATING — gated by the create_ prefix.
+///
+/// name:  fully-qualified class name (e.g.,
+///        "MyApp.HL7.SearchTable").
+/// items: %DynamicArray. Each entry is an object with:
+///   - propName   (required) — name of the search property.
+///   - expression (required) — virtual-document expression that
+///                produces the value (e.g. "{PID:18.1}" or
+///                "{1:4}_\"|\"_{1:3}").
+///   - docType    (optional) — DocType filter (e.g. "2.5:ADT_A01"
+///                or ":ADT_A05"). Empty = applies to any HL7 message.
+///   - propType   (optional) — "String" (default), "String:CaseSensitive",
+///                "DateTime:HL7", "Integer", "Numeric".
+///   - storeNulls (optional) — true to record nulls; default false.
+///
+/// Returns: { ok, namespace, name, created|updated, compiled,
+/// itemCount }.
+ClassMethod CreateHL7SearchTable(name As %String, items As %DynamicArray) As %DynamicObject
+{
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("CreateHL7SearchTable")
+    Set out = {}
+    Set out.tool = "create_hl7_search_table"
+    Set out.name = name
+    Set targetNs = ..%TargetNs()
+    Set out.namespace = targetNs
+    If $get(name) = "" {
+        Set out.ok = 0
+        Set out.error = "Pass `name` (fully-qualified class name for the search table subclass)."
+        Quit out
+    }
+    If '$isobject($get(items)) {
+        Set out.ok = 0
+        Set out.error = "Pass `items` as a %DynamicArray of search-spec entries. Each entry needs propName + expression at minimum."
+        Quit out
+    }
+    If items.%Size() = 0 {
+        Set out.ok = 0
+        Set out.error = "items array is empty — at least one search-spec entry is required."
+        Quit out
+    }
+    New $namespace
+    Try { Set $namespace = targetNs } Catch  {
+        Set out.ok = 0
+        Set out.error = "Cannot access namespace: " _ targetNs
+        Quit
+    }
+    Try {
+        Set NL = $char(10)
+        Set xml = "<Items>" _ NL
+        For i = 0:1:(items.%Size()-1) {
+            Set it = items.%Get(i)
+            If '$isobject(it) { Continue }
+            Set propName = $select(it.%IsDefined("propName"):it.propName, 1:"")
+            Set expr     = $select(it.%IsDefined("expression"):it.expression, 1:"")
+            If (propName = "") || (expr = "") {
+                Set out.ok = 0
+                Set out.error = "items[" _ i _ "]: both propName and expression are required."
+                Quit
+            }
+            Set docType  = $select(it.%IsDefined("docType"):it.docType, 1:"")
+            Set propType = $select(it.%IsDefined("propType"):it.propType, 1:"")
+            Set storeNul = $select(it.%IsDefined("storeNulls"):it.storeNulls, 1:0)
+            Set attrs = " DocType=""" _ docType _ """ PropName=""" _ propName _ """"
+            If propType '= "" { Set attrs = attrs _ " PropType=""" _ propType _ """" }
+            If storeNul { Set attrs = attrs _ " StoreNulls=""true""" }
+            ; XML-escape only the expression body; the user's curly-brace
+            ; HL7 paths and ObjectScript pieces stay as-is.
+            Set escExpr = $replace(expr, "&", "&amp;")
+            Set escExpr = $replace(escExpr, "<", "&lt;")
+            Set escExpr = $replace(escExpr, ">", "&gt;")
+            Set xml = xml _ "  <Item" _ attrs _ ">" _ escExpr _ "</Item>" _ NL
+        }
+        If 'out.ok, out.%IsDefined("error") { Quit }
+        Set xml = xml _ "</Items>"
+        ; Build (or replace) the class
+        Set wasExisting = ##class(%Dictionary.ClassDefinition).%ExistsId(name)
+        If wasExisting {
+            Set cdef = ##class(%Dictionary.ClassDefinition).%OpenId(name)
+            If '$isobject(cdef) {
+                Set out.ok = 0
+                Set out.error = "Cannot open existing class: " _ name
+                Quit
+            }
+            Set cdef.Super = "EnsLib.HL7.SearchTable"
+            ; Drop existing SearchSpec XData if present
+            Set keep = ##class(%ListOfObjects).%New()
+            For j = 1:1:cdef.XDatas.Count() {
+                Set xd = cdef.XDatas.GetAt(j)
+                If xd.Name '= "SearchSpec" { Do keep.Insert(xd) }
+            }
+            Do cdef.XDatas.Clear()
+            For j = 1:1:keep.Count() { Do cdef.XDatas.Insert(keep.GetAt(j)) }
+        } Else {
+            Set cdef = ##class(%Dictionary.ClassDefinition).%New(name)
+            Set cdef.Super = "EnsLib.HL7.SearchTable"
+            Set cdef.ProcedureBlock = 1
+        }
+        Set xdata = ##class(%Dictionary.XDataDefinition).%New()
+        Set xdata.Name = "SearchSpec"
+        Set xdata.XMLNamespace = "http://www.intersystems.com/EnsSearchTable"
+        Do xdata.Data.Write(xml)
+        Do cdef.XDatas.Insert(xdata)
+        Set sc = cdef.%Save()
+        If 'sc {
+            Set out.ok = 0
+            Set out.error = "%Save failed: " _ $system.Status.GetErrorText(sc)
+            Quit
+        }
+        Set sc = $SYSTEM.OBJ.Compile(name, "ck-d")
+        If 'sc {
+            Set out.ok = 0
+            Set out.compiled = 0
+            Set out.compileError = $extract($system.Status.GetErrorText(sc), 1, 1500)
+            Quit
+        }
+        Set out.ok = 1
+        Set out.compiled = 1
+        Set out.itemCount = items.%Size()
+        Set out.searchSpecXml = xml
+        If wasExisting {
+            Set out.updated = 1
+            Set out.message = "Search table '" _ name _ "' updated and compiled. Wire it on a service via the SearchTableClass setting."
+        } Else {
+            Set out.created = 1
+            Set out.message = "Search table '" _ name _ "' created and compiled. Wire it on a service via the SearchTableClass setting."
+        }
+    } Catch ex {
+        Set out.ok = 0
+        Set out.error = $extract(ex.DisplayString(), 1, 400)
+    }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("CreateHL7SearchTable", out)
+    Quit out
 }
 
 }

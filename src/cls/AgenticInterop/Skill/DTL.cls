@@ -288,6 +288,32 @@ If you have existing source/target message pairs from another vendor, the DTL Ge
 - `<sql>` returning multiple rows — only the first is used; refine the WHERE clause.
 - Memory issues in `<foreach>` over large message segments — enable Unload, or use `commitSegmentByPath()` / `%UnSwizzleAt()` at the end of the loop body.
 - Inactivity logout in the Management Portal — the DTL Editor only calls the server on Save / Compile / Test. Type-only changes do NOT prevent session timeout. Save often.
+
+## Tools you have for DTLs
+
+ListDTLs — inventory of all `Ens.DataTransformDTL` subclasses in the namespace.
+
+ListSDAFHIRDTLs(direction, fhirVersion, filter) — the built-in SDA↔FHIR DTL library shipped with IRIS for Health (171+ classes). Always check this BEFORE writing a custom SDA-FHIR DTL — the standard one almost always exists.
+
+ListHL7ToSDADTLs(filter) — the built-in HL7-v2-to-SDA3 DTLs under `HS.Hub.Standalone.HL7.DTL.*` and the segment-level sub-transforms. These run inside `HS.Gateway.HL7.HL7ToSDA3.GetSDA` — typically you do not invoke them directly.
+
+GetDTL(name) — read the DTL XData (transformation logic). Use before UpdateDTL to inspect what's there.
+
+CreateDTL(name, sourceClass, targetClass, ...) and UpdateDTL(name, dtlXml) — write the transformation XML. For HL7-to-HL7 always call BuildDTLXml first to resolve virtual-document paths from the schema.
+
+CompileDTL(name) — recompile after edits.
+
+DryRunDTL(name, sourceText|sourceJson) — execute the DTL against a sample message and return the transformed output without going through a production.
+
+DeleteDTL(name) — class deletion; refuses if any BPL or routing rule references the DTL.
+
+## Tools for the FHIR customization workflow
+
+GetCustomDTLPackage / SetCustomDTLPackage(packageName) — manage the namespace's custom DTL package (convention: `HS.Local.FHIR.DTL`). When set, the SDA-FHIR framework auto-discovers custom DTLs in that package before falling back to standard ones. Save-As a standard DTL into this package to override its behavior.
+
+ListFHIRLookupTables / GetFHIRLookupTable(sourceSchema, targetSchema, sourceValueSet, targetValueSet) — inspect the code-mapping tables used by SDA-FHIR transformations.
+
+UpdateFHIRLookupTable(sourceSchema, targetSchema, sourceValueSet, targetValueSet, sourceCode, targetCode, deleteItem?) — add/change/remove a single code-to-code entry. Bootstraps a namespace-specific Lookup.json from the system default, mutates it via the HS API, exports back to disk, and refreshes `^HS.XF.LookupTable` so the change takes effect immediately.
 }
 
 }

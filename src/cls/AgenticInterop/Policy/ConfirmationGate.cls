@@ -28,7 +28,7 @@ Class AgenticInterop.Policy.ConfirmationGate Extends %AI.Policy.Authorization
 /// PascalCase prefixes match the auto-discovered method names from
 /// %AI.Tool subclasses (e.g. StartProduction, DeleteProduction).
 /// Also includes snake_case variants for any manually-registered tools.
-Parameter MUTATINGPREFIXES = "Start,Stop,Delete,Remove,Create,Add,Update,Send,Compile,Purge,Drop,Reset,Clear,start_,stop_,delete_,remove_,create_,add_,update_,send_,compile_,purge_,drop_,reset_,clear_";
+Parameter MUTATINGPREFIXES = "Start,Stop,Delete,Remove,Create,Add,Update,Send,Compile,Purge,Drop,Reset,Clear,Build,Configure,Set,Release,Enable,Disable,start_,stop_,delete_,remove_,create_,add_,update_,send_,compile_,purge_,drop_,reset_,clear_,build_,configure_,set_,release_,enable_,disable_";
 
 /// Comma-separated list of approval tokens the user has already
 /// granted in this conversation turn. Set by the chat service
