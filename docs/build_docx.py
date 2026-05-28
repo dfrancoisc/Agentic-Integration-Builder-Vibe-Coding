@@ -254,7 +254,7 @@ add_table(
     [
         ['Catalog size', '5,000+ classes indexed', 'Current catalogs cover Ens.* and HS.* classes; must scale as customers add custom classes'],
         ['Catalog auto-growth', 'New artifacts indexed after every successful build', 'DTLs, BPLs, and routing rules created by the copilot are added to the HS.* catalog automatically'],
-        ['Tool count per agent', '50+ tools without degradation', 'Currently 48 tools across 5 classes; adding new tool classes must not degrade prompt token budget'],
+        ['Tool count per agent', '50+ tools without degradation', 'Currently 118 tools across 7 classes; adding new tool classes must not degrade prompt token budget'],
         ['Namespace independence', 'Any namespace on the instance', 'Tools execute in the user\'s selected namespace via X-IRIS-Namespace header'],
         ['LLM provider flexibility', 'Bedrock, Anthropic, Azure OpenAI', 'Provider is user-configurable with connection health checks; switching providers requires no code changes'],
         ['Skill extensibility', 'Add new skills without redeployment', 'Skills are loaded dynamically from class parameters; new Skill.Base subclasses register automatically'],

@@ -222,7 +222,7 @@ def build_doc1():
         "Function Interface call to the Rust LLM bridge), but the bridge expects a JSON "
         "string. This throws a <FUNCTION> error that prevents any skill from being "
         "instantiated. We created AgenticInterop.Skill.Base that overrides %OnNew to "
-        "serialize the object before the $ZF call. All 12 skills extend this base class "
+        "serialize the object before the $ZF call. All 15 domain skills extend this base class "
         "instead of %AI.Agent.Skill directly.",
         style="List Bullet")
 
@@ -241,8 +241,8 @@ def build_doc1():
     doc.add_paragraph(
         "The %AI Framework exposes default tools (FileSystem, SQL, ShellTools) that are "
         "irrelevant for healthcare interoperability and waste LLM tokens. The ToolFilter "
-        "policy strips these before each LLM call, reducing the tool catalog from 57 to "
-        "42 tools and saving ~5K tokens per request.",
+        "policy strips these before each LLM call, leaving only the 118 healthcare-specific "
+        "tools defined by the project.",
         style="List Bullet")
 
     # =========================================================================
@@ -831,7 +831,7 @@ def build_doc1():
         "The AI Hub Admin enables/disables MCP servers and customizes their descriptions "
         "to control which capability domains the agent has access to.")
     add_figure(doc, img("03_mcps_list.png"),
-        "MCPs tab showing the four MCP servers: catalog, production, testing, and transform, each with their class name, description, and toolset count")
+        "MCPs tab showing the six MCP servers: catalog, production, testing, transform, fhirserver, and bulkfhir, each with their class name, description, and toolset count")
     add_table(doc,
         ["MCP Server", "ToolSets", "Purpose"],
         [
@@ -847,9 +847,9 @@ def build_doc1():
         "The AI Hub Admin views and customizes ToolSets and their individual tools -- "
         "tuning descriptions, toggling tools on/off, and dry-running tools to verify behavior.")
     add_figure(doc, img("04_toolsets_list.png"),
-        "ToolSets tab showing the five ToolSets: Catalog (8 tools), Monitoring (6 tools), Production (13 tools), Testing (8 tools), Transform (13 tools)")
+        "ToolSets tab showing the seven ToolSets: Catalog (7 tools), Monitoring (5 tools), Production (29 tools), Testing (8 tools), Transform (30 tools), FHIRServer (26 tools), BulkFHIR (13 tools)")
     add_figure(doc, img("05_tools_list.png"),
-        "Tools tab listing all 42 tools across the five ToolSet classes")
+        "Tools tab listing all 118 tools across the seven ToolSet classes")
     doc.add_paragraph("Clicking a tool opens the detail editor with the LLM-facing description and schema:")
     add_figure(doc, img("06_tool_detail.png"),
         "Tool detail editor for DescribeClass showing the contract-style description, method signature, JSON input schema, implementation kind, timeout, and confirmation requirement")
@@ -1160,7 +1160,7 @@ def build_doc1():
         "namespace validation.")
     doc.add_paragraph(
         "ToolFilter policy: Strips framework-default tools (FileSystem, SQL, ShellTools) "
-        "from the LLM's tool catalog. Reduces the catalog from 57 to 42 healthcare-specific "
+        "from the LLM's tool catalog, leaving only the 118 healthcare-specific "
         "tools, saving ~5K tokens per request. This policy also prevents the LLM from using "
         "tools that could bypass the permission model (e.g., raw SQL execution).")
 
@@ -1297,14 +1297,15 @@ def build_doc1():
     add_table(doc,
         ["Tab", "Purpose", "Persona", "Entity Count"],
         [
-            ["Agents", "Agent configuration (system prompt, MCPs, skills, provider)", "AI Hub Admin", "1 (HealthInterop)"],
-            ["MCPs", "MCP server enable/disable and description", "AI Hub Admin", "4 servers"],
-            ["ToolSets", "ToolSet grouping and description", "AI Hub Admin", "5 ToolSets"],
-            ["Tools", "Individual tool schemas and dry-run", "AI Hub Admin", "42 tools"],
-            ["Skills", "Skill INSTRUCTIONS editor", "AI Hub Admin", "12 skills"],
+            ["Agents", "Agent configuration (system prompt, MCPs, skills, provider)", "AI Hub Admin", "2 (HealthInterop, FHIRSpecialist)"],
+            ["MCPs", "MCP server enable/disable and description", "AI Hub Admin", "6 servers"],
+            ["ToolSets", "ToolSet grouping and description", "AI Hub Admin", "7 ToolSets"],
+            ["Tools", "Individual tool schemas and dry-run", "AI Hub Admin", "118 tools"],
+            ["Skills", "Skill INSTRUCTIONS editor", "AI Hub Admin", "15 domain skills"],
             ["Connections", "LLM provider credentials and health check", "AI Hub Admin", "N (user-configured)"],
             ["Catalogs", "Vector catalog status, rebuild, search", "AI Hub Admin", "2 catalogs"],
             ["Transforms", "Field-level mapping explorer (Transformation and Mapping Catalog)", "AI Hub Admin / End User", "1,538 rows"],
+            ["Chatbots", "Bind each chatbot surface to an agent", "AI Hub Admin", "2 (Interop, FHIR Management)"],
             ["Audit", "Request audit trail", "AI Hub Admin", "All API calls"],
         ])
 
@@ -1312,11 +1313,11 @@ def build_doc1():
     add_table(doc,
         ["Framework Class", "Application Subclass", "Purpose"],
         [
-            ["%AI.Agent", "AgenticInterop.Agent.HealthInterop", "Main agent instance"],
-            ["%AI.MCP.Service", "AgenticInterop.MCP.Base + 4 servers", "MCP server grouping"],
-            ["%AI.ToolSet", "5 ToolSet classes", "Tool grouping by domain"],
-            ["%AI.Tool", "5 Tool classes (42 methods)", "Individual tool implementations"],
-            ["%AI.Agent.Skill", "AgenticInterop.Skill.Base + 12 skills", "Domain knowledge sub-agents"],
+            ["%AI.Agent", "AgenticInterop.Agent.HealthInterop + FHIRSpecialist", "Main + FHIR-specialist agent instances"],
+            ["%AI.MCP.Service", "AgenticInterop.MCP.Base + 6 servers", "MCP server grouping"],
+            ["%AI.ToolSet", "7 ToolSet classes", "Tool grouping by domain"],
+            ["%AI.Tool", "7 Tool classes (118 methods)", "Individual tool implementations"],
+            ["%AI.Agent.Skill", "AgenticInterop.Skill.Base + 15 domain skills", "Domain knowledge sub-agents"],
             ["%AI.RAG.KnowledgeBase", "search_ens, search_hs", "Vector search catalogs"],
             ["%AI.ToolMgr", "Used at query time", "RAG query execution"],
             ["%AI.Agent.Policy", "ConfirmationGate, ToolFilter", "Security and token policies"],
@@ -1496,11 +1497,11 @@ def build_doc2():
     doc.add_page_break()
     doc.add_heading("6. Tools", level=1)
     doc.add_paragraph(
-        "42 tools across 5 tool classes implement the agent's capabilities. Each tool is "
+        "118 tools across 7 tool classes implement the agent's capabilities. Each tool is "
         "a method with [Tool] annotation, JSON Schema input/output, and a natural-language "
         "description.")
     add_figure(doc, img("05_tools_list.png"),
-        "All 42 tools listed across the five ToolSet classes")
+        "All 118 tools listed across the seven ToolSet classes")
     add_figure(doc, img("06_tool_detail.png"),
         "Tool detail editor showing the LLM contract description, method signature, input schema, and configuration")
 
@@ -1684,8 +1685,8 @@ def build_doc2():
             ["Agent", "4 classes (HealthInterop, Manager, Monitor, SkillLoader)", "Built"],
             ["MCP Servers", "5 classes (Base + 4 servers)", "Built"],
             ["ToolSets", "5 classes", "Built"],
-            ["Tools", "5 classes, 42 tools", "Built"],
-            ["Skills", "13 classes (Base + 12 skills)", "Built"],
+            ["Tools", "7 classes, 118 tools", "Built"],
+            ["Skills", "16 classes (Base + 15 domain skills)", "Built"],
             ["Data model", "6 persistent classes", "Built"],
             ["REST API", "1 dispatcher + 13 service classes", "Built"],
             ["Admin UI", "3 HTML + 2 JS + 2 CSS files", "Built"],
@@ -1746,7 +1747,7 @@ def build_doc3():
     doc.add_paragraph(
         "Extension: Created AgenticInterop.Skill.Base that overrides %OnNew to serialize "
         "the DynamicObject to a JSON string before the $ZF call using literal macro values "
-        "(IrisLLMLibrary=1042, LLMBUILDSKILLFROMJSON=66). All 12 skills extend this base "
+        "(IrisLLMLibrary=1042, LLMBUILDSKILLFROMJSON=66). All 15 domain skills extend this base "
         "class instead of %AI.Agent.Skill directly.")
     doc.add_paragraph(
         "Recommendation: Fix %AI.Agent.Skill.%OnNew to serialize the DynamicObject to a "
@@ -1778,7 +1779,7 @@ def build_doc3():
         "and can cause the model to make irrelevant tool calls.")
     doc.add_paragraph(
         "Extension: AgenticInterop.Policy.ToolFilter strips framework-default tools "
-        "before each LLM call, reducing the catalog from 57 to 42 tools.")
+        "before each LLM call, leaving only the 118 healthcare-specific tools.")
     doc.add_paragraph(
         "Recommendation: Add a ToolFilter-like policy to the %AI Framework defaults, or "
         "provide an opt-in mechanism for framework tools.")

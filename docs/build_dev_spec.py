@@ -1412,13 +1412,14 @@ doc.add_heading('C.1 Project Summary', level=2)
 add_table(
     ['Metric', 'Value'],
     [
-        ['ObjectScript classes', '58'],
-        ['Tool classes (%AI.Tool)', '5'],
-        ['Tools (public ClassMethods)', '42'],
-        ['ToolSets (%AI.ToolSet)', '5'],
-        ['MCP Servers', '5 (Production, Transform, Testing, Catalog, Monitoring)'],
-        ['Skills (%AI.Agent.Skill)', '9'],
-        ['IPM module version', '1.0.0'],
+        ['ObjectScript classes', '82'],
+        ['Tool classes (%AI.Tool)', '7'],
+        ['Tools (public ClassMethods)', '118'],
+        ['ToolSets (%AI.ToolSet)', '7'],
+        ['MCP Servers', '6 (Production, Transform, Testing, Catalog, FHIRServer, BulkFHIR) + MCP.Base abstract'],
+        ['Skills (%AI.Agent.Skill)', '15 domain + 1 abstract base'],
+        ['Agents (%AI.Agent)', '2 (HealthInterop, FHIRSpecialist)'],
+        ['IPM module version', '1.1.0'],
         ['Repository', 'github.com/dfrancoisc/agentic_interop'],
     ]
 )
