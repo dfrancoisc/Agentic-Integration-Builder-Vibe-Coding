@@ -94,6 +94,16 @@
 <Invoke Class="AgenticInterop.Install.PackageMapping" Method="Apply" Phase="Activate" />
 <Invoke Class="AgenticInterop.Install.PackageMapping" Method="Revert" Phase="UnConfigure" />
 
+<!-- Provision the IRIS-standard OAuth 2.0 client credentials config used
+     by the universal HL7-to-FHIR pipeline's outbound HTTPOperation. Creates
+     SSL config FHIR-Client-SSL, OAuth2.ServerDefinition for the auth server
+     issuer, and OAuth2.Client FHIR-OAuth-Client (ClientType=confidential,
+     grant_types=client_credentials). Issuer + endpoints + ClientId/Secret
+     start as placeholders; operator updates them via the Management Portal
+     when the real FHIR server URL is known. Idempotent. -->
+<Invoke Class="AgenticInterop.Install.FHIRClientOAuthSetup" Method="Apply" Phase="Activate" />
+<Invoke Class="AgenticInterop.Install.FHIRClientOAuthSetup" Method="Revert" Phase="UnConfigure" />
+
 <!-- Seed the two shipped chatbots for the chatbot config layer:
      interop -> Health Interop (generalist), fhir-management -> FHIR
      Specialist. Idempotent; never overwrites a user-edited row. -->
