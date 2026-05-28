@@ -90,8 +90,14 @@ def add_table(doc, headers, rows, col_widths=None):
 
 
 def add_screenshot(doc, name, caption, width_inches=6.0):
+    # Allow callers to omit ".png" — append if missing.
+    if not name.lower().endswith(".png"):
+        name = name + ".png"
     path = img(name)
-    if os.path.exists(path):
+    if not os.path.exists(path):
+        print(f"  WARN: screenshot missing — {name} (expected at {path})")
+        return
+    if True:
         p = doc.add_paragraph()
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         p.add_run().add_picture(path, width=Inches(width_inches))
@@ -164,6 +170,7 @@ def build_doc1():
         "acts after the user explicitly approves. It refuses to expose internal class names, tool "
         "names, or JSON output; the user sees endpoint paths, namespace names, counts, and outcomes."
     )
+    add_screenshot(doc, "21_fhir_chatbot", "Figure 1.1 — FHIR Assistant chatbot at /agentic/chat/index.html?chatbot=fhir-management. The agent operates under the FHIRSpecialist system prompt with plan-authorize-act discipline.")
 
     doc.add_heading("1.2 Why a Separate FHIR Assistant", level=2)
     doc.add_paragraph(
@@ -536,6 +543,7 @@ def build_doc2():
         "guidance (plain prose, SDA/BFC acronym expansion, yes/no answer in first sentence). The full "
         "prompt lives in src/cls/AgenticInterop/Agent/FHIRSpecialist.cls."
     )
+    add_screenshot(doc, "23_admin_agent_fhir", "Figure 2.1 — Admin UI Agents tab with FHIRSpecialist selected. The system prompt, MCP bindings, skill bindings, and provider can be edited without redeploying source.")
 
     # ---- 3. MCP Servers ----
     doc.add_page_break()
@@ -561,6 +569,7 @@ def build_doc2():
         "introspection, glossary, error-code lookup, plus the two vector-catalog search endpoints "
         "(search_ens, search_hs) shared with the Health Interop agent."
     )
+    add_screenshot(doc, "24_admin_mcp_fhirserver", "Figure 3.1 — Admin UI MCPs tab showing MCP.FHIRServer. Each MCP groups one or more ToolSets for admin-UI configuration.")
 
     # ---- 4. Tools ----
     doc.add_page_break()
@@ -597,6 +606,7 @@ def build_doc2():
             ["GetFHIRQueryPerformance", "Run a query-performance probe against representative resource types"],
             ["ResetFHIRServerData", "Wipe all resources from a non-production endpoint (destructive)"],
         ])
+    add_screenshot(doc, "25_admin_tool_fhirserver", "Figure 4.1 — Admin UI Tools tab with Tool.FHIRServer expanded. Each public ClassMethod is a tool the LLM can call; descriptions are LLM-facing contracts.")
 
     doc.add_heading("4.2 Tool.BulkFHIR (13 methods)", level=2)
     add_table(doc,
@@ -694,6 +704,8 @@ def build_doc2():
         "Chatbots tab — for example, swapping AgentClass to a custom subclass — takes effect on the next "
         "chat session without redeploying the patch."
     )
+    add_screenshot(doc, "20_fhir_management", "Figure 6.1 — Shipped IRIS FHIR Server Management page at /csp/fhir-management. The FHIR Assistant launcher button is injected by AgenticInterop.Install.FHIRManagementPatch on IPM Activate.")
+    add_screenshot(doc, "22_admin_chatbots", "Figure 6.2 — Admin UI Chatbots tab showing both shipped chatbot rows: interop (Health Interop) and fhir-management (FHIR Specialist). The agent class binding is editable without redeploying source.")
 
     # ---- 7. Security Model ----
     doc.add_page_break()
@@ -932,6 +944,8 @@ def build_doc3():
         "chatbot=interop) and the FHIR Management page (mode=floating, chatbot=fhir-management). No "
         "code duplication."
     )
+    add_screenshot(doc, "20_fhir_management", "Figure 8.1 — FHIR Server Management page with the FHIR Assistant launcher injected. Users discover the agent without navigating away.")
+    add_screenshot(doc, "21_fhir_chatbot", "Figure 8.2 — Same FHIR Assistant available standalone at /agentic/chat/index.html?chatbot=fhir-management. Both launcher and standalone routes resolve through the same Data.Chatbot row (key=fhir-management).")
 
     # ---- 9. Open issues ----
     doc.add_heading("9. Open issues and follow-ups", level=1)
