@@ -396,6 +396,29 @@ ClassMethod DeleteProduction(name As %String) As %DynamicObject
 /// validates segment ordering against the schema and rejects
 /// real-world messages that have segments in non-standard order
 /// (e.g., GT1 after IN1) with "ErrMapSegUnrecog".
+/// Returns 1 if `pName` is a RUNTIME-only property on the host class
+/// `pHostClass` and therefore must NOT be written as an Ens production-item
+/// Setting. The canonical case: OAuthClientName and SessionId on
+/// HS.FHIRServer.Interop.HTTPOperation (and any HS.FHIRServer.API.RestClient
+/// subclass). These are inherited PROPERTIES that the framework populates on
+/// the outbound HS.FHIRServer.Interop.Request at request time; they are
+/// absent from the host class's SETTINGS parameter, so writing them as a
+/// Host setting makes Ens log "ErrProductionSettingInvalid" on every
+/// production start. AddBusinessHost / UpdateBusinessHostSettings skip such
+/// settings and report them under `skippedSettings`. Only applies to
+/// target="Host" settings.
+ClassMethod RuntimeOnlyHostSetting(pHostClass As %String, pTarget As %String, pName As %String) As %Boolean [ Internal ]
+{
+    If pTarget '= "Host" { Return 0 }
+    If (pName '= "OAuthClientName") && (pName '= "SessionId") { Return 0 }
+    If pHostClass [ "FHIRServer.Interop.HTTPOperation" { Return 1 }
+    Try {
+        If ##class(%Dictionary.CompiledClass).%ExistsId(pHostClass),
+           $classmethod(pHostClass, "%Extends", "HS.FHIRServer.API.RestClient") { Return 1 }
+    } Catch  {}
+    Return 0
+}
+
 ClassMethod AddBusinessHost(production As %String, hostName As %String, hostClass As %String, settings As %DynamicObject = "") As %DynamicObject
 {
     Do ##class(AgenticInterop.Agent.Manager).ToolStart("AddBusinessHost")
@@ -459,12 +482,23 @@ ClassMethod AddBusinessHost(production As %String, hostName As %String, hostClas
             Set item.ClassName = hostClass
             Set item.Enabled = 1
             Set item.PoolSize = 1
+            Set skipped = []
             If $isobject(settings) {
                 Set tIter = settings.%GetIterator()
                 While tIter.%GetNext(.target, .nameMap) {
                     If '$isobject(nameMap) { Continue }
                     Set nIter = nameMap.%GetIterator()
                     While nIter.%GetNext(.sname, .svalue) {
+                        ; Skip runtime-only properties (e.g. OAuthClientName on
+                        ; FHIR HTTP operations) that are not valid Ens settings.
+                        If ..RuntimeOnlyHostSetting(hostClass, target, sname) {
+                            Set skipEntry = {}
+                            Set skipEntry.target = target
+                            Set skipEntry.name = sname
+                            Set skipEntry.reason = "runtime-only property of "_hostClass_", not a production-item Setting — populate it on the outbound request at runtime instead"
+                            Do skipped.%Push(skipEntry)
+                            Continue
+                        }
                         Set s = ##class(Ens.Config.Setting).%New()
                         Set s.Target = target
                         Set s.Name   = sname
@@ -473,6 +507,7 @@ ClassMethod AddBusinessHost(production As %String, hostName As %String, hostClas
                     }
                 }
             }
+            If skipped.%Size() > 0 { Set out.skippedSettings = skipped }
             Do prod.Items.Insert(item)
             Set sc = prod.SaveToClass()
             If 'sc {
@@ -639,11 +674,23 @@ ClassMethod UpdateBusinessHostSettings(production As %String, hostName As %Strin
         }
         Set settingsBefore = item.Settings.Count()
         Set updates = []
+        Set skipped = []
         Set tIter = settings.%GetIterator()
         While tIter.%GetNext(.target, .nameMap) {
             If '$isobject(nameMap) { Continue }
             Set nIter = nameMap.%GetIterator()
             While nIter.%GetNext(.sname, .svalue) {
+                ; Skip runtime-only properties (e.g. OAuthClientName on FHIR
+                ; HTTP operations) — they are not valid Ens settings and make
+                ; the production log ErrProductionSettingInvalid on start.
+                If ..RuntimeOnlyHostSetting(item.ClassName, target, sname) {
+                    Set skipEntry = {}
+                    Set skipEntry.target = target
+                    Set skipEntry.name = sname
+                    Set skipEntry.reason = "runtime-only property of "_item.ClassName_", not a production-item Setting — populate it on the outbound request at runtime instead"
+                    Do skipped.%Push(skipEntry)
+                    Continue
+                }
                 Set raw = $select($isobject(svalue):svalue.%ToJSON(), 1:svalue)
                 Set foundIdx = 0
                 For j=1:1:item.Settings.Count() {
@@ -698,6 +745,7 @@ ClassMethod UpdateBusinessHostSettings(production As %String, hostName As %Strin
         Set settingsAfter = item.Settings.Count()
         Set out.ok = 1
         Set out.updated = updates
+        If skipped.%Size() > 0 { Set out.skippedSettings = skipped }
         Set out.settingsBefore = settingsBefore
         Set out.settingsAfter = settingsAfter
         Set out.message = "Updated " _ updates.%Size() _ " setting(s) on host '" _ hostName _ "'. Settings count: " _ settingsBefore _ " -> " _ settingsAfter _ "."

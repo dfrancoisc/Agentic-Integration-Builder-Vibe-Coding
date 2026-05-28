@@ -2299,7 +2299,12 @@ ClassMethod ConfigureSDAToFHIRProcess(production As %String, hostName As %String
     }
     Set settings = {}
     Set hostSettings = {}
-    Set hostSettings.TargetConfigNames = targetConfigName
+    ; HS.FHIR.DTL.Util.HC.SDA3.FHIR.Process declares TargetConfigName
+    ; (SINGULAR) in its SETTINGS — NOT the plural TargetConfigNames used by
+    ; most Ens hosts. Using the plural form leaves the singular property
+    ; empty and the host fails at startup with
+    ; "ERROR #5001: TargetConfigName not configured".
+    Set hostSettings.TargetConfigName = targetConfigName
     Set hostSettings.FHIRMetadataSet = fhirMetadataSet
     Set hostSettings.FHIRFormat = fhirFormat
     Set hostSettings.TransmissionMode = transmissionMode
