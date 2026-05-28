@@ -24,7 +24,13 @@ Parameter TOOLBINDING = "mcp";
 /// CSV of MCP class names (AgenticInterop.MCP.Base subclasses) that this
 /// agent registers. UI-editable via the admin Editor service. Manager.Build
 /// reads this parameter and calls RegisterToAgent on each MCP.
-Parameter MCPS = "AgenticInterop.MCP.Production,AgenticInterop.MCP.Transform,AgenticInterop.MCP.Testing,AgenticInterop.MCP.Catalog,AgenticInterop.MCP.FHIRServer";
+/// FHIRServer + BulkFHIR MCPs are intentionally NOT bound here — FHIR R4
+/// server / Bulk FHIR work is the FHIRSpecialist agent's domain. Carrying
+/// FHIRServer on the generalist added ~26 tool definitions (~7K tokens) to
+/// every turn's catalog with no functional benefit, and worsened Bedrock
+/// TPM throttling on large builds. Use the FHIR Assistant chatbot
+/// (chatbot key fhir-management) for FHIR-server operations.
+Parameter MCPS = "AgenticInterop.MCP.Production,AgenticInterop.MCP.Transform,AgenticInterop.MCP.Testing,AgenticInterop.MCP.Catalog";
 
 /// CSV of Skill class names (AgenticInterop.Skill.Base subclasses) that
 /// this agent attaches as sub-agent tools. UI-editable. SkillLoader reads
