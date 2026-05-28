@@ -83,6 +83,17 @@
      the original on first run; reverted on uninstall. -->
 <Invoke Class="AgenticInterop.Install.CSPTimeoutPatch" Method="Apply" Phase="Activate" />
 
+<!-- Map the AgenticInterop package from HSCUSTOM into FHIR / USER / PAYER so
+     the chatbot's tools can call back into AgenticInterop.Agent.Manager (and
+     other AgenticInterop classes) after they switch $namespace to the user's
+     selected namespace. Without this, every Manager.ToolDone() throws
+     <CLASS DOES NOT EXIST> in non-HSCUSTOM namespaces and the agent reports
+     "tool execution failed" for every monitoring/CRUD call. HSCUSTOM remains
+     the only namespace where AgenticInterop code is deployed; this only adds
+     a visibility mapping. Idempotent. -->
+<Invoke Class="AgenticInterop.Install.PackageMapping" Method="Apply" Phase="Activate" />
+<Invoke Class="AgenticInterop.Install.PackageMapping" Method="Revert" Phase="UnConfigure" />
+
 <!-- Seed the two shipped chatbots for the chatbot config layer:
      interop -> Health Interop (generalist), fhir-management -> FHIR
      Specialist. Idempotent; never overwrites a user-edited row. -->
