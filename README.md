@@ -24,10 +24,10 @@ Version 1.1 ships. All build phases complete (Phase 0 through Phase 7) plus the 
 
 | Metric | Value |
 |---|---|
-| ObjectScript classes | 82 |
+| ObjectScript classes | 85 |
 | Agents (%AI.Agent) | 2 (Health Interop generalist, FHIR Specialist) |
 | Tool classes (%AI.Tool) | 7 (Production, Transform, Testing, Catalog, Monitoring, FHIR Server, Bulk FHIR) |
-| Tools (public ClassMethods) | 118 |
+| Tools (public ClassMethods) | 120 |
 | ToolSets (%AI.ToolSet) | 7 |
 | MCP servers | 6 (Production, Transform, Testing, Catalog, FHIR Server, Bulk FHIR) |
 | Skills (%AI.Agent.Skill) | 15 domain + 1 abstract base |
@@ -39,7 +39,7 @@ Version 1.1 ships. All build phases complete (Phase 0 through Phase 7) plus the 
 ## Features
 
 - Streaming chat with Server-Sent Events (SSE) -- token-by-token responses with inline tool-call cards
-- 118 tools across 7 domains: Production, Transform, Testing, Catalog, Monitoring, FHIR Server, Bulk FHIR
+- 120 tools across 7 domains: Production, Transform, Testing, Catalog, Monitoring, FHIR Server, Bulk FHIR
 - FHIR Server Audit panel: a left-nav menu in the FHIR Management app showing FHIR server storage (the per-endpoint repository databases via CORE `SYS.Database`, not the namespace DB), resource counts by type (CORE FHIR `_summary=count`), and ingestion performance (duration, resources/sec, bottlenecks) — backed by `GET /api/agentic/fhir/audit`
 - Load FHIR Data menu: a left-nav menu in the FHIR Management app to upload FHIR JSON files to a server-readable staging folder (`mgr/Temp/agentic-fhir-upload/`), so the FHIR Assistant can then load them into a FHIR server with `LoadFHIRDirectory` — backed by `POST/GET/DELETE /api/agentic/fhir/upload`
 - 15 domain skills covering Productions, DTL, BPL, Routing Rules, HL7v2, FHIR R4, FHIR Server, Bulk FHIR, FHIR SQL Builder, SDA, REST, ESB, X12/HIPAA, CDA/C-CDA, and Adapters
@@ -124,7 +124,7 @@ Uses the chatbot to monitor, triage, and review existing integrations at run-tim
 
 4. **Extend the MCP layer.** A developer creates a new %AI.MCP.Service subclass to expose a new domain of tools (for example, a Monitoring MCP for production health metrics). The MCP groups related ToolSets and is registered in the agent configuration through the admin UI.
 
-5. **Package and deploy via IPM.** A developer maintains the module.xml that defines the IPM package: ObjectScript classes, seed data, web application definitions, install/uninstall hooks. A single `zpm "load /path/to/agentic_interop"` command installs all 77 classes, two web apps, seed data, and the curated class catalog into any namespace.
+5. **Package and deploy via IPM.** A developer maintains the module.xml that defines the IPM package: ObjectScript classes, seed data, web application definitions, install/uninstall hooks. A single `zpm "load /path/to/agentic_interop"` command installs all 85 classes, two web apps, seed data, and the curated class catalog into any namespace.
 
 ### AI Hub Admin (5 use cases)
 
@@ -197,7 +197,7 @@ Features:
 
 ## Tools
 
-The agent's capabilities are organized into 7 Tool classes (118 tools total). Each Tool class is a `%AI.Tool` subclass where every public ClassMethod is a tool the LLM can call.
+The agent's capabilities are organized into 7 Tool classes (120 tools total). Each Tool class is a `%AI.Tool` subclass where every public ClassMethod is a tool the LLM can call.
 
 | Tool class | Tools | Purpose |
 |---|---|---|
@@ -280,7 +280,7 @@ ZN "<your-namespace>"
 zpm "load /path/to/agentic_interop"
 ```
 
-The module installs all 82 classes, two web apps (`/agentic/` for the UI, `/api/agentic/` for REST), seed data, and the curated class catalog. To install in multiple namespaces, run the command once per namespace.
+The module installs all 85 classes, two web apps (`/agentic/` for the UI, `/api/agentic/` for REST), seed data, and the curated class catalog. To install in multiple namespaces, run the command once per namespace.
 
 ## After install
 
