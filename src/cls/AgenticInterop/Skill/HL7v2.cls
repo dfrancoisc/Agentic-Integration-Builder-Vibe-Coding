@@ -243,6 +243,8 @@ Service / operation setting. Supported: `UTF-8`, `Latin1`, `Native`, NLS table n
 
 Outbound operations control field/component/repetition/escape/subcomponent characters via `Separators`. Default `|^~\&`. Positions beyond 5 set segment terminators: `|^~\&\r\n` would use CR+LF segment terminators. Use `\x` in positions 1-5 to pad when you need to specify terminators but want fewer than 5 separators (rare).
 
+SYMPTOM TO KNOW: a file/TCP HL7 operation writes ONLY the MSH segment (every other segment missing). Root cause: the message reaching the operation has Separators of only the 5 encoding chars with NO segment terminator — almost always because a `create='new'` DTL built it (a freshly-built HL7 message has no terminator). The operation honors the message's own separators and emits just segment 1. Two fixes: (1) set this operation's `Separators` to `|^~\&\r\n` so it imposes a CR/LF terminator on output; or (2) better, fix the DTL to stamp a terminator on the target (see the DTL skill, "HL7-to-HL7 transforms — hard-won gotchas"). A dry-run will NOT reveal this — `OutputToString` defaults to CR — so verify the actual file on disk.
+
 ## Built-in HL7 search-table fields
 
 `EnsLib.HL7.SearchTable` auto-indexes these without requiring a custom subclass:

@@ -140,7 +140,32 @@ ClassMethod CompileDTL(name As %String) As %DynamicObject
 /// dtlXml. DO NOT hand-write the XML — the virtual document paths are
 /// complex nested group paths that differ per message structure and are
 /// impossible to guess correctly. BuildDTLXml resolves them from the
-/// schema automatically. Pass its returned dtlXml here.
+/// schema automatically. Pass its returned dtlXml here. When the source
+/// and target are DIFFERENT HL7 structures (e.g. ADT_A01 -> ORU_R01),
+/// first call GetHL7SchemaMap on the TARGET DocType to learn the exact
+/// group paths (e.g. ORU_R01 nests OBR at PIDgrpgrp(1).ORCgrp(1).OBR and
+/// OBX at PIDgrpgrp(1).ORCgrp(1).OBXgrp(1).OBX).
+///
+/// CRITICAL — segment terminator on create='new' HL7 targets: a DTL with
+/// create='new' builds a target whose Separators are only the 5 encoding
+/// chars (|^~\&) with NO segment terminator. A downstream HL7 file/TCP
+/// operation honors the message's own Separators and writes ONLY the MSH
+/// segment — every other segment silently vanishes. DryRunDTL will warn
+/// (segmentTerminator='MISSING'). Either add a <code> action stamping the
+/// terminator (If $length(target.Separators)<6 { Set target.Separators=
+/// target.Separators_$char(13) }), or set the downstream operation's
+/// Separators setting to |^~\&\r\n. ALWAYS DryRunDTL and confirm
+/// segmentTerminator='present' before wiring an HL7-to-HL7 DTL into a
+/// production.
+///
+/// CRITICAL — vdoc syntax in <code> blocks: the curly-brace syntax
+/// source.{...} / target.{...} is ONLY translated inside <assign value=>
+/// and <if condition=> attributes. Inside a <code> block it is NOT
+/// translated and fails to compile (#1011 Invalid name). In <code> use
+/// the document API (source.GetValueAt("EVN:2"), target.SetValueAt(v,
+/// "...")) or plain object properties (target.Separators). For
+/// conditional field logic prefer an <if>/<true>/<false> with <assign>
+/// over a <code> block.
 ///
 /// name:        fully-qualified DTL class name (e.g.,
 ///              "Demo.Transform.ADT_to_SDA").
@@ -247,6 +272,11 @@ ClassMethod CreateDTL(name As %String, sourceClass As %String, targetClass As %S
 /// Call BuildDTLXml first to generate correct XML with validated
 /// virtual document paths. Hand-written paths will be rejected by
 /// the path validator if they do not match the HL7 schema.
+///
+/// For HL7-to-HL7 create='new' transforms also see the segment-
+/// terminator and <code>-vdoc warnings on CreateDTL — they apply
+/// identically here. After UpdateDTL, run DryRunDTL and confirm
+/// segmentTerminator='present' before relying on the output.
 ///
 /// name:    fully-qualified DTL class name.
 /// dtlXml:  full XML body of XData DTL — typically starts with
@@ -436,6 +466,19 @@ ClassMethod DryRunDTL(name As %String, sourceText As %String = "", sourceJson As
                     Set scOut = $$$OK
                     Set out.output = target.OutputToString("|^~\&", .scOut)
                 } Catch {}
+                ; SEGMENT-TERMINATOR SAFETY CHECK. A create='new' HL7 target
+                ; carries only the 5 encoding chars (|^~\&) with no segment
+                ; terminator. OutputToString above defaults the terminator to
+                ; CR, so this dry-run output LOOKS complete — but a real HL7
+                ; file/TCP operation honors the message's own Separators and
+                ; writes ONLY the MSH segment. Surface a warning so the bug is
+                ; caught here at dry-run time, not in production.
+                If $length(target.Separators) < 6 {
+                    Set out.segmentTerminator = "MISSING"
+                    Set out.warning = "Target HL7 message has NO segment terminator (Separators is only the 5 encoding chars). The output above looks complete because OutputToString defaults to CR, but a real HL7 file/TCP operation will write ONLY the MSH segment. FIX (pick one): (1) add a <code> action to the DTL stamping a terminator — If $length(target.Separators)<6 { Set target.Separators=target.Separators_$char(13) } ; or (2) set the downstream HL7 operation's Separators setting to |^~\&\r\n (positions 6+ are the segment terminator). Re-run DryRunDTL after the fix; segmentTerminator should read 'present'."
+                } Else {
+                    Set out.segmentTerminator = "present"
+                }
             }
             ; JSON adaptor — export (only for non-HL7 targets)
             ElseIf target.%IsA("%JSON.Adaptor") {

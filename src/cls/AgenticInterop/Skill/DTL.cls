@@ -210,6 +210,8 @@ Common pattern for EDI: build a library of segment-level subtransforms, call the
 
 CDATA wrapping is automatic — no XML escaping needed. Each ObjectScript line MUST start with a space.
 
+CRITICAL — virtual-document syntax does NOT work in `<code>`: the curly-brace syntax `source.{SEG:field}` / `target.{SEG:field}` is translated by the DTL compiler ONLY inside `<assign value=>` and `<if condition=>` attributes. Inside a `<code>` block it is NOT translated and the class fails to compile with `#1011 Invalid name : 'source.{EVN:2}'`. Inside `<code>` you must use the document API instead: `source.GetValueAt("EVN:2")` and `do target.SetValueAt(value,"PIDgrpgrp(1).ORCgrp(1).OBR:7")`. Plain object properties are fine in code (e.g. `set target.Separators=...`). For conditional field mapping (set field X if Y), prefer an `<if><true>/<false>` with `<assign>` over a `<code>` block — the vdoc syntax works there and there's nothing to hand-escape.
+
 Constraints (from "Guidelines for Using Custom Code"):
 - Keep execution short. DTL must remain suspendable/restorable.
 - Don't allocate system resources (locks, opened devices) without releasing them in the SAME `<code>` block.
@@ -288,6 +290,25 @@ If you have existing source/target message pairs from another vendor, the DTL Ge
 - `<sql>` returning multiple rows — only the first is used; refine the WHERE clause.
 - Memory issues in `<foreach>` over large message segments — enable Unload, or use `commitSegmentByPath()` / `%UnSwizzleAt()` at the end of the loop body.
 - Inactivity logout in the Management Portal — the DTL Editor only calls the server on Save / Compile / Test. Type-only changes do NOT prevent session timeout. Save often.
+
+## HL7-to-HL7 transforms — hard-won gotchas
+
+These bite specifically when source and target are both `EnsLib.HL7.Message`, especially across different structures (e.g. ADT_A01 -> ORU_R01). All were learned from a real build.
+
+1. MISSING SEGMENT TERMINATOR (the silent killer). A `create='new'` HL7 target is built with Separators set to only the 5 encoding characters (`|^~\&`) — there is NO segment terminator. A downstream HL7 file or TCP operation honors the message's own Separators and therefore writes ONLY the MSH segment; PID/OBR/OBX and everything else silently vanish. The trap: `OutputToString` (and therefore a dry-run) defaults the terminator to CR, so the dry-run output looks complete and correct. You only see the truncation in the actual file on disk / bytes on the wire. FIX, pick one:
+   - In the DTL, add a `<code>` action that stamps a terminator: `If $length(target.Separators)<6 { Set target.Separators=target.Separators_$char(13) }` (Separators is a plain property, so this is legal in `<code>`).
+   - Or set the downstream HL7 operation's `Separators` setting to `|^~\&\r\n` — positions 6+ are the segment terminator (`\r`=CR, `\n`=LF), per the HL7 operation Separators docs.
+   ALWAYS run DryRunDTL and confirm it reports `segmentTerminator='present'` (it now warns when MISSING) before wiring the DTL into a production.
+
+2. Discover the target group paths FIRST. ORU_R01 and other grouped structures nest segments deep: OBR lives at `PIDgrpgrp(1).ORCgrp(1).OBR`, OBX at `PIDgrpgrp(1).ORCgrp(1).OBXgrp(1).OBX`, PID at `PIDgrpgrp(1).PIDgrp.PID`. Call GetHL7SchemaMap on the TARGET DocType and read the exact paths before writing assigns — guessing the group nesting wastes compile cycles.
+
+3. create='new' vs create='copy'. Use `create='new'` when the target must contain ONLY what you explicitly map (the common HL7-to-HL7 case where unwanted source segments — NK1, AL1, DG1, IN1, GT1 — must not leak). `create='copy'` copies EVERY source segment first, which is exactly what you don't want for a selective transform. With `create='new'` you copy whole segments selectively: `<assign value='source.{PID}' property='target.{PIDgrpgrp(1).PIDgrp.PID}' action='set'/>`.
+
+4. Copy a whole segment, then override fields. To carry all components of a field (e.g. PV1:7 AttendingDoctor -> OBR:16 OrderingProvider, all 6 components), assign at the field level with `action='set'`: `<assign value='source.{PV1:7}' property='target.{...OBR:16}' action='set'/>`. To remap MSH for a new message type: copy `source.{MSH}` whole, then override `target.{MSH:9.1}`, `{MSH:9.2}`, `{MSH:9.3}`, `{MSH:12}` individually.
+
+5. Conditional field with a fallback (e.g. OBR:7 = EVN:2 if present else now): use `<if condition='source.{EVN:2}&apos;=&quot;&quot;'>` with `<true>`/`<false>` `<assign>` actions — NOT a `<code>` block (vdoc syntax won't translate in code). For "now" as an HL7 timestamp: `$translate($zdatetime($horolog,3)," -:","")`.
+
+6. Verify against the REAL output, not just the dry-run. The dry-run proves the field LOGIC; it does not prove the message will serialize correctly through an operation (see gotcha 1). When possible, run a message through the actual production and read the output file/bytes.
 
 ## Tools you have for DTLs
 
