@@ -350,6 +350,9 @@ Use `GetHL7SegmentFields(category, segmentType)` to see all available field name
 - `Separators` set with fewer than 5 characters and segment-terminator overrides past position 5 — IRIS reads positions 1-5 as separators and may scramble framing. Use `\x` to pad positions 1-5 if you want fewer than 5 separators.
 - Empty `Local Facility Application` while generating a NACK locally — the resulting NACK has empty SendingFacility / SendingApplication and downstream systems may reject it.
 
+## Decoding HL7/EDI error tokens
+When the event log shows a symbolic HL7-routing or EDI-mapping token, call `explain_production_error` (pass the bare name, `<Ens>…` token, or full log line). The HL7/EDI family includes: `ErrMapSegUnrecog` (unrecognized segment — usually missing `Validation=""` or wrong schema), `ErrMapDocType` (no schema structure for the DocType — set `MessageSchemaCategory`), `ErrMapRequired` (missing required element), `ErrMapSeg` (segment not mapped by schema), `ErrAckSeqNum`, `ErrStartBlock` / `ErrEndBlock` (MLLP framing mismatch — wrong start/end block bytes). `UnknownDocumentTypeName` / `UnknownSegmentTypeName` mean the schema category is loaded but the specific structure/segment isn't defined.
+
 ## Tools you have for HL7 v2 interfaces
 
 ConfigureHL7TCPService(production, hostName, port, targetConfigNames, schemaCategory='2.5', framing='MLLP', ackMode='Immediate', batchHandling='Single-Session Batch', poolSize=1, jobPerConnection=1, stayConnected=-1) — add (or update) an `EnsLib.HL7.Service.TCPService` host with the right HL7 defaults baked in. MessageSchemaCategory is required and the tool enforces it.

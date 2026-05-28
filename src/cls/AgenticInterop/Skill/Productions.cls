@@ -170,6 +170,18 @@ In BPL: use the `<trace>` element. In DTL: same `<trace>` element.
 
 The Event Log is for diagnostic information useful to a system administrator. Do NOT log program errors there — fix them before release.
 
+## Decoding event-log error codes
+
+When you see a SYMBOLIC error token in `QueryEventLog` / `TopErrors` output or in an `<Ens>` / `<HSErr>` exception (e.g. `ErrProductionSettingInvalid`, `ErrBPTerminated`, `ErrConfigDisabled`, `ErrNoCredentials`, `ErrMapSegUnrecog`, `ErrFailureTimeout`, `ErrNotImplemented`), call the `explain_production_error` tool to decode it. Pass the bare name, the `<Ens>…`-prefixed token, or the whole log line — the tool normalizes it and returns the message template + category (Production, Workflow, XPath, EDI, HL7 v2, X12, DICOM). For a NUMERIC code (`ERROR #5001`), use `lookup_error_code` instead.
+
+High-frequency production errors and what they mean:
+- `ErrProductionSettingInvalid` — a setting on a host is not in that host class's SETTINGS list (e.g. setting `OAuthClientName` on a FHIR HTTP operation, or `Framing` on an HL7 TCP service). Remove the invalid setting; it usually belongs at the adapter level or is a runtime-only property.
+- `ErrConfigDisabled` — the host is disabled; enable it or it will not process.
+- `ErrNoCredentials` — the `Credentials` setting names an entry that does not exist in the credentials registry (do NOT put an OAuth client name here).
+- `ErrBPTerminated` — a business process aborted; the wrapped `%3` carries the real cause — decode that too.
+- `ErrFailureTimeout` — a host exhausted `FailureTimeout` retrying; check the downstream connection.
+- `ErrMapSegUnrecog` / `ErrMapDocType` / `ErrMapRequired` — HL7/EDI schema mapping problems; the message arrived with a segment/structure the configured schema does not define.
+
 ## Alerts
 
 The alert mechanism is two-part: code that detects undesirable conditions and generates alerts, plus an alert processor business host (configuration name MUST be `Ens.Alert`) that delivers them. At most one alert processor per production.

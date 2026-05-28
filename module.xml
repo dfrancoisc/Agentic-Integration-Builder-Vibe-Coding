@@ -104,6 +104,13 @@
 <Invoke Class="AgenticInterop.Install.FHIRClientOAuthSetup" Method="Apply" Phase="Activate" />
 <Invoke Class="AgenticInterop.Install.FHIRClientOAuthSetup" Method="Revert" Phase="UnConfigure" />
 
+<!-- Seed the symbolic production/interop error-code catalog (~268 codes:
+     Production, Workflow, XPath, EDI, HL7 v2, X12 SEF/routing, DICOM) into
+     ^AgInt.ProdErr. The explain_production_error tool reads it so the agent
+     can decode the named Err* / status tokens it sees in the Event Log.
+     Idempotent — re-seeds from the class's Catalog XData on every activate. -->
+<Invoke Class="AgenticInterop.Reference.ProductionError" Method="Seed" Phase="Activate" />
+
 <!-- Seed the two shipped chatbots for the chatbot config layer:
      interop -> Health Interop (generalist), fhir-management -> FHIR
      Specialist. Idempotent; never overwrites a user-edited row. -->

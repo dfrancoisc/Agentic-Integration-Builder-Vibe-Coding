@@ -228,8 +228,10 @@ ClassMethod ExplainStatus(status As %String) As %DynamicObject
 /// a specific numeric code — "what does 5001 mean", "I'm seeing
 /// ERROR #83 — what is that".
 ///
-/// Symbolic Ensemble tokens like "<Ens>ErrFailureTimeout" are macros,
-/// not numeric codes; use SearchEns with the token name for those.
+/// Symbolic Ensemble/production tokens like "<Ens>ErrFailureTimeout" or
+/// "ErrProductionSettingInvalid" are NAMED status symbols, not numeric
+/// codes — use ExplainProductionError for those (it is what the event log
+/// actually shows).
 ///
 /// code: the numeric error code (positive integer).
 ///
@@ -271,6 +273,74 @@ ClassMethod LookupErrorCode(code As %Integer) As %DynamicObject
         Set out.error = $extract(ex.DisplayString(), 1, 400)
     }
     Do ##class(AgenticInterop.Agent.Manager).ToolDone("LookupErrorCode", out)
+    Quit out
+}
+
+/// Explain a SYMBOLIC production/interop error code — the named status
+/// symbols that appear in the Event Log and in `<Ens>` / `<HSErr>`
+/// exception text (e.g. `ErrProductionSettingInvalid`, `ErrMapSegUnrecog`,
+/// `ErrBPTerminated`, `BadBINLength`, `PeerRejectedAssociation`). CALL THIS
+/// the moment you see such a token while triaging QueryEventLog / TopErrors
+/// output, or when the user pastes a production error line and asks what it
+/// means. Covers ~268 codes across Production, Workflow, XPath, EDI, HL7 v2,
+/// X12 (SEF + routing), and DICOM.
+///
+/// `error` may be the bare name (`ErrMapSegUnrecog`), the name with a
+/// `<...>` prefix (`<Ens>ErrMapSegUnrecog`), or a whole log line
+/// (`ERROR <Ens>ErrMapSegUnrecog: Unrecognized Segment ...`). The tool
+/// normalizes it, does an exact case-insensitive lookup, and on a miss
+/// returns the closest fuzzy matches.
+///
+/// Returns: { ok, input, name, found, category, description, related? }.
+/// `description` is the message template — %1, %2 are runtime substitutions.
+/// Read-only.
+ClassMethod ExplainProductionError(error As %String) As %DynamicObject
+{
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("ExplainProductionError")
+    Set out = {}
+    Try {
+        Set raw = $get(error)
+        If raw = "" {
+            Set out.ok = 0
+            Set out.error = "Pass `error` — a symbolic code (e.g. 'ErrMapSegUnrecog') or the full log line."
+            Do ##class(AgenticInterop.Agent.Manager).ToolDone("ExplainProductionError", out)
+            Quit
+        }
+        Set out.input = $extract(raw, 1, 300)
+        ; --- Normalize: pull the symbolic token out of a log line ---
+        Set tok = raw
+        ; strip a leading "ERROR " (any case) and surrounding whitespace
+        Set tok = $zstrip(tok, "<>W")
+        If $zconvert($extract(tok, 1, 6), "U") = "ERROR " { Set tok = $zstrip($extract(tok, 7, *), "<W") }
+        ; strip a leading "<Ens>" / "<HSErr>" / "<Class>" angle-bracket prefix
+        If $extract(tok) = "<" {
+            Set rb = $find(tok, ">")
+            If rb > 0 { Set tok = $extract(tok, rb, *) }
+        }
+        ; the token is everything up to the first ":" or whitespace
+        Set tok = $piece($piece(tok, ":", 1), " ", 1)
+        Set tok = $zstrip(tok, "<>W")
+        Set out.name = tok
+        ; --- Exact lookup ---
+        Set hit = ##class(AgenticInterop.Reference.ProductionError).Find(tok)
+        If hit.found {
+            Set out.found = 1
+            Set out.name = hit.name
+            Set out.category = hit.category
+            Set out.description = hit.description
+            Set out.source = "InterSystems Messages Related to Productions (seeded)"
+        } Else {
+            Set out.found = 0
+            ; fuzzy fallback so the agent still gets useful suggestions
+            Set out.related = ##class(AgenticInterop.Reference.ProductionError).Fuzzy(tok, 5)
+            Set out.hint = "No exact match for '" _ tok _ "'. See `related` for close names, or LookupErrorCode if it is a numeric code."
+        }
+        Set out.ok = 1
+    } Catch ex {
+        Set out.ok = 0
+        Set out.error = $extract(ex.DisplayString(), 1, 400)
+    }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("ExplainProductionError", out)
     Quit out
 }
 

@@ -84,6 +84,9 @@ Define search table classes with XData blocks containing virtual property paths 
 - Importing a second version of the same schema can overwrite the first — rename the category before import
 - Segment/subloop repetitions may appear in any order within permitted positions but cannot be interspersed with other types
 - When cloning an X12 batched virtual document, use `%ConstructClone(1)` (deep=1) to clone both parent and child objects
+
+## Decoding X12 error tokens
+When the event log shows an X12 interchange/transaction error, call `explain_production_error` (pass the bare token, `<Ens>…` token, or full log line). The X12 family is large; common ones: `InterchangeControlNumberMismatch` / `GroupControlNumberMismatch` / `TransactionSetControlNumberMismatch` (the trailer count/number doesn't match the header — usually a truncated or concatenated interchange), `ISATruncated` (ISA header not 106 chars), `IncorrectSegmentCount` / `IncorrectTransactionCount` / `IncorrectFunctionalGroupCount` (SE/GE/IEA tallies wrong), `InvalidCode` (element value not in the schema's code set), `ConstraintViolation` / `SegmentRuleViolated` (relational condition failed), `ExpectedSegment` / `InvalidSegmentType` (segment out of position), `SchemaUnresolved` (DocType not set — can't validate), `DuplicateControlNumber` (replayed interchange). The X12-SEF category (`FileNotExists`, `NodeValidation`, `NodeEnumeration`) is about loading the SEF schema definition itself, not a runtime message.
 }
 
 }
