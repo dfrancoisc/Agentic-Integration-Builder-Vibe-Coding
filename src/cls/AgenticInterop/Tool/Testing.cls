@@ -583,6 +583,25 @@ ClassMethod BuildHL7TestMessage(docType As %String, fields As %DynamicObject) As
         If msg.GetValueAt("MSH:VersionID") = "" {
             Do msg.SetValueAt($piece(docType, ":", 1), "MSH:VersionID")
         }
+        ; Auto-populate MSH:9 (MessageType) from docType so the downstream
+        ; HL7-to-SDA pipeline can identify the trigger event. Without this
+        ; HS.Gateway.HL7.HL7ToSDA3 throws "UnsupportedHL7MessageType '_'"
+        ; because MSH:9 is blank. docType is "VERSION:STRUCTURE" (e.g.
+        ; "2.5:ADT_A01"); structure splits on underscore into message code
+        ; ("ADT") and trigger event ("A01"). For docs with no underscore
+        ; (e.g. "ACK"), only the code is set.
+        If msg.GetValueAt("MSH:MessageType.MessageCode") = "" {
+            Set structure = $piece(docType, ":", 2)
+            If structure '= "" {
+                Set msgCode = $piece(structure, "_", 1)
+                Set trigEvt = $piece(structure, "_", 2)
+                Do msg.SetValueAt(msgCode, "MSH:MessageType.MessageCode")
+                If trigEvt '= "" {
+                    Do msg.SetValueAt(trigEvt, "MSH:MessageType.TriggerEvent")
+                }
+                Do msg.SetValueAt(structure, "MSH:MessageType.MessageStructure")
+            }
+        }
         ; Build the raw HL7 string using CR (0x0D) as segment separator
         Set rawMsg = ""
         For i = 1:1:msg.SegCount {
