@@ -173,3 +173,39 @@ MB. Verified: pattern `^<NS>X[0-9]+[RV]$` matches `FHIRX0007R`/`V`, excludes
 Investigated as a suspected CORE bug; it was correct — the endpoint had genuinely been
 deleted (user-initiated, confirmed in `messages.log`: `FHIRX0007R/V` dismounted). It is
 consistent with `EndpointExists`. Recorded here so it is not re-investigated.
+
+## ⚪ ENV-5 — OAuthClientName / SessionId on HS.FHIRServer.Interop.HTTPOperation are NOT settings
+
+- **Symptom:** an outbound FHIR HTTP operation logs
+  `ErrProductionSettingInvalid: Production setting 'OAuthClientName' for item ... is invalid`
+  on every production start (also `SessionId`). Setting them via a System Default Setting
+  (`Ens.Config.DefaultSettings`) does NOT help — same validation, same error.
+- **Root cause:** `OAuthClientName` and `SessionId` are inherited PROPERTIES of
+  `HS.FHIRServer.API.RestClient`, not declared in the host's `SETTINGS` parameter
+  (which exposes only `ServiceName` + the inherited `Ens.BusinessOperation` settings).
+  The Ens settings-validation pass rejects any name not in `SETTINGS`, regardless of
+  whether it comes from the production-item Settings list or from System Default Settings.
+- **How OAuth is REALLY wired (authoritative — `HS.FHIRServer.Interop.HTTPOperation.
+  ProcessOAuth2` source):** the OAuth client name + session are read at runtime from the
+  INCOMING request's `AdditionalInfo`:
+  - `pFHIRRequest.AdditionalInfo.GetAt("USER:OAuthClient")` → the `OAuth2.Client` name
+  - `pFHIRRequest.AdditionalInfo.GetAt("SessionId")` → the session id
+  - then `##class(%SYS.OAuth2.AccessToken).IsAuthorized(oauthClientName, sessionId, ...)`
+  - alternatives: `AdditionalInfo("USER:OAuthToken")` (token directly) or
+    `AdditionalInfo("USER:TokenId")` (cached token id in HSSYSLOCALTEMP).
+  The BPL/process that builds the `HS.FHIRServer.Interop.Request` must
+  `request.AdditionalInfo.SetAt("<OAuth2.Client name>", "USER:OAuthClient")` (+ session id)
+  BEFORE the request reaches the HTTP operation.
+- **Second trap:** do NOT put the OAuth client name in the adapter `Credentials` setting.
+  `Credentials` expects an IRIS credentials-registry entry (username/password); an OAuth
+  client name there fails with `ErrNoCredentials: Unable to find Credentials for ID name`.
+- **What IS valid on the HTTP operation host:** Adapter settings `HTTPServer`, `HTTPPort`,
+  `URL`, `SSLConfig` only.
+- **System Default Settings (`Ens.Config.DefaultSettings`, deployable via
+  `Ens.Util.SettingsDocument` .ESD) — verified working for VALID settings:** defaulting
+  `HTTPServer` to a per-environment value produced 0 errors and applied cleanly. Use it to
+  promote HTTPServer/URL/SSLConfig/ports across dev→test→prod instead of hard-coding them.
+- **Guard shipped:** `AgenticInterop.Tool.Production.RuntimeOnlyHostSetting()` +
+  AddBusinessHost / UpdateBusinessHostSettings now strip `OAuthClientName`/`SessionId`
+  Host settings on FHIR HTTP operation hosts and report them under `skippedSettings`,
+  so the agent can no longer reintroduce the `ErrProductionSettingInvalid` error.
