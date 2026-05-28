@@ -286,10 +286,17 @@ ClassMethod LookupErrorCode(code As %Integer) As %DynamicObject
 /// X12 (SEF + routing), and DICOM.
 ///
 /// `error` may be the bare name (`ErrMapSegUnrecog`), the name with a
-/// `<...>` prefix (`<Ens>ErrMapSegUnrecog`), or a whole log line
+/// `<Ens>` / `<HSErr>` DOMAIN-TAG prefix (`<Ens>ErrMapSegUnrecog` — here the
+/// bracket is just a tag and the real token follows it), or a whole log line
 /// (`ERROR <Ens>ErrMapSegUnrecog: Unrecognized Segment ...`). The tool
 /// normalizes it, does an exact case-insensitive lookup, and on a miss
 /// returns the closest fuzzy matches.
+///
+/// NOTE — do NOT use this for `<ANGLE BRACKET>` ObjectScript runtime errors
+/// such as `<UNDEFINED>`, `<CLASS DOES NOT EXIST>`, `<PROPERTY DOES NOT
+/// EXIST>`, `<STORE>` or ISO `Mnn` codes (where the error name is INSIDE the
+/// brackets) — those go to ExplainSystemError. Numeric `#NNNN` %Status codes
+/// go to LookupErrorCode.
 ///
 /// Returns: { ok, input, name, found, category, description, related? }.
 /// `description` is the message template — %1, %2 are runtime substitutions.
@@ -333,7 +340,7 @@ ClassMethod ExplainProductionError(error As %String) As %DynamicObject
             Set out.found = 0
             ; fuzzy fallback so the agent still gets useful suggestions
             Set out.related = ##class(AgenticInterop.Reference.ProductionError).Fuzzy(tok, 5)
-            Set out.hint = "No exact match for '" _ tok _ "'. See `related` for close names, or LookupErrorCode if it is a numeric code."
+            Set out.hint = "No exact match for '" _ tok _ "'. See `related` for close names. If it is an `<ANGLE BRACKET>` runtime error or `Mnn` ISO code use ExplainSystemError; if it is a numeric code use LookupErrorCode."
         }
         Set out.ok = 1
     } Catch ex {
@@ -341,6 +348,92 @@ ClassMethod ExplainProductionError(error As %String) As %DynamicObject
         Set out.error = $extract(ex.DisplayString(), 1, 400)
     }
     Do ##class(AgenticInterop.Agent.Manager).ToolDone("ExplainProductionError", out)
+    Quit out
+}
+
+/// Explain an IRIS SYSTEM RUNTIME error — the `<ANGLE BRACKET>` ObjectScript
+/// errors that appear in $ZERROR, process stack traces, and tool-execution
+/// failures (e.g. `<UNDEFINED>`, `<SUBSCRIPT>`, `<CLASS DOES NOT EXIST>`,
+/// `<PROPERTY DOES NOT EXIST>`, `<STORE>`, `<PROTECT>`, `<METHOD DOES NOT
+/// EXIST>`, `<MAXSTRING>`, `<INVALID OREF>`), the `<NETWORK DATA UPDATE
+/// FAILED ...>` family, and the ISO 11756 `Mnn` codes returned in $ECODE
+/// (e.g. `M6` = undefined local variable). CALL THIS the instant you see an
+/// `<...>` token in an exception, a failed tool result, or a log line, or
+/// when the user pastes a `<...>` runtime error and asks what it means.
+///
+/// This is DISTINCT from the other two error tools — route correctly:
+///   - `<...>` runtime error or `Mnn` ISO code -> ExplainSystemError (this one)
+///   - symbolic Ens/HL7/X12 token (Err*, Bad*, etc.) -> ExplainProductionError
+///   - numeric %Status code ("#5001", "5002") -> LookupErrorCode
+///
+/// `error` may be the bare bracketed token (`<UNDEFINED>`), a full $ZERROR
+/// line (`<CLASS DOES NOT EXIST>zMethod+3^My.Class.1 *My.Class`), the name
+/// without brackets (`CLASS DOES NOT EXIST`), or an ISO code (`M6`). The tool
+/// extracts the name from between the angle brackets, does an exact
+/// case-insensitive lookup, and on a miss returns the closest fuzzy matches.
+///
+/// Returns: { ok, input, name, found, category, description, related? }.
+/// `category` is System | Network | ISO. Read-only.
+ClassMethod ExplainSystemError(error As %String) As %DynamicObject
+{
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("ExplainSystemError")
+    Set out = {}
+    Try {
+        Set raw = $get(error)
+        If raw = "" {
+            Set out.ok = 0
+            Set out.error = "Pass `error` — a runtime error like '<UNDEFINED>' or '<CLASS DOES NOT EXIST>', a full $ZERROR line, or an ISO code like 'M6'."
+            Do ##class(AgenticInterop.Agent.Manager).ToolDone("ExplainSystemError", out)
+            Quit
+        }
+        Set out.input = $extract(raw, 1, 300)
+        ; --- Normalize: the error name is the content BETWEEN < and > ---
+        Set tok = raw
+        Set lb = $find(raw, "<")
+        If lb > 0 {
+            ; everything after the first "<"
+            Set rest = $extract(raw, lb, *)
+            Set rb = $find(rest, ">")
+            If rb > 0 {
+                Set tok = $extract(rest, 1, rb - 2)   ; content strictly between < and >
+            } Else {
+                Set tok = rest
+            }
+        } Else {
+            ; no brackets: strip a leading "ERROR " label; names CAN contain
+            ; spaces ("CLASS DOES NOT EXIST"), so do NOT split on whitespace
+            Set t2 = $zstrip(raw, "<W")
+            If $zconvert($extract(t2, 1, 6), "U") = "ERROR " { Set t2 = $extract(t2, 7, *) }
+            Set tok = t2
+        }
+        Set tok = $zstrip(tok, "<>W")
+        Set out.name = tok
+        ; --- Exact lookup ---
+        Set hit = ##class(AgenticInterop.Reference.SystemError).Find(tok)
+        If hit.found {
+            Set out.found = 1
+            Set out.name = hit.name
+            Set out.category = hit.category
+            Set out.description = hit.description
+            Set out.source = "InterSystems General System Error Messages (seeded)"
+        } Else {
+            Set out.found = 0
+            ; fuzzy: whole token first, then the first word as a fallback needle
+            Set out.related = ##class(AgenticInterop.Reference.SystemError).Fuzzy(tok, 5)
+            If out.related.%Size() = 0 {
+                Set fw = $piece(tok, " ", 1)
+                If (fw '= ""), (fw '= tok) {
+                    Set out.related = ##class(AgenticInterop.Reference.SystemError).Fuzzy(fw, 5)
+                }
+            }
+            Set out.hint = "No exact match for '" _ tok _ "'. See `related` for close names. For symbolic Ens/HL7/X12 tokens use ExplainProductionError; for numeric %Status codes use LookupErrorCode."
+        }
+        Set out.ok = 1
+    } Catch ex {
+        Set out.ok = 0
+        Set out.error = $extract(ex.DisplayString(), 1, 400)
+    }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("ExplainSystemError", out)
     Quit out
 }
 

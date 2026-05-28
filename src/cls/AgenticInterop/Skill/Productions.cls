@@ -172,7 +172,10 @@ The Event Log is for diagnostic information useful to a system administrator. Do
 
 ## Decoding event-log error codes
 
-When you see a SYMBOLIC error token in `QueryEventLog` / `TopErrors` output or in an `<Ens>` / `<HSErr>` exception (e.g. `ErrProductionSettingInvalid`, `ErrBPTerminated`, `ErrConfigDisabled`, `ErrNoCredentials`, `ErrMapSegUnrecog`, `ErrFailureTimeout`, `ErrNotImplemented`), call the `explain_production_error` tool to decode it. Pass the bare name, the `<Ens>…`-prefixed token, or the whole log line — the tool normalizes it and returns the message template + category (Production, Workflow, XPath, EDI, HL7 v2, X12, DICOM). For a NUMERIC code (`ERROR #5001`), use `lookup_error_code` instead.
+Three error tools — route by the SHAPE of what you see:
+- SYMBOLIC token in `QueryEventLog` / `TopErrors` or an `<Ens>` / `<HSErr>` exception (e.g. `ErrProductionSettingInvalid`, `ErrBPTerminated`, `ErrConfigDisabled`, `ErrNoCredentials`, `ErrMapSegUnrecog`, `ErrFailureTimeout`, `ErrNotImplemented`) → `explain_production_error`. Pass the bare name, the `<Ens>…`-prefixed token, or the whole log line; here the `<…>` is just a domain TAG and the real token follows it. Returns the message template + category (Production, Workflow, XPath, EDI, HL7 v2, X12, DICOM).
+- `<ANGLE BRACKET>` ObjectScript RUNTIME error where the error name is INSIDE the brackets (`<UNDEFINED>`, `<SUBSCRIPT>`, `<CLASS DOES NOT EXIST>`, `<PROPERTY DOES NOT EXIST>`, `<METHOD DOES NOT EXIST>`, `<STORE>`, `<PROTECT>`, `<INVALID OREF>`, `<MAXSTRING>`), the `<NETWORK DATA UPDATE FAILED …>` family, or an ISO `Mnn` $ECODE (`M6`) → `explain_system_error`. These show up in `$ZERROR`, process stack traces, and FAILED TOOL RESULTS — decode them before you guess. Pass the bracketed token, a full $ZERROR line, the bare name, or the `Mnn` code.
+- NUMERIC `%Status` code (`ERROR #5001`, `5002`) → `lookup_error_code`.
 
 High-frequency production errors and what they mean:
 - `ErrProductionSettingInvalid` — a setting on a host is not in that host class's SETTINGS list (e.g. setting `OAuthClientName` on a FHIR HTTP operation, or `Framing` on an HL7 TCP service). Remove the invalid setting; it usually belongs at the adapter level or is a runtime-only property.

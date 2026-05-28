@@ -111,6 +111,14 @@
      Idempotent — re-seeds from the class's Catalog XData on every activate. -->
 <Invoke Class="AgenticInterop.Reference.ProductionError" Method="Seed" Phase="Activate" />
 
+<!-- Seed the system runtime error catalog (~226 entries: the <ANGLE BRACKET>
+     ObjectScript runtime errors, the <NETWORK DATA UPDATE FAILED ...> family,
+     and the ISO 11756 Mnn $ECODE codes) into ^AgInt.SysErr. The
+     explain_system_error tool reads it so the agent can decode the <...>
+     tokens it sees in $ZERROR, stack traces, and failed tool results.
+     Idempotent — re-seeds from the class's Catalog XData on every activate. -->
+<Invoke Class="AgenticInterop.Reference.SystemError" Method="Seed" Phase="Activate" />
+
 <!-- Seed the two shipped chatbots for the chatbot config layer:
      interop -> Health Interop (generalist), fhir-management -> FHIR
      Specialist. Idempotent; never overwrites a user-edited row. -->
