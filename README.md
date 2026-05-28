@@ -290,9 +290,11 @@ The module installs all 85 classes, two web apps (`/agentic/` for the UI, `/api/
 4. Catalogs tab -- click "Rebuild this catalog" on `search_ens` and `search_hs`. The knowledge bases power vector search inside the chat.
 5. Open the chatbot at `http://<host>:<web-port>/agentic/chat/index.html` or via the AI button in the Interop Editor.
 
-## Mount API -- embedding the chatbot
+## Embedding the chatbot in your own app (optional)
 
-The chat UI lives at `/agentic/chat/index.html`. Two integration modes:
+You do not need this for the in-product experience. The IPM install already embeds the chatbot for you: the `InteropEditorPatch` and `FHIRManagementPatch` Activate hooks inject the chat launcher into the Interop Editor and the FHIR Server Management page automatically (both are reverted on uninstall). After `zpm load`, just open the AI button in those portals — there is no manual mount step.
+
+This section applies only if you want to embed the chat into a *different* application of your own. The chat UI is a standalone page at `/agentic/chat/index.html`, integrated one of two ways:
 
 **Iframe mode (recommended).** Set `iframe.src = '/agentic/chat/index.html?via=interop&namespace=' + currentNamespace`. The chat captures the parent SPA's IRIS JWT via `postMessage` (no second login), sends `X-IRIS-Namespace` on every request, and refuses access (403) if the user lacks database-level read on the target namespace.
 
