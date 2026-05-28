@@ -1,12 +1,17 @@
-"""Build the three project .docx documents with embedded screenshots.
+"""Build the three Health Interop agent .docx documents with embedded screenshots.
 
-Outputs:
-  docs/01_Requirements_User_Stories.docx
-  docs/02_Technical_Build_Specification.docx
-  docs/03_Lessons_Learned.docx
+Outputs (1.1.0):
+  docs/01_Requirements_User_Stories_HealthInterop_v1.1.0.docx
+  docs/02_Technical_Build_Specification_HealthInterop_v1.1.0.docx
+  docs/03_Lessons_Learned_HealthInterop_v1.1.0.docx
+
+For the FHIR Assistant equivalents (FHIRSpecialist agent), run
+docs/build_fhir_assistant_docx.py.
 
 Requires: pip install python-docx Pillow
 """
+VERSION = "v1.1.0"
+AGENT_SUFFIX = "HealthInterop"
 import os
 from docx import Document
 from docx.shared import Inches, Pt, Cm, RGBColor
@@ -134,7 +139,13 @@ def build_doc1():
     style_doc(doc)
     add_title_page(doc,
         "Agentic Health Interoperability",
-        "Requirements and User Stories")
+        f"Requirements and User Stories — Health Interop Agent — {VERSION}")
+    doc.add_paragraph(
+        "This document covers the Health Interop generalist agent — productions, DTL/BPL/routing-rule "
+        "authoring, HL7 v2 and FHIR R4 testing, and the platform-wide vector catalogs. For the FHIR "
+        "Assistant agent (FHIR R4 server, Bulk FHIR, FHIR SQL Builder), see "
+        "01_Requirements_User_Stories_FHIRAssistant_v1.1.0.docx."
+    )
 
     # Table of contents placeholder
     doc.add_heading("Table of Contents", level=1)
@@ -1339,7 +1350,7 @@ def build_doc1():
         "execution and returns a clear error to the agent, which explains the denial to "
         "the user.")
 
-    path = os.path.join(DOCS, "01_Requirements_User_Stories.docx")
+    path = os.path.join(DOCS, f"01_Requirements_User_Stories_{AGENT_SUFFIX}_{VERSION}.docx")
     doc.save(path)
     print(f"  saved {path}")
 
@@ -1352,7 +1363,12 @@ def build_doc2():
     style_doc(doc)
     add_title_page(doc,
         "Agentic Health Interoperability",
-        "Technical Build Specification")
+        f"Technical Build Specification — Health Interop Agent — {VERSION}")
+    doc.add_paragraph(
+        "This document specifies the technical components of the Health Interop generalist agent. "
+        "For the FHIR Assistant agent (FHIRSpecialist) and its dedicated MCP / Tool / Skill stack, "
+        "see 02_Technical_Build_Specification_FHIRAssistant_v1.1.0.docx."
+    )
 
     # 1. Executive Summary
     doc.add_heading("1. Executive Summary", level=1)
@@ -1699,7 +1715,7 @@ def build_doc2():
             ["Total", "61 ObjectScript classes, 8 web files, 100+ commits", ""],
         ])
 
-    path = os.path.join(DOCS, "02_Technical_Build_Specification.docx")
+    path = os.path.join(DOCS, f"02_Technical_Build_Specification_{AGENT_SUFFIX}_{VERSION}.docx")
     doc.save(path)
     print(f"  saved {path}")
 
@@ -1712,7 +1728,12 @@ def build_doc3():
     style_doc(doc)
     add_title_page(doc,
         "Agentic Health Interoperability",
-        "Lessons Learned\nFindings from the experimental build of an Agentic AI Copilot on IRIS for Health")
+        f"Lessons Learned — Health Interop Agent — {VERSION}\nFindings from the experimental build of an Agentic AI Copilot on IRIS for Health")
+    doc.add_paragraph(
+        "This document captures lessons learned while building the Health Interop generalist agent. "
+        "FHIR-platform-specific lessons (FHIR R4 server CRUD, Bulk FHIR Coordinator, SMART backend, "
+        "FHIR SQL Builder) are collected in 03_Lessons_Learned_FHIRAssistant_v1.1.0.docx."
+    )
 
     # 1. Introduction
     doc.add_heading("1. Introduction", level=1)
@@ -2000,7 +2021,7 @@ def build_doc3():
             ["8", "CSP", "Add Cache-Control: no-cache option for development web apps", "Eliminates static file caching during development"],
         ])
 
-    path = os.path.join(DOCS, "03_Lessons_Learned.docx")
+    path = os.path.join(DOCS, f"03_Lessons_Learned_{AGENT_SUFFIX}_{VERSION}.docx")
     doc.save(path)
     print(f"  saved {path}")
 
