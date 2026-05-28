@@ -197,7 +197,7 @@ In "bypass" mode, the agent binds ToolSets directly (skipping MCPs) for simpler 
 
 ### 6.1 What to build
 
-42 tools across 5 tool classes that implement the agent's capabilities. Each tool is a method with `[Tool]` annotation, JSON Schema input/output, and a natural-language description.
+118 tools across 7 tool classes that implement the agent's capabilities. Each tool is a public ClassMethod that becomes a tool the LLM can call, with JSON Schema input/output derived from the method signature and a natural-language description from the doc-comment.
 
 ### 6.2 Tool catalog
 
@@ -451,11 +451,11 @@ Agent-created artifacts (productions, DTLs, BPLs, routing rules) integrate with 
 
 | Component | Classes | Status |
 |---|---|---|
-| Agent | 4 classes (HealthInterop, Manager, Monitor, SkillLoader) | Built |
-| MCP Servers | 5 classes (Base + 4 servers) | Built |
-| ToolSets | 5 classes | Built |
-| Tools | 5 classes, 42 tools | Built |
-| Skills | 13 classes (Base + 12 skills) | Built |
+| Agent | 5 classes (HealthInterop, FHIRSpecialist, Manager, Monitor, SkillLoader) | Built |
+| MCP Servers | 7 classes (Base + 6 servers) | Built |
+| ToolSets | 7 classes | Built |
+| Tools | 7 classes, 118 tools | Built |
+| Skills | 16 classes (Base + 15 domain skills) | Built |
 | Data model | 6 persistent classes | Built |
 | REST API | 1 dispatcher + 13 service classes | Built |
 | Admin UI | 3 HTML + 2 JS + 2 CSS files | Built |

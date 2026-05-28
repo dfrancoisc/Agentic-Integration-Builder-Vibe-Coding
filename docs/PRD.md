@@ -12,7 +12,7 @@ System integrators and integration engineers working with IRIS for Health who ne
 
 ### How it works
 
-A single orchestrator agent (Health Interop) operates under the Daniel persona — a senior system integrator and healthcare interoperability architect who plans before building, searches before creating, and tests before declaring success (see docs/system_integrator_persona.md). The agent receives the user's request, searches a vector catalog of IRIS classes to find the right components, presents a plan, and on approval executes the build using tools organized across toolsets. Twelve domain skills (Productions, DTL, BPL, Routing Rules, HL7v2, FHIR R4, SDA, REST, ESB, X12/HIPAA, CDA/C-CDA, Adapters) give the agent deep knowledge of IRIS-specific concepts. The agent operates through MCP servers (Production, Transform, Testing, Catalog) that scope tool access by domain.
+Two agents ship: Health Interop (generalist) and FHIR Specialist (FHIR-platform focus). Both operate under the Daniel persona — a senior system integrator and healthcare interoperability architect who plans before building, searches before creating, and tests before declaring success (see docs/system_integrator_persona.md). Each agent receives the user's request, searches a vector catalog of IRIS classes to find the right components, presents a plan, and on approval executes the build using tools organized across toolsets. Fifteen domain skills (Productions, DTL, BPL, Routing Rules, HL7v2, FHIR R4, FHIR Server, Bulk FHIR, FHIR SQL Builder, SDA, REST, ESB, X12/HIPAA, CDA/C-CDA, Adapters) give the agents deep knowledge of IRIS-specific concepts. The agents operate through six MCP servers (Production, Transform, Testing, Catalog, FHIR Server, Bulk FHIR) that scope tool access by domain.
 
 ### Two personas, two experiences
 
@@ -85,7 +85,7 @@ The agent builds the complete DTL XML (e.g., `CreateDTL`) with all field mapping
 |---|---|---|
 | Catalog size | 5,000+ classes indexed | Current catalogs cover Ens.* and HS.* classes; must scale as customers add custom classes |
 | Catalog auto-growth | New artifacts indexed after every successful build | DTLs, BPLs, and routing rules created by the copilot are added to the HS.* catalog automatically so future sessions can discover and reuse them |
-| Tool count per agent | 50+ tools without degradation | Currently 48 tools across 5 classes; adding new tool classes must not degrade prompt token budget |
+| Tool count per agent | 50+ tools without degradation | Currently 118 tools across 7 classes; adding new tool classes must not degrade prompt token budget |
 | Namespace independence | Any namespace on the instance | Tools execute in the user's selected namespace via X-IRIS-Namespace header; no hardcoded namespace references |
 | LLM provider flexibility | Bedrock, Anthropic, Azure OpenAI | Provider is user-configurable with connection health checks; switching providers must not require code changes |
 | Skill extensibility | Add new skills without redeployment | Skills are loaded dynamically from class parameters; new Skill.Base subclasses register automatically |

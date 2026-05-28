@@ -265,4 +265,4 @@ running → completed|error; `done`/`failed` increment per file). We surface it:
 - RESEARCHED — not building: C-alt (no supported CORE ingestion hook; see above).
 - DEFERRED (not approved this round): C (storage-growth history), D (audit-panel
   history table / trend chart).
-- Tool count: FHIRServer 26, BulkFHIR 13 (86 total).
+- Tool count: FHIRServer 26, BulkFHIR 13 — total project surface 118 tools across 7 ToolSets (Production 29, Transform 30, Testing 8, Catalog 7, Monitoring 5, FHIRServer 26, BulkFHIR 13).

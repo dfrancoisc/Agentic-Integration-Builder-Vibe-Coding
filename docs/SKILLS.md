@@ -2,7 +2,7 @@
 
 Each section below is the markdown content that lands in the XData INSTRUCTIONS block of one `AgenticInterop.Skill.*` class. Content is distilled strictly from the InterSystems IRIS for Health 2026.1 documentation PDFs; quotes and APIs are verbatim from those sources. Source citations after each section list the PDF and page range.
 
-Twelve skills total (9 original from PDF batches 1-4, plus 3 added in the persona batch: X12, CDA, Adapters). A skill's section is marked `[BATCH N PARTIAL]` when content from later batches will extend it.
+Fifteen domain skills total: 12 from the original build (9 from PDF batches 1-4 plus X12, CDA, Adapters in the persona batch), then 3 more added when the FHIR Specialist agent shipped (FHIRServer, BulkFHIR, FHIRSQLBuilder). A skill's section is marked `[BATCH N PARTIAL]` when content from later batches will extend it. Skill bodies in v1.1 were expanded with the IRIS interop docs reference material (ACK modes / framing / batch handling / validation flags for HL7v2; System Default Settings / Reply Code Actions / Pool Size / FIFO Groups / filename time-stamp specs for Productions).
 
 ---
 

@@ -45,7 +45,7 @@ These are user-set rules captured at kickoff. Any deviation must be documented i
 │  ┌────────────────────────────────────────────────────────────┐  │
 │  │  AgenticInterop.Agent.HealthInterop (extends %AI.Agent)    │  │
 │  │  Router agent with Daniel persona (system integrator).     │  │
-│  │  Tool catalog = 12 Skill classes (as sub-agent tools) plus │  │
+│  │  Tool catalog = 15 Skill classes (as sub-agent tools) plus │  │
 │  │  cross-cutting tools (get_user_namespace, search_ens,      │  │
 │  │  search_hs).                                               │  │
 │  └────────────────────────────────────────────────────────────┘  │
@@ -357,14 +357,15 @@ This applies across phases. The phase column below indicates when each chatbot c
 
 | Metric | Value |
 |---|---|
-| ObjectScript classes | 61 |
-| Tool classes (%AI.Tool) | 5 |
-| Tools (public ClassMethods) | 42 |
-| ToolSets (%AI.ToolSet) | 5 |
-| MCP servers (%AI.MCP.Service) | 5 |
-| Skills (%AI.Agent.Skill) | 12 |
-| Persistent data classes | 5 |
-| IPM module version | 1.0.0 |
+| ObjectScript classes | 82 |
+| Tool classes (%AI.Tool) | 7 |
+| Tools (public ClassMethods) | 118 |
+| ToolSets (%AI.ToolSet) | 7 |
+| MCP servers (%AI.MCP.Service) | 6 (+ MCP.Base abstract) |
+| Skills (%AI.Agent.Skill) | 15 domain + 1 abstract base |
+| Agents (%AI.Agent) | 2 (HealthInterop, FHIRSpecialist) |
+| Persistent data classes | 8 |
+| IPM module version | 1.1.0 |
 
 ## Product Requirements Document
 

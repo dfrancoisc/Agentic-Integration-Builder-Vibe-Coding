@@ -34,7 +34,7 @@ During development, we encountered three bugs in the %AI Framework that required
 
 **Extension 1: AgenticInterop.Skill.Base (workaround for %AI.Agent.Skill %OnNew bug)**
 
-The %AI.Agent.Skill %OnNew method passes a %DynamicObject to $ZF (the Foreign Function Interface call to the Rust LLM bridge), but the bridge expects a JSON string. This throws a <FUNCTION> error that prevents any skill from being instantiated. We created AgenticInterop.Skill.Base that overrides %OnNew to serialize the object before the $ZF call. All 12 skills extend this base class instead of %AI.Agent.Skill directly.
+The %AI.Agent.Skill %OnNew method passes a %DynamicObject to $ZF (the Foreign Function Interface call to the Rust LLM bridge), but the bridge expects a JSON string. This throws a <FUNCTION> error that prevents any skill from being instantiated. We created AgenticInterop.Skill.Base that overrides %OnNew to serialize the object before the $ZF call. All 15 domain skills extend this base class instead of %AI.Agent.Skill directly.
 
 **Extension 2: Anthropic direct provider (workaround for Bedrock tool-result hang)**
 
@@ -42,7 +42,7 @@ When the agent calls a tool and receives the result, the Rust bridge hangs indef
 
 **Extension 3: AgenticInterop.Policy.ToolFilter (framework tool cleanup)**
 
-The %AI Framework exposes default tools (FileSystem, SQL, ShellTools) that are irrelevant for healthcare interoperability and waste LLM tokens. The ToolFilter policy strips these before each LLM call, reducing the tool catalog from 57 to 42 tools and saving ~5K tokens per request.
+The %AI Framework exposes default tools (FileSystem, SQL, ShellTools) that are irrelevant for healthcare interoperability and waste LLM tokens. The ToolFilter policy strips these before each LLM call, leaving only the 118 healthcare-specific tools the agent should see.
 
 ---
 
@@ -406,11 +406,13 @@ Note: The AI Hub Admin can configure separate agent profiles for Interface Engin
 
 The AI Hub Admin enables/disables MCP servers and customizes their descriptions to control which capability domains the agent has access to.
 
-Four MCP servers ship out of the box:
-- mcp.production: CRUD productions, business hosts, settings, start/stop
-- mcp.transform: CRUD DTL/BPL, routing rules, lookup tables, HL7 schema introspection
+Six MCP servers ship out of the box:
+- mcp.production: CRUD productions, business hosts, settings, start/stop, routing rules, HL7 host builders, System Default Settings, FIFO recovery, timestamp/schedule helpers
+- mcp.transform: CRUD DTL/BPL, FHIR Process config, FHIR Lookup tables, HL7 search tables, HL7 schema introspection
 - mcp.testing: Send HL7/FHIR messages, validate structure/semantics, compare messages
-- mcp.catalog: Vector search, class introspection, namespace info, event log, throughput
+- mcp.catalog: Vector search, class introspection, namespace info, glossary, error-code lookup
+- mcp.fhirserver: FHIR R4 endpoint discovery and configuration, CapabilityStatement, metadata packages, resource CRUD/search/$validate, async directory load with run history
+- mcp.bulkfhir: Bulk FHIR Coordinator config CRUD, $export sessions, SMART backend OAuth + SSL + credential provisioning
 
 ### 7.4 Configure ToolSets and Tools
 
@@ -421,18 +423,20 @@ The AI Hub Admin views and customizes ToolSets and their individual tools -- tun
 - Tool dry-run: input JSON, execute, see output (non-mutating tools only)
 - Tool descriptions are LLM-facing contracts -- clear descriptions lead to better tool selection
 
-42 tools across 5 ToolSet classes:
-- Production (13 tools): list_productions, get_production, create_production, add_business_host, update_settings, PostBuildValidation, ...
-- Transform (13 tools): list_dtls, create_dtl, compile_dtl, dry_run_dtl, introspect_hl7_schema, ...
+118 tools across 7 Tool classes (composed into 7 ToolSets):
+- Production (29 tools): list/get/create/delete productions, add/remove/update business hosts, start/stop, PostBuildValidation, routing-rule CRUD, ConfigureHL7TCPService / ConfigureHL7TCPOperation / ConfigureHL7Router (Validation="" baked in), EnableHL7TraceOperations, System Default Settings CRUD, GetEffectiveSetting, ListProductionQueues, ReleaseFIFOHold / ReleaseAllFIFOHolds, PreviewTimestampSpec, ValidateScheduleSpec, EnsureDirectory.
+- Transform (30 tools): DTL CRUD + DryRunDTL + BuildDTLXml + SetCustomDTLPackage + ListHL7ToSDADTLs + ListSDAFHIRDTLs, BPL CRUD + ValidateBPL + BuildHL7ToFHIRBPL + BuildHL7ToSDABPL, ConfigureSDAToFHIRProcess / ConfigureFHIRToSDAProcess, FHIR Lookup table CRUD, CreateHL7SearchTable, GetHL7SchemaMap, GetHL7SegmentFields, ListLookupTables, DescribeTransformationPipeline.
 - Testing (8 tools): send_hl7, send_fhir, validate_hl7_structure, BuildAndSendHL7TestMessage, ...
-- Catalog (8 tools): search_ens, search_hs, describe_class, get_namespace, ...
-- Monitoring (6 tools): query_event_log, group_errors, message_status, throughput_stats, ...
+- Catalog (7 tools): search_ens, search_hs, describe_class, get_namespace, ...
+- Monitoring (5 tools): query_event_log, group_errors, message_status, throughput_stats, queue_status.
+- FHIR Server (26 tools): endpoint inspect/config, CapabilityStatement, metadata packages, resource CRUD/search/$validate, async directory load + ingestion metrics + run history.
+- Bulk FHIR (13 tools): Bulk FHIR Coordinator (BFC) config CRUD, $export sessions, SMART backend OAuth + SSL + credential provisioning.
 
 ### 7.5 Configure Skills
 
 The AI Hub Admin views and edits the INSTRUCTIONS content for each skill, refining the agent's domain knowledge without Developer involvement.
 
-12 shipped skills:
+15 shipped domain skills (plus AgenticInterop.Skill.Base, the abstract %OnNew workaround class):
 
 | Skill | Domain |
 |---|---|
@@ -696,7 +700,7 @@ All API keys and credentials are stored in the IRIS Secured Wallet (%Wallet.KeyV
 
 **ConfirmationGate policy**: Mutating tools (create, update, delete, start, stop) pause execution and surface an Approve/Reject prompt in the chat UI before executing. The agent cannot modify productions, transformations, or routing rules without the End User clicking Approve. This is the last line of defense after permission checks and namespace validation.
 
-**ToolFilter policy**: Strips framework-default tools (FileSystem, SQL, ShellTools) from the LLM's tool catalog before each request. Without this filter, the LLM receives 60+ generic tools that could theoretically access file system operations or raw SQL execution. The filter reduces this to the 42 healthcare-specific tools. This policy also prevents the LLM from using tools that could bypass the permission model (e.g., raw SQL execution that sidesteps class-level access checks).
+**ToolFilter policy**: Strips framework-default tools (FileSystem, SQL, ShellTools) from the LLM's tool catalog before each request. Without this filter, the LLM receives 60+ generic tools that could theoretically access file system operations or raw SQL execution. The filter reduces the catalog to the 118 healthcare-specific tools defined by the project. This policy also prevents the LLM from using tools that could bypass the permission model (e.g., raw SQL execution that sidesteps class-level access checks).
 
 ---
 
@@ -820,25 +824,26 @@ This scenario demonstrates all four personas working together:
 
 | Tab | Purpose | Persona | Entity Count |
 |---|---|---|---|
-| Agents | Agent configuration (system prompt, MCPs, skills, provider) | AI Hub Admin | 1 (HealthInterop) |
-| MCPs | MCP server enable/disable and description | AI Hub Admin | 4 (Production, Transform, Testing, Catalog) |
-| ToolSets | ToolSet grouping and description | AI Hub Admin | 5 (Production, Transform, Testing, Catalog, Monitoring) |
-| Tools | Individual tool schemas and dry-run | AI Hub Admin | 42 tools |
-| Skills | Skill INSTRUCTIONS editor | AI Hub Admin | 12 skills |
+| Agents | Agent configuration (system prompt, MCPs, skills, provider) | AI Hub Admin | 2 (HealthInterop, FHIRSpecialist) |
+| MCPs | MCP server enable/disable and description | AI Hub Admin | 6 (Production, Transform, Testing, Catalog, FHIRServer, BulkFHIR) |
+| ToolSets | ToolSet grouping and description | AI Hub Admin | 7 (Production, Transform, Testing, Catalog, Monitoring, FHIRServer, BulkFHIR) |
+| Tools | Individual tool schemas and dry-run | AI Hub Admin | 118 tools |
+| Skills | Skill INSTRUCTIONS editor | AI Hub Admin | 15 domain skills |
 | Connections | LLM provider credentials and health check | AI Hub Admin | N (user-configured) |
 | Catalogs | Vector catalog status, rebuild, search | AI Hub Admin | 2 (Ens.*, HS.*) |
 | Transforms | Field-level mapping explorer (Transformation and Mapping Catalog) | AI Hub Admin / End User | 1,538 pre-computed rows |
+| Chatbots | Bind each chatbot surface to an agent (key → agent + host page + title) | AI Hub Admin | 2 (Interop, FHIR Management) |
 | Audit | Request audit trail | AI Hub Admin | All API calls |
 
 ## Appendix B: %AI Framework Primitives Used
 
 | Framework Class | Application Subclass | Purpose |
 |---|---|---|
-| %AI.Agent | AgenticInterop.Agent.HealthInterop | Main agent instance |
-| %AI.MCP.Service | AgenticInterop.MCP.Base + 4 servers | MCP server grouping |
-| %AI.ToolSet | 5 ToolSet classes | Tool grouping by domain |
-| %AI.Tool | 5 Tool classes (42 methods) | Individual tool implementations |
-| %AI.Agent.Skill | AgenticInterop.Skill.Base + 12 skills | Domain knowledge sub-agents |
+| %AI.Agent | AgenticInterop.Agent.HealthInterop + FHIRSpecialist | Main + FHIR-specialist agent instances |
+| %AI.MCP.Service | AgenticInterop.MCP.Base + 6 servers | MCP server grouping |
+| %AI.ToolSet | 7 ToolSet classes | Tool grouping by domain |
+| %AI.Tool | 7 Tool classes (118 methods) | Individual tool implementations |
+| %AI.Agent.Skill | AgenticInterop.Skill.Base + 15 domain skills | Domain knowledge sub-agents |
 | %AI.RAG.KnowledgeBase | search_ens, search_hs | Vector search catalogs |
 | %AI.ToolMgr | Used at query time | RAG query execution |
 | %AI.Agent.Policy | ConfirmationGate, ToolFilter | Security and token policies |
