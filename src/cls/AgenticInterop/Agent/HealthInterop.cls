@@ -2,8 +2,9 @@
 /// agentic_interop chatbot. It extends %AI.Agent with the Daniel persona
 /// (system integrator) system prompt and exposes thirteen specialist skills
 /// as sub-agent tools (registered at runtime by AgenticInterop.Agent.SkillLoader).
-/// Skills: Productions, DTL, BPL, RoutingRules, HL7v2, FHIRR4, FHIRServer,
-/// SDA, RestInProductions, ESBPattern, X12, CDA, Adapters.
+/// Skills: Productions, DTL, BPL, RoutingRules, HL7v2, FHIRR4, FHIRInterop,
+/// SDA, RestInProductions, ESBPattern, X12, CDA, Adapters. (FHIRInterop =
+/// production-side FHIR connectivity; FHIR SERVER admin is the FHIR Assistant.)
 /// For domain-specific questions, the LLM invokes the matching Skill
 /// rather than answering directly. Cross-cutting tools (namespace, search)
 /// attach directly to this agent's ToolManager.
@@ -35,7 +36,7 @@ Parameter MCPS = "AgenticInterop.MCP.Production,AgenticInterop.MCP.Transform,Age
 /// CSV of Skill class names (AgenticInterop.Skill.Base subclasses) that
 /// this agent attaches as sub-agent tools. UI-editable. SkillLoader reads
 /// this parameter (falls back to its own DEFAULTSKILLS for compatibility).
-Parameter SKILLS = "AgenticInterop.Skill.Productions,AgenticInterop.Skill.DTL,AgenticInterop.Skill.BPL,AgenticInterop.Skill.RoutingRules,AgenticInterop.Skill.HL7v2,AgenticInterop.Skill.FHIRR4,AgenticInterop.Skill.FHIRServer,AgenticInterop.Skill.SDA,AgenticInterop.Skill.RestInProductions,AgenticInterop.Skill.ESBPattern,AgenticInterop.Skill.X12,AgenticInterop.Skill.CDA,AgenticInterop.Skill.Adapters";
+Parameter SKILLS = "AgenticInterop.Skill.Productions,AgenticInterop.Skill.DTL,AgenticInterop.Skill.BPL,AgenticInterop.Skill.RoutingRules,AgenticInterop.Skill.HL7v2,AgenticInterop.Skill.FHIRR4,AgenticInterop.Skill.FHIRInterop,AgenticInterop.Skill.SDA,AgenticInterop.Skill.RestInProductions,AgenticInterop.Skill.ESBPattern,AgenticInterop.Skill.X12,AgenticInterop.Skill.CDA,AgenticInterop.Skill.Adapters";
 
 XData INSTRUCTIONS [ MimeType = "text/markdown" ]
 {
@@ -217,11 +218,13 @@ NAMING: use the EXACT artifact names from your approved plan. Do not rename clas
 
 ONE PRODUCTION NAME: pick the production's fully-qualified name ONCE in your plan and pass that SAME string as the `production` argument to EVERY tool that takes one — CreateProduction, AddBusinessHost, UpdateBusinessHostSettings, ConfigureHL7TCPService, ConfigureSDAToFHIRProcess, StartProduction, PostBuildValidation. These tools auto-create the production they are pointed at, so passing even a slightly different name (e.g. `FHIR.Production` to one call and `FHIR.Productions.UniversalHL7ToFHIR` to another) silently creates STRAY half-configured production classes. Re-read the production name from your plan before each call; never abbreviate or re-derive it.
 
-FHIR HTTP OPERATION — how OAuth is REALLY wired (authoritative, from the `HS.FHIRServer.Interop.HTTPOperation.ProcessOAuth2` source): the OAuth client is read at runtime from the INCOMING request's `AdditionalInfo`, NOT from any production setting or System Default Setting. `ProcessOAuth2` reads `pFHIRRequest.AdditionalInfo.GetAt("USER:OAuthClient")` (the `OAuth2.Client` name) together with `AdditionalInfo.GetAt("SessionId")`, then calls `%SYS.OAuth2.AccessToken.IsAuthorized(oauthClientName, sessionId, ...)`. It can also take a pre-fetched token via `AdditionalInfo("USER:OAuthToken")` or a cached id via `AdditionalInfo("USER:TokenId")`. Therefore:
+FHIR HTTP OPERATION — sending FHIR to an EXTERNAL FHIR server. Use the `configure_fhir_http_operation` tool: it adds `HS.FHIRServer.Interop.HTTPOperation`, parses a base URL like `https://fhir.example.com/r4` into HTTPServer/HTTPPort/URL, and wires SSL + OAuth. For the full connectivity picture (accepting FHIR via `HS.FHIRServer.Interop.Service`, sending to a LOCAL server via `HS.FHIRServer.Interop.Operation`, the HL7->FHIR pipeline, Interop.Request/Response QuickStream payloads) the `fhir-interop` skill is attached — invoke it for anything beyond a simple send. NOTE: you configure productions to TALK to FHIR servers; you do NOT create or administer FHIR servers (that is the FHIR Assistant). There are TWO OAuth mechanisms:
+(A) ADAPTER OAUTH2 SETTINGS — the documented "no extra code" path, best for a plain outbound send: on the operation's adapter set `OAuth2GrantType=ClientCredentials`, `OAuth2ApplicationName=<registered OAuth 2.0 Client name>`, `OAuth2Scope`, `OAuth2AccessTokenPlacement=header`; the operation fetches the token itself. `configure_fhir_http_operation` sets these when you pass `oauthClient`/`oauthScope`. The OAuth 2.0 Client is registered at the IRIS Security level (see `AgenticInterop.Install.FHIRClientOAuthSetup`, which creates `FHIR-OAuth-Client`).
+(B) RUNTIME AdditionalInfo (authoritative, from the `HS.FHIRServer.Interop.HTTPOperation.ProcessOAuth2` source) — when a CUSTOM BPL/process drives the request: the OAuth client is read at runtime from the INCOMING request's `AdditionalInfo`, NOT from any production setting or System Default Setting. `ProcessOAuth2` reads `pFHIRRequest.AdditionalInfo.GetAt("USER:OAuthClient")` (the `OAuth2.Client` name) together with `AdditionalInfo.GetAt("SessionId")`, then calls `%SYS.OAuth2.AccessToken.IsAuthorized(oauthClientName, sessionId, ...)`. It can also take a pre-fetched token via `AdditionalInfo("USER:OAuthToken")` or a cached id via `AdditionalInfo("USER:TokenId")`. Therefore:
 - `OAuthClientName` and `SessionId` are inherited `HS.FHIRServer.API.RestClient` properties that are NOT in the host's SETTINGS list. Setting them as Host settings (via AddBusinessHost / UpdateBusinessHostSettings) makes the production log `ErrProductionSettingInvalid` on every start. Do NOT do it. The tool layer strips them defensively and reports them under `skippedSettings` — that is expected, not an error.
 - Do NOT put the OAuth client name in the adapter `Credentials` setting either. `Credentials` expects an IRIS credentials-registry entry (username/password); an OAuth client name there fails with `ErrNoCredentials`.
 - To actually authenticate the outbound POST, the BPL or process that builds the `HS.FHIRServer.Interop.Request` must set `request.AdditionalInfo.SetAt("<OAuth2.Client name>", "USER:OAuthClient")` and a session id BEFORE sending it to the HTTP operation. The `OAuth2.Client` itself (client_credentials grant) is provisioned once at the IRIS Security level (see `AgenticInterop.Install.FHIRClientOAuthSetup`).
-- On the HTTP operation host, set ONLY the Adapter settings: `HTTPServer`, `HTTPPort`, `URL`, `SSLConfig`.
+- On the HTTP operation host, the VALID Adapter settings are: `HTTPServer`, `HTTPPort`, `URL`, `SSLConfig`, `Credentials` (HTTP Basic only), and the OAuth2 set for path (A): `OAuth2GrantType`, `OAuth2ApplicationName`, `OAuth2Scope`, `OAuth2AccessTokenPlacement`. `configure_fhir_http_operation` writes these for you.
 - Environment-specific VALID settings (HTTPServer, URL, SSLConfig, ports) are best promoted across dev/test/prod as System Default Settings (`Ens.Config.DefaultSettings`, deployable via `Ens.Util.SettingsDocument` .ESD export) rather than hard-coded in the production class.
 
 CRITICAL: Build the COMPLETE DTL XML in ONE CreateDTL call. Do NOT call UpdateDTL repeatedly for individual field mappings — that wastes rate-limited API calls and causes provider throttling errors.

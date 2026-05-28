@@ -2393,6 +2393,218 @@ ClassMethod ConfigureSDAToFHIRProcess(production As %String, hostName As %String
     Quit out
 }
 
+/// Add (or update) an HS.FHIRServer.Interop.HTTPOperation business operation
+/// that SENDS FHIR requests to an internal or EXTERNAL FHIR endpoint over
+/// HTTP. This is the operation Health Interop uses to POST a FHIR Bundle
+/// (e.g. the output of the HL7-to-SDA-to-FHIR pipeline) to an external FHIR
+/// server such as https://fhir.example.com/r4. Health Interop does NOT create
+/// FHIR servers — it configures productions to TALK to them.
+///
+/// The connection + OAuth settings live on the operation's adapter
+/// (HS.FHIRServer.Interop.HTTPOutboundAdapter). This tool parses `fhirBaseUrl`
+/// into the documented Basic settings and wires SSL + OAuth 2.0:
+///   HTTPServer / HTTPPort / URL  — parsed from fhirBaseUrl
+///   SSLConfig                    — REQUIRED for https (name of an existing SSL/TLS config)
+///   Credentials                  — Ens credentials for HTTP Basic auth (optional; NOT for OAuth)
+///   OAuth2GrantType              — ClientCredentials | Password | JWTAuth
+///   OAuth2ApplicationName        — the registered IRIS OAuth 2.0 Client name
+///   OAuth2Scope                  — requested scope
+///   OAuth2AccessTokenPlacement   — header (default) | body | query
+///
+/// OAuth NOTE: to send with OAuth 2.0 client_credentials, first register an
+/// IRIS OAuth 2.0 Client (System Administration > Security > OAuth 2.0 >
+/// Client; this module ships AgenticInterop.Install.FHIRClientOAuthSetup which
+/// creates "FHIR-OAuth-Client") and pass its name as `oauthClient`. Do NOT put
+/// the OAuth client name in `credentials`, and do NOT try to set OAuthClientName
+/// as an item setting — that is a runtime-only property of the HS.FHIRServer
+/// RestClient layer, not a production Setting.
+///
+/// MUTATING — gated by the configure_ prefix. Forwards to AddBusinessHost
+/// (new host) or UpdateBusinessHostSettings (existing host).
+///
+/// production:     fully-qualified production class name.
+/// hostName:       logical host name (e.g. "FHIR.HTTP.Operation").
+/// fhirBaseUrl:    full base URL of the FHIR endpoint, e.g. "https://fhir.example.com/r4".
+/// sslConfig:      name of an existing SSL/TLS configuration (required for https).
+/// credentials:    Ens credentials name for HTTP Basic auth (optional).
+/// oauthClient:    registered IRIS OAuth 2.0 Client name (optional; enables OAuth).
+/// oauthGrantType: ClientCredentials (default when oauthClient set) | Password | JWTAuth.
+/// oauthScope:     OAuth scope string (optional).
+///
+/// Returns: { ok, added, parsedUrl, settingsApplied, message, error? }.
+ClassMethod ConfigureFHIRHTTPOperation(production As %String, hostName As %String, fhirBaseUrl As %String, sslConfig As %String = "", credentials As %String = "", oauthClient As %String = "", oauthGrantType As %String = "", oauthScope As %String = "") As %DynamicObject
+{
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("ConfigureFHIRHTTPOperation")
+    Set out = {}
+    Set out.tool = "configure_fhir_http_operation"
+    Set out.production = $get(production)
+    Set out.hostName = $get(hostName)
+    Try {
+        If $get(production) = "" { Set out.ok = 0  Set out.error = "Pass `production`." Quit }
+        If $get(hostName) = "" { Set out.ok = 0  Set out.error = "Pass `hostName`." Quit }
+        If $get(fhirBaseUrl) = "" { Set out.ok = 0  Set out.error = "Pass `fhirBaseUrl`, e.g. https://fhir.example.com/r4." Quit }
+        ; --- parse the base URL into HTTPServer / HTTPPort / URL ---
+        Set scheme = $zconvert($piece(fhirBaseUrl, "://", 1), "L")
+        If (scheme '= "http") && (scheme '= "https") {
+            Set scheme = "https"
+            Set rest = fhirBaseUrl
+        } Else {
+            Set rest = $piece(fhirBaseUrl, "://", 2)
+        }
+        Set hostport = $piece(rest, "/", 1)
+        Set path = $extract(rest, $length(hostport) + 1, *)
+        If path = "" { Set path = "/" }
+        Set httpServer = $piece(hostport, ":", 1)
+        Set httpPort = $piece(hostport, ":", 2)
+        If httpPort = "" { Set httpPort = $select(scheme = "https": 443, 1: 80) }
+        Set parsed = {}
+        Set parsed.scheme = scheme
+        Set parsed.httpServer = httpServer
+        Set parsed.httpPort = httpPort
+        Set parsed.url = path
+        Set out.parsedUrl = parsed
+        ; --- build adapter settings ---
+        Set adapter = {}
+        Set adapter.HTTPServer = httpServer
+        Set adapter.HTTPPort = httpPort
+        Set adapter.URL = path
+        If scheme = "https" {
+            If sslConfig = "" {
+                Set out.ok = 0
+                Set out.error = "fhirBaseUrl is https but no `sslConfig` was given. Pass the name of an existing SSL/TLS configuration — the operation cannot POST over TLS without one."
+                Quit
+            }
+            Set adapter.SSLConfig = sslConfig
+        } ElseIf sslConfig '= "" {
+            Set adapter.SSLConfig = sslConfig
+        }
+        If credentials '= "" { Set adapter.Credentials = credentials }
+        ; --- OAuth 2.0 (adapter OAuth2 tab) ---
+        If oauthClient '= "" {
+            Set adapter.OAuth2ApplicationName = oauthClient
+            Set adapter.OAuth2GrantType = $select(oauthGrantType '= "": oauthGrantType, 1: "ClientCredentials")
+            Set adapter.OAuth2AccessTokenPlacement = "header"
+            If oauthScope '= "" { Set adapter.OAuth2Scope = oauthScope }
+        }
+        Set settings = {}
+        Do settings.%Set("Adapter", adapter)
+        ; --- add or update ---
+        Set hostClass = "HS.FHIRServer.Interop.HTTPOperation"
+        Set added = 0
+        Set inv = ##class(AgenticInterop.Tool.Production).GetProduction(production)
+        Set hostExists = 0
+        If inv.%IsDefined("items") {
+            For i = 0:1:(inv.items.%Size() - 1) {
+                If inv.items.%Get(i).name = hostName { Set hostExists = 1  Quit }
+            }
+        }
+        If 'hostExists {
+            Set addResult = ##class(AgenticInterop.Tool.Production).AddBusinessHost(production, hostName, hostClass, settings)
+            If 'addResult.ok {
+                Set out.ok = 0
+                Set out.error = "AddBusinessHost failed: " _ $select(addResult.%IsDefined("error"):addResult.error, 1:"unknown")
+                Quit
+            }
+            Set added = 1
+            If addResult.%IsDefined("skippedSettings") { Set out.skippedSettings = addResult.skippedSettings }
+        } Else {
+            Set updResult = ##class(AgenticInterop.Tool.Production).UpdateBusinessHostSettings(production, hostName, settings)
+            If 'updResult.ok {
+                Set out.ok = 0
+                Set out.error = "UpdateBusinessHostSettings failed: " _ $select(updResult.%IsDefined("error"):updResult.error, 1:"unknown")
+                Quit
+            }
+        }
+        Set out.ok = 1
+        Set out.added = added
+        Set out.settingsApplied = settings
+        Set out.message = $select(added:"Added", 1:"Updated") _ " FHIR HTTP operation '" _ hostName _ "' -> " _ scheme _ "://" _ httpServer _ ":" _ httpPort _ path _ $select(oauthClient '= "": " (OAuth2 " _ $select(oauthGrantType '= "":oauthGrantType, 1:"ClientCredentials") _ " via '" _ oauthClient _ "')", 1: "") _ "."
+    } Catch ex {
+        Set out.ok = 0
+        Set out.error = $extract(ex.DisplayString(), 1, 400)
+    }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("ConfigureFHIRHTTPOperation", out)
+    Quit out
+}
+
+/// Add (or update) an HS.FHIRServer.Interop.Service business service that
+/// ACCEPTS FHIR requests routed from a FHIR server endpoint's REST handler
+/// into the production. Use this when an InterSystems FHIR server should
+/// route its requests through a production (e.g. to trace, transform, or
+/// proxy them) instead of going straight to the repository.
+///
+/// IMPORTANT two-step wiring: adding this service is only half the job. You
+/// must also set the FHIR server endpoint's "Service Config Name" field to
+/// this host's name (Health > <namespace> > FHIR Server Management > Edit >
+/// Advanced Configuration). Health Interop configures the PRODUCTION side;
+/// the endpoint side is set in FHIR Server Management (FHIR Assistant).
+///
+/// Settings (Host): TargetConfigName (downstream host that receives the
+/// request), Timeout.
+///
+/// MUTATING — gated by the configure_ prefix.
+///
+/// production:       fully-qualified production class name.
+/// hostName:         logical host name (often left as "HS.FHIRServer.Interop.Service"
+///                   so it matches the endpoint default, or a custom name).
+/// targetConfigName: downstream host that receives the inbound FHIR request
+///                   (e.g. a routing process or an HTTP operation for a proxy).
+/// timeout:          optional response timeout in seconds.
+///
+/// Returns: { ok, added, settingsApplied, message, error? }.
+ClassMethod ConfigureFHIRInteropService(production As %String, hostName As %String, targetConfigName As %String, timeout As %String = "") As %DynamicObject
+{
+    Do ##class(AgenticInterop.Agent.Manager).ToolStart("ConfigureFHIRInteropService")
+    Set out = {}
+    Set out.tool = "configure_fhir_interop_service"
+    Set out.production = $get(production)
+    Set out.hostName = $get(hostName)
+    Try {
+        If $get(production) = "" { Set out.ok = 0  Set out.error = "Pass `production`." Quit }
+        If $get(hostName) = "" { Set out.ok = 0  Set out.error = "Pass `hostName`." Quit }
+        If $get(targetConfigName) = "" { Set out.ok = 0  Set out.error = "Pass `targetConfigName` — the downstream host that receives the FHIR request." Quit }
+        Set host = {}
+        Set host.TargetConfigName = targetConfigName
+        If timeout '= "" { Set host.Timeout = timeout }
+        Set settings = {}
+        Do settings.%Set("Host", host)
+        Set hostClass = "HS.FHIRServer.Interop.Service"
+        Set added = 0
+        Set inv = ##class(AgenticInterop.Tool.Production).GetProduction(production)
+        Set hostExists = 0
+        If inv.%IsDefined("items") {
+            For i = 0:1:(inv.items.%Size() - 1) {
+                If inv.items.%Get(i).name = hostName { Set hostExists = 1  Quit }
+            }
+        }
+        If 'hostExists {
+            Set addResult = ##class(AgenticInterop.Tool.Production).AddBusinessHost(production, hostName, hostClass, settings)
+            If 'addResult.ok {
+                Set out.ok = 0
+                Set out.error = "AddBusinessHost failed: " _ $select(addResult.%IsDefined("error"):addResult.error, 1:"unknown")
+                Quit
+            }
+            Set added = 1
+        } Else {
+            Set updResult = ##class(AgenticInterop.Tool.Production).UpdateBusinessHostSettings(production, hostName, settings)
+            If 'updResult.ok {
+                Set out.ok = 0
+                Set out.error = "UpdateBusinessHostSettings failed: " _ $select(updResult.%IsDefined("error"):updResult.error, 1:"unknown")
+                Quit
+            }
+        }
+        Set out.ok = 1
+        Set out.added = added
+        Set out.settingsApplied = settings
+        Set out.message = $select(added:"Added", 1:"Updated") _ " FHIR interop service '" _ hostName _ "' (routes inbound FHIR to '" _ targetConfigName _ "'). Next: set the FHIR endpoint's Service Config Name to '" _ hostName _ "' in FHIR Server Management."
+    } Catch ex {
+        Set out.ok = 0
+        Set out.error = $extract(ex.DisplayString(), 1, 400)
+    }
+    Do ##class(AgenticInterop.Agent.Manager).ToolDone("ConfigureFHIRInteropService", out)
+    Quit out
+}
+
 /// Add (or update) an HS.FHIR.DTL.Util.HC.FHIR.SDA3.Process host in a
 /// production with the documented FHIR-to-SDA settings. Use this for
 /// the reverse pipeline (FHIR → SDA): the process consumes a FHIR
