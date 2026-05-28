@@ -193,14 +193,14 @@
 <body>
 
 <h1>Agentic Interop for IRIS for Health</h1>
-<p class="subtitle">Architecture diagram — built on the InterSystems %AI Framework (IRIS 2026.2). Updated 2026-05-23.</p>
+<p class="subtitle">Architecture diagram — built on the InterSystems %AI Framework (IRIS 2026.2). Updated 2026-05-27 (v1.1.0).</p>
 
 <!-- Stats -->
 <div class="stats-bar">
-  <div class="stat"><span class="stat-value">64</span><span class="stat-label">Classes</span></div>
-  <div class="stat"><span class="stat-value">47</span><span class="stat-label">LLM Tools</span></div>
-  <div class="stat"><span class="stat-value">12</span><span class="stat-label">Skills</span></div>
-  <div class="stat"><span class="stat-value">4</span><span class="stat-label">MCP Servers</span></div>
+  <div class="stat"><span class="stat-value">82</span><span class="stat-label">Classes</span></div>
+  <div class="stat"><span class="stat-value">118</span><span class="stat-label">LLM Tools</span></div>
+  <div class="stat"><span class="stat-value">15</span><span class="stat-label">Skills</span></div>
+  <div class="stat"><span class="stat-value">6</span><span class="stat-label">MCP Servers</span></div>
   <div class="stat"><span class="stat-value">2</span><span class="stat-label">RAG Catalogs</span></div>
   <div class="stat"><span class="stat-value">2</span><span class="stat-label">Policies</span></div>
   <div class="stat"><span class="stat-value">4</span><span class="stat-label">Personas</span></div>
@@ -329,7 +329,7 @@
       </div>
 
       <div class="card card-ui card-third">
-        <div class="card-title">Editor Services <span class="badge">14 classes</span></div>
+        <div class="card-title">Editor Services <span class="badge">17 classes</span></div>
         <div class="card-extends">all extend %RegisteredObject</div>
         <div class="card-body">
           <ul>
@@ -619,6 +619,26 @@
         </div>
       </div>
 
+      <div class="card card-fw card-quarter" style="opacity: 0.7;">
+        <div class="card-title">MCP.FHIRServer <span class="badge">metadata</span></div>
+        <div class="card-extends">extends MCP.Base &larr; %AI.MCP.Service</div>
+        <div class="card-body">
+          FHIR R4 server build + administration.
+          <hr class="section-divider">
+          Admin UI grouping. Tool classes registered directly via UseToolSet.
+        </div>
+      </div>
+
+      <div class="card card-fw card-quarter" style="opacity: 0.7;">
+        <div class="card-title">MCP.BulkFHIR <span class="badge">metadata</span></div>
+        <div class="card-extends">extends MCP.Base &larr; %AI.MCP.Service</div>
+        <div class="card-body">
+          Bulk FHIR Coordinator config + $export sessions.
+          <hr class="section-divider">
+          Admin UI grouping. Tool classes registered directly via UseToolSet.
+        </div>
+      </div>
+
     </div>
   </div>
 
@@ -629,10 +649,10 @@
   </div>
 
   <!-- ======================================================= -->
-  <!-- LAYER 4: Tools (the 42 LLM-callable methods) -->
+  <!-- LAYER 4: Tools (the 118 LLM-callable methods) -->
   <!-- ======================================================= -->
   <div class="layer">
-    <div class="layer-label">Tools (%AI.Tool subclasses — 47 LLM-callable ClassMethods, registered directly via UseToolSet)</div>
+    <div class="layer-label">Tools (%AI.Tool subclasses — 118 LLM-callable ClassMethods, registered directly via UseToolSet)</div>
     <div class="layer-content">
 
       <!-- Tool.Production -->
@@ -754,6 +774,61 @@
         </div>
       </div>
 
+      <!-- Tool.FHIRServer -->
+      <div class="card card-fw card-half">
+        <div class="card-title">Tool.FHIRServer <span class="badge">26 tools</span></div>
+        <div class="card-extends">extends %AI.Tool</div>
+        <div class="tool-pills">
+          <span class="tool-pill">DiscoverFHIRNamespaces</span>
+          <span class="tool-pill">ListFHIREndpoints</span>
+          <span class="tool-pill">GetFHIREndpoint</span>
+          <span class="tool-pill">GetCapabilityStatement</span>
+          <span class="tool-pill">ListAvailableFHIRPackages</span>
+          <span class="tool-pill">AddFHIRPackages</span>
+          <span class="tool-pill">CreateFHIREndpoint</span>
+          <span class="tool-pill">DeleteFHIREndpoint</span>
+          <span class="tool-pill">UpdateFHIREndpointConfig</span>
+          <span class="tool-pill">SetFHIREndpointEnabled</span>
+          <span class="tool-pill">SearchFHIRResources</span>
+          <span class="tool-pill">ReadFHIRResource</span>
+          <span class="tool-pill">CreateFHIRResource</span>
+          <span class="tool-pill">UpdateFHIRResource</span>
+          <span class="tool-pill">DeleteFHIRResource</span>
+          <span class="tool-pill">ValidateFHIRResource</span>
+          <span class="tool-pill">CountFHIRResources</span>
+          <span class="tool-pill">ExecuteFHIRRequest</span>
+          <span class="tool-pill">LoadFHIRData</span>
+          <span class="tool-pill">LoadFHIRDirectory</span>
+          <span class="tool-pill">GetFHIRLoadStatus</span>
+          <span class="tool-pill">GetFHIRLoadMetrics</span>
+          <span class="tool-pill">ListFHIRLoadRuns</span>
+          <span class="tool-pill">GetFHIRServerStats</span>
+          <span class="tool-pill">GetFHIRQueryPerformance</span>
+          <span class="tool-pill">ResetFHIRServerData</span>
+        </div>
+      </div>
+
+      <!-- Tool.BulkFHIR -->
+      <div class="card card-fw card-half">
+        <div class="card-title">Tool.BulkFHIR <span class="badge">13 tools</span></div>
+        <div class="card-extends">extends %AI.Tool</div>
+        <div class="tool-pills">
+          <span class="tool-pill">ListBulkFHIRConfigs</span>
+          <span class="tool-pill">GetBulkFHIRConfig</span>
+          <span class="tool-pill">GetBulkFHIRSchema</span>
+          <span class="tool-pill">CreateBulkFHIRConfig</span>
+          <span class="tool-pill">ConfigureBulkFHIRConfig</span>
+          <span class="tool-pill">ActivateBulkFHIRConfig</span>
+          <span class="tool-pill">DeleteBulkFHIRConfig</span>
+          <span class="tool-pill">StartBulkFHIRExport</span>
+          <span class="tool-pill">MonitorBulkFHIRSession</span>
+          <span class="tool-pill">ProvisionStorageDir</span>
+          <span class="tool-pill">ProvisionSSLConfig</span>
+          <span class="tool-pill">ProvisionCredential</span>
+          <span class="tool-pill">ProvisionSMARTOAuth</span>
+        </div>
+      </div>
+
     </div>
   </div>
 
@@ -773,10 +848,10 @@
       <div class="card card-opt card-third">
         <div class="card-title">ToolFilter <span class="badge">catalog</span></div>
         <div class="card-body">
-          <strong>Before:</strong> 29 tools, ~62K chars (~15.6K tokens)<br>
-          <strong>After:</strong> 14 classes / 42 methods, ~28K chars (~7K tokens)
+          <strong>Before filter:</strong> framework default tool catalog (incl. %AI.Tools.FileSystem, SQL, ShellTools).<br>
+          <strong>After filter:</strong> 7 project Tool classes, 118 LLM-callable methods.
           <hr class="section-divider">
-          Strips: %AI.Tools.FileSystem, SQL, ShellTools, %AI.Agent.Skill, Skill.Base. Deduplicates %Init() + UseToolSet entries.
+          Strips: %AI.Tools.FileSystem, SQL, ShellTools, %AI.Agent.Skill, Skill.Base. Deduplicates %Init() + UseToolSet entries. Per-request char/token measurements depend on which tools the agent actually loads for the current chat — see the Audit tab for live numbers.
         </div>
       </div>
 
@@ -974,7 +1049,7 @@
 <div style="margin-top: 48px; max-width: 1400px; margin-left: auto; margin-right: auto;">
   <h2>%AI Framework Class Map</h2>
   <p style="font-size: 13px; color: var(--text-dim); margin-bottom: 20px;">
-    How our 64 classes extend or wrap the InterSystems %AI Framework (IRIS 2026.2+).
+    How our 82 classes extend or wrap the InterSystems %AI Framework (IRIS 2026.2+).
     Bold = framework base class. Regular = our extension.
   </p>
 
@@ -1266,7 +1341,7 @@
 <!-- Footer -->
 <div style="margin-top: 48px; padding: 20px 0; border-top: 1px solid var(--line); max-width: 1400px; margin-left: auto; margin-right: auto;">
   <p style="font-size: 12px; color: var(--text-dim);">
-    Agentic Interop for InterSystems IRIS for Health — 64 classes, 47 tools, 12 skills, 4 MCP servers, 2 policies, 2 RAG catalogs, 1,538 field-level mappings.
+    Agentic Interop for InterSystems IRIS for Health — 82 classes, 118 tools, 15 domain skills, 6 MCP servers, 2 policies, 2 RAG catalogs, 1,538 field-level mappings.
     Built on the %AI Framework (IRIS 2026.2+). IPM package: agentic-interop.
     Four personas: Developer (VS Code / IDE) authors Tools, Skills, and Catalogs.
     AI Hub Admin (admin UI) configures Agents, Connections, Catalogs, and role-based ToolSet bindings.
