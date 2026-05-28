@@ -142,7 +142,7 @@ ClassMethod Chat(pResponse As %CSP.Response, pBodyStream) As %Status
             // The monitor caps wall-clock + tokens so the known
             // framework toolset-hang can never silently exceed the
             // CSP gateway timeout.
-            Set monitor = ##class(AgenticInterop.Agent.Monitor).%New(300, 100000)
+            Set monitor = ##class(AgenticInterop.Agent.Monitor).%New(300, 300000)
             Set maxIter = ##class(AgenticInterop.Editor.Overlay).GetEffectiveMaxIterations(agentClass)
             If maxIter = "" { Set maxIter = 10 }
             Set response = agent.Run(session, message, maxIter, monitor)
@@ -595,9 +595,9 @@ ClassMethod ChatStream(pResponse As %CSP.Response, pBodyStream) As %Status
         Set stage = "run"
         Set maxIter = +agent.MaxIterations
         If maxIter < 1 { Set maxIter = 25 }
-        Set monitor = ##class(AgenticInterop.Agent.Monitor).%New(300, 100000)
+        Set monitor = ##class(AgenticInterop.Agent.Monitor).%New(300, 300000)
         Set monitor.SSEEnabled = 1
-        Do ..WriteLiveFeed("trace", {"msg":("Starting run loop (max "_maxIter_" iterations, deadline 300s, budget 100k tokens)")})
+        Do ..WriteLiveFeed("trace", {"msg":("Starting run loop (max "_maxIter_" iterations, deadline 300s, budget 300k tokens)")})
         Set ^AgInt.ChatTrace($i(^AgInt.ChatTrace))=$zdt($h,3,1)_": run-loop-start maxIter="_maxIter_" agentClass="_agentClass_" msgLen="_$length(message)
         Set response = ""
         Set iteration = 0
