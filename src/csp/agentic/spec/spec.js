@@ -481,6 +481,13 @@ function closeCatalogPicker() {
 var answers = {};
 var repeats = {};   // questionId -> array of row objects
 
+/* Which sections are expanded. Held here rather than read off the DOM
+ * because render() rebuilds the form on every answer change — reading the
+ * DOM meant a section silently snapped shut whenever you picked a radio.
+ * Everything starts collapsed: the page opens as a short, readable index
+ * of the work rather than a wall of inputs. */
+var sectionOpen = {};
+
 function initDefaults() {
     SCHEMA.forEach(function (sec) {
         sec.questions.forEach(function (q) {
@@ -536,20 +543,44 @@ function render() {
     renderProgress();
 }
 
+/* Required-question tally for one section, counting only what is visible. */
+function sectionScore(sec) {
+    var reqs = sec.questions.filter(function (q) { return q.required && visible(q); });
+    var done = reqs.filter(answered).length;
+    var opt  = sec.questions.filter(function (q) { return !q.required && visible(q) && answered(q); }).length;
+    return { req: reqs.length, done: done, optional: opt };
+}
+
 function renderSection(sec) {
-    var wrap = el('section', 'section' + (sec.collapsed ? ' collapsed' : ''));
+    var open = !!sectionOpen[sec.id];
+    var wrap = el('section', 'section' + (open ? '' : ' collapsed'));
     wrap.id = 'sec-' + sec.id;
 
+    var s = sectionScore(sec);
     var head = el('div', 'section-head');
     head.appendChild(el('h3', null, sec.title));
     head.appendChild(el('span', 'tier', sec.tier));
+
+    // Progress chip — makes the collapsed view an index you can act on
+    // rather than just a list of names.
+    if (s.req > 0) {
+        var chip = el('span', 'sec-chip' + (s.done === s.req ? ' ok' : ''), s.done + '/' + s.req);
+        chip.title = s.done + ' of ' + s.req + ' required answers complete';
+        head.appendChild(chip);
+    } else if (s.optional > 0) {
+        head.appendChild(el('span', 'sec-chip ok', String(s.optional)));
+    }
+
     head.appendChild(el('span', 'caret', '▼'));
-    head.addEventListener('click', function () { wrap.classList.toggle('collapsed'); });
+    head.addEventListener('click', function () {
+        sectionOpen[sec.id] = !sectionOpen[sec.id];
+        wrap.classList.toggle('collapsed', !sectionOpen[sec.id]);
+    });
     wrap.appendChild(head);
 
     if (sec.help) wrap.appendChild(el('div', 'section-help', sec.help));
 
-    var body = el('div', 'section-body');
+    var body = el('div', 'section-body grid2');
 
     // Escape hatch: mapping work beyond a simple table belongs in the
     // dedicated visual tool, not in this form.
@@ -576,8 +607,16 @@ function labelFor(q) {
     return lab;
 }
 
+/* Short controls sit two-per-row; anything that needs room (prose, option
+ * groups, repeating rows, catalog pickers) spans the full width. This is
+ * what reclaims the horizontal space an open section was wasting. */
+function isCompact(q) {
+    return q.type === 'text' || q.type === 'number' || q.type === 'select';
+}
+
 function renderQuestion(q) {
-    var f = el('div', 'field' + (seededFields[q.id] ? ' seeded' : ''));
+    var f = el('div', 'field' + (isCompact(q) ? '' : ' wide') +
+                      (seededFields[q.id] ? ' seeded' : ''));
     f.dataset.qid = q.id;
 
     if (q.type === 'repeat') {
@@ -801,14 +840,10 @@ function names() {
 /* Data Atlas hand-off. The questionnaire's mapping table is deliberately
  * simple — good for a handful of rules, wrong for a 200-row field mapping.
  * Rather than grow the form into a mapping tool, hand the user to the
- * dedicated one and let them come back. The target is configurable per
- * deployment via ?atlas=<url>. */
-function atlasUrl() {
-    return qp('atlas') || '/agentic/admin/index.html#transforms';
-}
-
+ * dedicated one and let them come back. Dummy for now: no target is wired
+ * up, so the button acknowledges the click and does nothing else. */
 function renderAtlas() {
-    var box = el('div', 'atlas-box');
+    var box = el('div', 'atlas-box wide');
     var txt = el('div', 'atlas-txt');
     txt.innerHTML = 'Mapping something complex? <b>Data Atlas</b> is the visual tool for ' +
         'building transformations field by field. Work there and come back &mdash; anything ' +
@@ -818,8 +853,12 @@ function renderAtlas() {
     b.type = 'button';
     b.title = 'Open Data Atlas to build transformations visually';
     b.addEventListener('click', function () {
-        window.open(atlasUrl(), '_blank');
-        toast('Opening Data Atlas in a new tab.');
+        // Placeholder for now — there is no Data Atlas target wired up, and
+        // opening some other page would be worse than doing nothing. When a
+        // real URL exists, pass it as ?atlas=<url> and this navigates.
+        var url = qp('atlas');
+        if (url) { window.open(url, '_blank'); toast('Opening Data Atlas in a new tab.'); return; }
+        toast('Data Atlas would open here. Not wired up yet.');
     });
     box.appendChild(b);
     return box;
@@ -827,7 +866,7 @@ function renderAtlas() {
 
 function renderDerived() {
     var n = names();
-    var d = el('div', 'derived');
+    var d = el('div', 'derived wide');
     var t = document.createElement('table');
     var rows = [
         ['Business service', n.service],
@@ -868,6 +907,60 @@ function renderRail() {
     });
 }
 
+/* Open a section and put the cursor on a specific question. Used by the
+ * "Still needed" list, which is only useful if it takes you there. */
+function jumpTo(secId, qid) {
+    sectionOpen[secId] = true;
+    render();
+    var sec = document.getElementById('sec-' + secId);
+    if (sec) sec.classList.remove('collapsed');
+    var f = document.querySelector('.field[data-qid="' + qid + '"]');
+    var target = f || sec;
+    if (target) target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    if (f) {
+        var ctl = f.querySelector('input:not([readonly]), textarea, select');
+        if (ctl) setTimeout(function () { try { ctl.focus({ preventScroll: true }); } catch (e) {} }, 260);
+        f.classList.add('flash');
+        setTimeout(function () { f.classList.remove('flash'); }, 1200);
+    }
+}
+
+/* The right column's lower half: everything still required, grouped by
+ * section and clickable. With the form collapsed by default this is the
+ * main way a user knows where the remaining work is. */
+function renderTodo() {
+    var host = document.getElementById('todo-list');
+    if (!host) return;
+    var missing = missingRequired();
+    host.innerHTML = '';
+
+    if (!missing.length) {
+        var ok = el('div', 'todo-done');
+        ok.appendChild(el('div', 'todo-done-t', 'Ready to send'));
+        ok.appendChild(el('div', null, 'Every required answer is complete. Use Output Trial to review the specification, or send it straight to the agent.'));
+        host.appendChild(ok);
+        return;
+    }
+
+    var bySec = [];
+    missing.forEach(function (m) {
+        var g = bySec.filter(function (x) { return x.sec === m.sec; })[0];
+        if (!g) { g = { sec: m.sec, items: [] }; bySec.push(g); }
+        g.items.push(m.q);
+    });
+
+    bySec.forEach(function (g) {
+        host.appendChild(el('div', 'todo-sec', g.sec.title));
+        g.items.forEach(function (q) {
+            var b = el('button', 'todo-item', q.label);
+            b.type = 'button';
+            b.title = 'Go to this question';
+            b.addEventListener('click', function () { jumpTo(g.sec.id, q.id); });
+            host.appendChild(b);
+        });
+    });
+}
+
 function renderProgress() {
     var total = 0, done = 0;
     SCHEMA.forEach(function (sec) {
@@ -878,7 +971,10 @@ function renderProgress() {
         });
     });
     document.getElementById('progress').textContent = done + ' of ' + total + ' required answered';
+    var bar = document.getElementById('progress-bar');
+    if (bar) bar.style.width = (total ? Math.round(done / total * 100) : 0) + '%';
     renderRail();
+    renderTodo();
 }
 
 var rerenderPending = false;
@@ -1802,6 +1898,16 @@ async function boot() {
             document.execCommand('copy');
             toast('Specification copied.');
         }
+    });
+
+    document.getElementById('expand-all').addEventListener('click', function () {
+        SCHEMA.forEach(function (s) { sectionOpen[s.id] = true; });
+        render();
+    });
+    document.getElementById('collapse-all').addEventListener('click', function () {
+        SCHEMA.forEach(function (s) { sectionOpen[s.id] = false; });
+        render();
+        document.getElementById('form-pane').scrollTop = 0;
     });
 
     // Catalog picker wiring

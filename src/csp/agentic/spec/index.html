@@ -15,7 +15,10 @@
   <h1>InterSystems Integration Spec Questionnaire</h1>
   <span class="ns-pill" id="ns-pill" title="Target namespace">&mdash;</span>
   <span class="spacer"></span>
-  <span class="progress" id="progress">0 of 0 required answered</span>
+  <div class="progress-wrap">
+    <span class="progress" id="progress">0 of 0 required answered</span>
+    <span class="progress-track"><span class="progress-fill" id="progress-bar"></span></span>
+  </div>
 </header>
 
 <div id="shell">
@@ -34,11 +37,16 @@
         <em>Not sure</em> becomes an open question for the agent to ask about
         rather than a silent assumption.
       </p>
-      <p class="muted">
-        Required fields are marked. Recommended defaults are pre-filled and can
-        be changed. Advanced sections stay collapsed until you need them.
-      </p>
     </div>
+
+    <div id="form-tools">
+      <span class="muted" id="form-tools-hint">Open a section to answer it</span>
+      <span class="spacer"></span>
+      <button type="button" class="linkbtn" id="expand-all">Expand all</button>
+      <span class="sep">&middot;</span>
+      <button type="button" class="linkbtn" id="collapse-all">Collapse all</button>
+    </div>
+
     <form id="form" autocomplete="off"></form>
   </main>
 
@@ -61,6 +69,12 @@
       </div>
       <div id="seed-status" hidden></div>
       <div id="seed-notes" hidden></div>
+    </div>
+
+    <!-- live readiness: what still has to be answered before sending -->
+    <div id="todo">
+      <h2>Still needed</h2>
+      <div id="todo-list"></div>
     </div>
   </aside>
 
