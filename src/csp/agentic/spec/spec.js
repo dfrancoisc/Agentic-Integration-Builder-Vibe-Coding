@@ -898,10 +898,192 @@ function buildPrompt() {
 
     L.push('[[/SPEC]]');
 
+    // Share the derived confirmed-defaults / open-questions with buildJson so
+    // the prose and the JSON can never disagree about them.
+    lastMeta = { confirmed: confirmed.slice(), open: open.slice() };
+
     return L.join('\n');
 }
 
+/* Confirmed defaults and open questions are derived while rendering the
+ * prose. buildJson needs the same two lists, so it re-derives them here
+ * rather than duplicating the (order-dependent) logic. */
+var lastMeta = { confirmed: [], open: [] };
+
+function collectDerived() {
+    buildPrompt();
+    return lastMeta;
+}
+
+/* ==================== canonical JSON payload ====================
+ * The machine-readable half of the output. Keys are named after the
+ * things the agent's tools actually take (schemaCategory, ackMode,
+ * poolSize, failureTimeout, ...) so the agent maps answers to tool
+ * arguments directly instead of inferring them from prose.
+ * Anything the user left as "not sure" is omitted here and surfaced in
+ * openQuestions — an absent key means "ask", never "assume". */
+
+function buildJson() {
+    var a = answers;
+    var n = names();
+    var meta = collectDerived();   // { confirmed:[], open:[] }
+
+    function val(v) {
+        if (v == null) return undefined;
+        if (isUnsure(v)) return undefined;
+        var s = String(v).trim();
+        return s === '' ? undefined : v;
+    }
+
+    /* Answer-by-id, but only if that question is currently VISIBLE.
+     * Defaults are seeded for every question up front, including ones behind
+     * a `when` predicate, so reading answers directly would leak (for example)
+     * the File branch's fileSpec into a TCP source. Visibility is the same
+     * condition the user actually saw, so it is the right gate. */
+    function av(qid) {
+        var q = findQ(qid);
+        if (!q || !visible(q)) return undefined;
+        return val(a[qid]);
+    }
+
+    var src = {
+        system:         val(a.srcSystem),
+        standard:       val(a.srcStandard),
+        schemaCategory: av('srcHl7Version'),
+        messageTypes:   (visible(findQ('srcMsgTypes')) && Array.isArray(a.srcMsgTypes) && a.srcMsgTypes.length) ? a.srcMsgTypes : undefined,
+        documentTypes:  av('srcFormatOther'),
+        customSchema:   visible(findQ('srcZseg')) ? (a.srcZseg === 'yes' ? true : (a.srcZseg === 'no' ? false : undefined)) : undefined,
+        transport:      val(a.srcTransport),
+        port:           av('srcPort'),
+        framing:        av('srcFraming'),
+        filePath:       av('srcFilePath'),
+        fileSpec:       av('srcFileSpec'),
+        archivePath:    av('srcArchivePath'),
+        ftpServer:      av('srcFtpServer'),
+        httpEndpoint:   av('srcHttpEndpoint'),
+        sqlQuery:       av('srcSqlQuery'),
+        mqttTopic:      av('srcMqttTopic'),
+        ackMode:        av('ackMode'),
+        ackTarget:      av('ackTarget'),
+        fifoRequired:   a.fifo === 'yes' ? true : (a.fifo === 'no' ? false : undefined),
+        poolSize:       a.fifo === 'yes' ? 1 : undefined,
+        volume:         val(a.volume)
+    };
+
+    var dests = (repeats.targets || [])
+        .filter(function (t) { return String(t.name || '').trim(); })
+        .map(function (t) {
+            return {
+                name:           t.name,
+                standard:       val(t.standard),
+                messageType:    val(t.msgType),
+                transport:      val(t.transport),
+                endpoint:       val(t.endpoint),
+                routeWhen:      val(t.filter) || 'all',
+                needsTransform: t.transform === 'yes',
+                retryInterval:  val(t.retry),
+                failureTimeout: val(t.failTimeout)
+            };
+        });
+
+    var maps = (repeats.mappings || [])
+        .filter(function (m) { return String(m.target || '').trim(); })
+        .map(function (m) {
+            return {
+                action: m.action,
+                source: val(m.source),
+                target: m.target,
+                value:  val(m.value)
+            };
+        });
+
+    var lookups = (a.lookups || '').split('\n')
+        .map(function (l) { return l.trim(); })
+        .filter(Boolean);
+
+    var payload = {
+        specVersion: '1.0',
+        generatedBy: 'InterSystems Integration Spec Questionnaire',
+        interface: {
+            name:        val(a.name),
+            shortName:   val(a.shortName),
+            purpose:     val(a.purpose),
+            namespace:   val(a.namespace),
+            production:  val(a.production),
+            environment: val(a.environment),
+            owner:       val(a.owner),
+            pattern:     val(a.pattern)
+        },
+        derivedNames: {
+            businessService: n.service,
+            routingProcess:  n.router,
+            ruleSet:         n.rules,
+            operationPrefix: 'To'
+        },
+        source: src,
+        destinations: dests.length ? dests : undefined,
+        routing: {
+            deadLetter:       val(a.deadLetter),
+            onTransformError: val(a.onTransformError),
+            alertOnError:     a.alertOnError === 'yes' ? true : (a.alertOnError === 'no' ? false : undefined),
+            alertRecipients:  val(a.alertTo),
+            validation:       a.srcStandard === 'hl7v2' ? '' : undefined
+        },
+        transformation: {
+            required:          a.needsTransform === 'yes' ? true : (a.needsTransform === 'no' ? false : undefined),
+            approach:          (av('approach') && a.approach !== 'auto') ? a.approach : undefined,
+            mappings:          maps.length ? maps : undefined,
+            codeTranslations:  lookups.length ? lookups : undefined,
+            stampSegmentTerminator: visible(findQ('segTerminator'))
+                                    ? (a.segTerminator === 'yes' ? true : (a.segTerminator === 'no' ? false : undefined))
+                                    : undefined
+        },
+        testing: {
+            sampleMessage: val(a.testMessage),
+            acceptance:    val(a.acceptance)
+        },
+        deployment: {
+            promotionPath: val(a.promotion),
+            sourceControl: a.sourceControl === 'yes' ? true : (a.sourceControl === 'no' ? false : undefined)
+        },
+        confirmedDefaults: meta.confirmed,
+        openQuestions: meta.open
+    };
+
+    // Drop undefined / empty containers so the agent never sees noise.
+    return JSON.parse(JSON.stringify(payload, function (k, v) {
+        if (v === undefined) return undefined;
+        if (v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length === 0) return undefined;
+        return v;
+    }));
+}
+
+/* ============================ output assembly ============================ */
+
+function buildOutput(mode) {
+    var prompt = buildPrompt();
+    if (mode === 'prompt') return prompt;
+
+    var json = JSON.stringify(buildJson(), null, 2);
+    if (mode === 'json') {
+        return 'Build the integration described by this specification.\n\n' +
+               '<integration_spec format="json">\n' + json + '\n</integration_spec>\n\n' +
+               'Read the JSON as the authoritative specification. Present a plan and wait ' +
+               'for my approval before building anything. Ask about every entry in ' +
+               'openQuestions rather than assuming a value.';
+    }
+
+    // both — prose for the human and the Spec Card, JSON as the source of truth
+    return prompt + '\n\n' +
+        '<integration_spec format="json">\n' + json + '\n</integration_spec>\n\n' +
+        'The JSON above is the authoritative specification; the text above it is the ' +
+        'human-readable rendering of the same answers. Where they differ, trust the JSON. ' +
+        'A key that is absent was not specified — ask, do not assume.';
+}
+
 /* ============================ actions ============================ */
+
+var previewFormat = 'both';
 
 function openPreview() {
     var missing = missingRequired();
@@ -915,11 +1097,26 @@ function openPreview() {
         note.innerHTML = '<b>All required answers are complete.</b> Review the specification below, edit it if you ' +
             'like, then send it. The agent will present a plan and wait for your approval before building anything.';
     }
-    var txt = buildPrompt();
+    renderOutput();
+    document.getElementById('preview').hidden = false;
+}
+
+var FORMAT_WHY = {
+    both:   'Recommended — the agent trusts the JSON, you and the approval card read the text.',
+    prompt: 'Human-readable only. The agent infers values from prose.',
+    json:   'Machine-readable only. Fastest for the agent, least readable for you.'
+};
+
+function renderOutput() {
+    var txt = buildOutput(previewFormat);
     document.getElementById('pv-text').value = txt;
     document.getElementById('pv-stats').textContent =
         txt.split('\n').length + ' lines, ' + txt.length + ' characters';
-    document.getElementById('preview').hidden = false;
+    document.getElementById('pv-why').textContent = FORMAT_WHY[previewFormat] || '';
+    var seg = document.getElementById('pv-format');
+    [].forEach.call(seg.querySelectorAll('button'), function (b) {
+        b.classList.toggle('on', b.dataset.fmt === previewFormat);
+    });
 }
 
 function closePreview() { document.getElementById('preview').hidden = true; }
@@ -991,7 +1188,15 @@ function boot() {
                   ' missing — review before sending.', true);
             return;
         }
-        sendToAIB(buildPrompt());
+        sendToAIB(buildOutput(previewFormat));
+    });
+
+    // Output-format selector inside the preview.
+    document.getElementById('pv-format').addEventListener('click', function (e) {
+        var b = e.target.closest('button[data-fmt]');
+        if (!b) return;
+        previewFormat = b.dataset.fmt;
+        renderOutput();
     });
 
     document.getElementById('btn-reset').addEventListener('click', function () {

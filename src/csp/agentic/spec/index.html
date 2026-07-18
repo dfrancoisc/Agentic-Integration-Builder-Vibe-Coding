@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<title>Interface Specification Builder</title>
+<title>InterSystems Integration Spec Questionnaire</title>
 <link rel="stylesheet" href="spec.css">
 </head>
 <body>
 
 <header id="hdr">
-  <h1>Interface Specification Builder</h1>
+  <h1>InterSystems Integration Spec Questionnaire</h1>
   <span class="ns-pill" id="ns-pill" title="Target namespace">&mdash;</span>
   <span class="spacer"></span>
   <span class="progress" id="progress">0 of 0 required answered</span>
@@ -59,10 +59,19 @@
 <div id="preview" class="overlay" hidden>
   <div class="panel">
     <div class="panel-bar">
-      <span>Specification prompt &mdash; review before sending</span>
+      <span>Integration specification &mdash; review before sending</span>
       <button type="button" class="x" id="pv-close" title="Close">&#10005;</button>
     </div>
     <div class="panel-note" id="pv-note"></div>
+    <div class="fmt-row">
+      <span class="fmt-label">Output format</span>
+      <div class="seg" id="pv-format">
+        <button type="button" data-fmt="both" class="on">Prompt + JSON</button>
+        <button type="button" data-fmt="prompt">Prompt only</button>
+        <button type="button" data-fmt="json">JSON only</button>
+      </div>
+      <span class="fmt-why" id="pv-why"></span>
+    </div>
     <textarea id="pv-text" spellcheck="false"></textarea>
     <div class="panel-foot">
       <span class="muted" id="pv-stats"></span>

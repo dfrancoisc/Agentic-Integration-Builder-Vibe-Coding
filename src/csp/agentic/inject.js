@@ -565,10 +565,10 @@
         overlay.id = SPEC_OVERLAY_ID;
         overlay.innerHTML =
             '<div class="bar">' +
-              '<span>Interface Specification Builder</span>' +
+              '<span>InterSystems Integration Spec Questionnaire</span>' +
               '<button class="close" type="button" title="Close">✕</button>' +
             '</div>' +
-            '<iframe src="about:blank" title="Interface Specification Builder"></iframe>';
+            '<iframe src="about:blank" title="InterSystems Integration Spec Questionnaire"></iframe>';
         document.body.appendChild(overlay);
         overlay.querySelector('.close').addEventListener('click', closeSpec);
         document.addEventListener('keydown', function (e) {
@@ -612,7 +612,7 @@
         tab.innerHTML =
             '<div class="agentic-tab-inner">' +
               '<svg viewBox="0 0 20 20" width="18" height="18"><path d="M5 2h7l3 3v13H5V2zm7 1.5V6h2.5L12 3.5zM7 9h6v1.2H7V9zm0 3h6v1.2H7V12zm0 3h4v1.2H7V15z" fill="#0d9488"/></svg>' +
-              '<span>Interface Spec</span>' +
+              '<span>Integration Spec</span>' +
             '</div>';
         tab.addEventListener('click', function (e) {
             e.preventDefault(); e.stopPropagation();
