@@ -48,7 +48,7 @@ upfront and the LLM never sees an empty attachment.
    </attachment>
    ```
    The agent sees this in `iteration=1`'s `message`.
-5. The HealthInterop agent has a new ATTACHMENT WORKFLOW section in its
+5. The Agentic Integration Builder agent has a new ATTACHMENT WORKFLOW section in its
    INSTRUCTIONS. When a turn contains one or more `<attachment>` blocks,
    the agent's only job in that turn is to synthesize a Project
    Specification (Overview, Exercises, Rules, Acceptance, Open Questions)

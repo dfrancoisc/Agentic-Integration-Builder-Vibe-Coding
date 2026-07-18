@@ -76,7 +76,7 @@ Two further documented assets are worth wiring in later: the **HL7 Message Analy
                              │ POST /api/agentic/chat/stream
                              ▼
 ┌──────────────────────────────────────────────────────────────┐
-│  Existing chatbot  /agentic/chat/  →  HealthInterop agent    │
+│  Existing chatbot  /agentic/chat/  →  Agentic Integration Builder agent    │
 │  NEW: Skill.InterfaceSpec interprets the questionnaire       │
 │  → Spec Card (Approve/Edit) → plan → gate → build → validate │
 └──────────────────────────────────────────────────────────────┘
@@ -326,7 +326,7 @@ This is strategically useful for three reasons:
 
 ## 8. The new Skill
 
-**`AgenticInterop.Skill.InterfaceSpec`** (`name: interface_spec`), following the established pattern: `Extends AgenticInterop.Skill.Base`, `Parameter TOOLS`, `XData SUMMARY` (yaml), `XData INSTRUCTIONS` (markdown). Registered by appending to `Parameter SKILLS` on `HealthInterop` (and optionally `DEFAULTSKILLS` on `SkillLoader`).
+**`AgenticInterop.Skill.InterfaceSpec`** (`name: interface_spec`), following the established pattern: `Extends AgenticInterop.Skill.Base`, `Parameter TOOLS`, `XData SUMMARY` (yaml), `XData INSTRUCTIONS` (markdown). Registered by appending to `Parameter SKILLS` on `Agentic Integration Builder` (and optionally `DEFAULTSKILLS` on `SkillLoader`).
 
 Its INSTRUCTIONS must teach four things:
 

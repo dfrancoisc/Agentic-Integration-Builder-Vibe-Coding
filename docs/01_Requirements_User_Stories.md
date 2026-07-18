@@ -19,7 +19,7 @@ The entire solution is built on the InterSystems %AI Framework -- the native AI 
 
 | %AI Primitive | Role in the Copilot |
 |---|---|
-| %AI.Agent | The central orchestrator. One agent instance ("HealthInterop") receives user messages, decides which tools or skills to invoke, and orchestrates multi-step workflows |
+| %AI.Agent | The central orchestrator. One agent instance ("Agentic Integration Builder") receives user messages, decides which tools or skills to invoke, and orchestrates multi-step workflows |
 | %AI.MCP.Service | Model Context Protocol servers that group related capabilities into named service domains (Production, Transform, Testing, Catalog) |
 | %AI.ToolSet | Tool grouping classes that organize tools by domain. Each ToolSet maps to one MCP server |
 | %AI.Tool | Individual tool implementations. Each public ClassMethod in a Tool class is a callable tool with JSON Schema input/output |
@@ -824,7 +824,7 @@ This scenario demonstrates all four personas working together:
 
 | Tab | Purpose | Persona | Entity Count |
 |---|---|---|---|
-| Agents | Agent configuration (system prompt, MCPs, skills, provider) | AI Hub Admin | 2 (HealthInterop, FHIRSpecialist) |
+| Agents | Agent configuration (system prompt, MCPs, skills, provider) | AI Hub Admin | 2 (Agentic Integration Builder, FHIRSpecialist) |
 | MCPs | MCP server enable/disable and description | AI Hub Admin | 6 (Production, Transform, Testing, Catalog, FHIRServer, BulkFHIR) |
 | ToolSets | ToolSet grouping and description | AI Hub Admin | 7 (Production, Transform, Testing, Catalog, Monitoring, FHIRServer, BulkFHIR) |
 | Tools | Individual tool schemas and dry-run | AI Hub Admin | 118 tools |

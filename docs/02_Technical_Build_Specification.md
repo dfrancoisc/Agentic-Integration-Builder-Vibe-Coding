@@ -75,7 +75,7 @@ The audit log is queryable from the admin UI (Audit tab) with filters by usernam
 
 ### 3.1 What to build
 
-A single %AI.Agent instance ("HealthInterop") that serves as the router agent. It receives user messages, decides which tools or skills to invoke, and orchestrates multi-step workflows.
+A single %AI.Agent instance ("Agentic Integration Builder") that serves as the router agent. It receives user messages, decides which tools or skills to invoke, and orchestrates multi-step workflows.
 
 ### 3.2 Agent architecture
 
@@ -451,7 +451,7 @@ Agent-created artifacts (productions, DTLs, BPLs, routing rules) integrate with 
 
 | Component | Classes | Status |
 |---|---|---|
-| Agent | 5 classes (HealthInterop, FHIRSpecialist, Manager, Monitor, SkillLoader) | Built |
+| Agent | 5 classes (Agentic Integration Builder, FHIRSpecialist, Manager, Monitor, SkillLoader) | Built |
 | MCP Servers | 7 classes (Base + 6 servers) | Built |
 | ToolSets | 7 classes | Built |
 | Tools | 7 classes, 118 tools | Built |

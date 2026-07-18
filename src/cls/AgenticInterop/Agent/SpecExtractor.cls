@@ -21,6 +21,9 @@
 Class AgenticInterop.Agent.SpecExtractor Extends %AI.Agent
 {
 
+/// Display name shown in the admin UI.
+Parameter NAME = "Specification Extractor";
+
 /// One round trip. This is a transform, not an agentic loop.
 Parameter MAXITERATIONS = 1;
 

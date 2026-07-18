@@ -316,7 +316,7 @@ An incomplete specification produces a clarification loop, or worse, a silent wr
 
 ### The premise
 
-**We did not have to invent what a complete specification is — the agent already defines it.** `HealthInterop` carries a mandatory "check for gaps" step listing every decision it must never silently default. That list *is* the specification schema. The questionnaire asks it **up front**, in a form, instead of discovering it mid-conversation.
+**We did not have to invent what a complete specification is — the agent already defines it.** `Agentic Integration Builder` carries a mandatory "check for gaps" step listing every decision it must never silently default. That list *is* the specification schema. The questionnaire asks it **up front**, in a form, instead of discovering it mid-conversation.
 
 | Agent gap-check item | Questionnaire field |
 |---|---|

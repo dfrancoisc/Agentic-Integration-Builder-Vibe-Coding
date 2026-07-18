@@ -363,7 +363,7 @@ This applies across phases. The phase column below indicates when each chatbot c
 | ToolSets (%AI.ToolSet) | 7 |
 | MCP servers (%AI.MCP.Service) | 6 (+ MCP.Base abstract) |
 | Skills (%AI.Agent.Skill) | 15 domain + 1 abstract base |
-| Agents (%AI.Agent) | 2 (HealthInterop, FHIRSpecialist) |
+| Agents (%AI.Agent) | 2 (Agentic Integration Builder, FHIRSpecialist) |
 | Persistent data classes | 8 |
 | IPM module version | 1.1.0 |
 

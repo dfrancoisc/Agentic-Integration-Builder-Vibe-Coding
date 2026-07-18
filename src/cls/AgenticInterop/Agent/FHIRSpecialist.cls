@@ -15,6 +15,10 @@
 Class AgenticInterop.Agent.FHIRSpecialist Extends %AI.Agent
 {
 
+/// Display name shown in the admin UI. The documentation has always
+/// called this the FHIR Assistant; the class name is FHIRSpecialist.
+Parameter NAME = "FHIR Assistant";
+
 Parameter MAXITERATIONS = 25;
 
 Parameter TEMPERATURE = 0.3;

@@ -71,7 +71,7 @@ Engineer already knows.
 
 | Step | Who | What |
 |---|---|---|
-| 2.1 | Agent | The HealthInterop INSTRUCTIONS contain an ATTACHMENT WORKFLOW section. When the turn carries `<attachment>` blocks, the agent's ONLY job for this turn is to synthesize the Project Specification — no tool calls, no research, no build. |
+| 2.1 | Agent | The Agentic Integration Builder INSTRUCTIONS contain an ATTACHMENT WORKFLOW section. When the turn carries `<attachment>` blocks, the agent's ONLY job for this turn is to synthesize the Project Specification — no tool calls, no research, no build. |
 | 2.2 | Agent | Produces the spec in a fixed template wrapped in `[[SPEC]] … [[/SPEC]]` markers: Overview, Exercises (one numbered subsection per integration / transformation / loader, each with Goal / Inputs / Outputs / Transformation rules / Routing rules / Acceptance criteria), Open questions (where the source document is ambiguous), Build tasks (the plain-language list of what will be created on approval). |
 | 2.3 | Chat UI | Detects the `[[SPEC]]` markers on stream completion and replaces them with a structured Spec Card inside the assistant bubble: section headings, bulleted rules, an Approve, build it button and an Edit button. |
 | 2.4 | Agent | Closes with exactly one line: *"Does this match what you want me to build? Reply `approve, build it` to start the build, or tell me what to change."* |
@@ -110,7 +110,7 @@ transforms, routing rules, lookup tables, SQL tables, alerts — naming each
 artifact, its target namespace, and what it produces. For any mutating tool
 (CreateProduction, AddBusinessHost, CreateDTL, CreateRoutingRule, etc.) the
 agent stops and asks the user to confirm before firing. This is the existing
-plan → authorize → act gate (see HealthInterop INSTRUCTIONS, §"Response
+plan → authorize → act gate (see Agentic Integration Builder INSTRUCTIONS, §"Response
 pattern"); the spec-driven flow does NOT bypass it.
 
 ### Phase 6 — Build and verify

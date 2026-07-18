@@ -25,7 +25,7 @@ The primary configuration entities (Agent, MCP, ToolSet) are class definitions, 
 
 | Class | Path | Extends | Purpose | Phase |
 |---|---|---|---|---|
-| HealthInterop | src/cls/AgenticInterop/Agent/HealthInterop.cls | %AI.Agent | The single main agent (the "router"). Declarative XData INSTRUCTIONS keeps it slim — its tool catalog is the Skill classes below + a few cross-cutting tools (get_user_namespace, search_ens, search_hs). Domain expertise lives in the Skills, not in this prompt. | 2 |
+| Agentic Integration Builder | src/cls/AgenticInterop/Agent/HealthInterop.cls | %AI.Agent | The single main agent (the "router"). Declarative XData INSTRUCTIONS keeps it slim — its tool catalog is the Skill classes below + a few cross-cutting tools (get_user_namespace, search_ens, search_hs). Domain expertise lives in the Skills, not in this prompt. | 2 |
 | Production | src/cls/AgenticInterop/ToolSet/Production.cls | %AI.ToolSet | Production CRUD tools — Includes from inline methods + Production.Tool.* if needed | 4 |
 | Transform | src/cls/AgenticInterop/ToolSet/Transform.cls | %AI.ToolSet | DTL/BPL CRUD + lookup tables | 4 |
 | Testing | src/cls/AgenticInterop/ToolSet/Testing.cls | %AI.ToolSet | HL7/FHIR send + validate (against an isolated test production by default) | 4 |

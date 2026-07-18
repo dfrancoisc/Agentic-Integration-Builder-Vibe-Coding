@@ -11,6 +11,13 @@
 Class AgenticInterop.Agent.HealthInterop Extends %AI.Agent
 {
 
+/// Display name shown in the admin UI and anywhere the agent is listed.
+/// The class name stays HealthInterop for compatibility -- globals, the
+/// wallet collection and the chatbot key all reference it -- but the
+/// product is the Agentic Integration Builder, and that is what a user
+/// should ever see.
+Parameter NAME = "Agentic Integration Builder";
+
 Parameter MAXITERATIONS = 25;
 
 Parameter TEMPERATURE = 0.3;
