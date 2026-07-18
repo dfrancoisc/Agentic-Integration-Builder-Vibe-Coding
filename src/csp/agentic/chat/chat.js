@@ -2154,4 +2154,35 @@ function maybeRunSlashCommand(message) {
     setupHistoryRail();
     renderRail();
     $('input').focus();
+    // The Interface Specification Builder stages a completed specification
+    // in localStorage and asks the host page to open this chat. Consume it
+    // here — after auth and namespace resolution — so the very first turn
+    // carries the spec. Single use: the key is removed before sending, and
+    // anything older than 2 minutes is discarded as stale.
+    consumeSpecHandoff();
 })();
+
+function consumeSpecHandoff() {
+    const SPEC_HANDOFF_KEY = 'agentic:spec:prefill';
+    let raw;
+    try { raw = localStorage.getItem(SPEC_HANDOFF_KEY); } catch { return; }
+    if (!raw) return;
+    try { localStorage.removeItem(SPEC_HANDOFF_KEY); } catch {}
+
+    let payload;
+    try { payload = JSON.parse(raw); } catch { return; }
+    if (!payload || !payload.text) return;
+    // Stale guard: only honour a handoff staged in the last 2 minutes.
+    if (payload.ts && (Date.now() - payload.ts) > 120000) return;
+
+    // Honour the namespace the specification was written against.
+    if (payload.ns) {
+        const sel = $('ns-select');
+        if (sel) { ensureNsOption(payload.ns); sel.value = payload.ns; }
+        bridgeNamespace = payload.ns;
+        setNamespacePill(payload.ns);
+    }
+
+    $('input').value = payload.text;
+    $('composer').dispatchEvent(new Event('submit', { cancelable: true }));
+}

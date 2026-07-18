@@ -46,6 +46,8 @@
     var AUD_OVERLAY_ID = 'agentic-audit-overlay';  // left-slide audit panel
     var CLEAN_PROD_MARK = 'agentic-clean-prod';
     var CLEAN_ART_MARK  = 'agentic-clean-art';
+    var SPEC_MARK = 'agentic-spec-tab';          // .dashboard "Interface Spec" tab
+    var SPEC_OVERLAY_ID = 'agentic-spec-overlay';
 
     var STATE = { bearer: '', bearerExp: 0 };
 
@@ -190,6 +192,14 @@
         }
         if (d && d.type === 'agentic:close-chat') closeChat();
         if (d && d.type === 'agentic:close-config') closeConfig();
+        if (d && d.type === 'agentic:close-spec') closeSpec();
+        // Interface Specification Builder handed off a completed spec: it has
+        // already staged the prompt in localStorage. Swap the spec panel for
+        // the chat panel; chat.js picks the prompt up as it finishes booting.
+        if (d && d.type === 'agentic:spec:send') {
+            closeSpec();
+            setTimeout(openChat, 180);
+        }
     });
 
     /* ---------------- styles ---------------- */
@@ -250,6 +260,40 @@
             '  opacity:0.6; pointer-events:none;',
             '}',
 
+            // "Interface Spec" tab — teal accent, distinct from AI Settings
+            '.dashboard .navbuttons.' + SPEC_MARK + ' {',
+            '  display:flex; flex:0 1 auto;',
+            '  margin:5px; height:32px; box-sizing:border-box;',
+            '  border:1px solid #cbcbcb; background:#fff;',
+            '  cursor:pointer; transition:background .15s, border-color .15s;',
+            '}',
+            '.dashboard .navbuttons.' + SPEC_MARK + ':hover {',
+            '  background:rgba(13,148,136,.08); border-color:#0d9488;',
+            '}',
+            '.dashboard .navbuttons.' + SPEC_MARK + ' .agentic-tab-inner {',
+            '  display:flex; align-items:center; gap:6px; padding:0 10px;',
+            '  font-family:-apple-system,"Noto Sans",system-ui,sans-serif;',
+            '  font-size:13px; font-weight:600; color:#0d9488;',
+            '}',
+            '.dashboard .navbuttons.' + SPEC_MARK + '.is-active { background:#0d9488; border-color:#0d9488; }',
+            '.dashboard .navbuttons.' + SPEC_MARK + '.is-active .agentic-tab-inner { color:#fff; }',
+
+            // Interface Spec full-screen overlay (dark, matches the spec page)
+            '#' + SPEC_OVERLAY_ID + ' { position:fixed; inset:0; z-index:99999; background:#0b0d11; display:none; }',
+            '#' + SPEC_OVERLAY_ID + '.open { display:flex; flex-direction:column; }',
+            '#' + SPEC_OVERLAY_ID + ' .bar {',
+            '  flex:0 0 auto; height:44px; background:#0d9488;',
+            '  display:flex; align-items:center; justify-content:space-between;',
+            '  padding:0 18px; color:white;',
+            '  font:600 14px/1 -apple-system,"Noto Sans",system-ui,sans-serif;',
+            '}',
+            '#' + SPEC_OVERLAY_ID + ' .bar .close {',
+            '  background:transparent; color:white; border:1px solid rgba(255,255,255,0.35);',
+            '  width:28px; height:28px; border-radius:4px; cursor:pointer; font-size:14px;',
+            '}',
+            '#' + SPEC_OVERLAY_ID + ' .bar .close:hover { background:rgba(255,255,255,0.14); }',
+            '#' + SPEC_OVERLAY_ID + ' iframe { flex:1; width:100%; border:0; background:#0b0d11; }',
+
             // Top mat-toolbar chat icon
             'mat-toolbar-row .dropdown.' + HDR_MARK + ' { display:flex; align-items:center; }',
             'mat-toolbar-row .dropdown.' + HDR_MARK + ' button {',
@@ -272,6 +316,8 @@
             'body.agentic-login-mode .' + LOAD_NAV_MARK + ',',
             'body.agentic-login-mode .' + CLEAN_PROD_MARK + ',',
             'body.agentic-login-mode .' + CLEAN_ART_MARK + ',',
+            'body.agentic-login-mode .' + SPEC_MARK + ',',
+            'body.agentic-login-mode #' + SPEC_OVERLAY_ID + ',',
             'body.agentic-login-mode #' + CONFIG_OVERLAY_ID + ',',
             'body.agentic-login-mode #' + AUD_OVERLAY_ID + ',',
             'body.agentic-login-mode #' + CHAT_OVERLAY_ID + ' { display:none !important; }',
@@ -504,6 +550,76 @@
     function setTabActive(yes) {
         var tab = document.querySelector('.' + TAB_MARK);
         if (tab) tab.classList.toggle('is-active', !!yes);
+    }
+
+    /* ---------------- Interface Specification Builder (full-screen) ------
+     * The questionnaire that produces a specification prompt for the agent.
+     * Lives on the same page as the chatbot: user fills the form, previews
+     * the generated prompt ("Output Trial"), then either copies it or sends
+     * it straight to the chat ("Send it to AIB"), which arrives here as an
+     * agentic:spec:send message. */
+
+    function buildSpecOverlay() {
+        if (document.getElementById(SPEC_OVERLAY_ID)) return;
+        var overlay = document.createElement('div');
+        overlay.id = SPEC_OVERLAY_ID;
+        overlay.innerHTML =
+            '<div class="bar">' +
+              '<span>Interface Specification Builder</span>' +
+              '<button class="close" type="button" title="Close">✕</button>' +
+            '</div>' +
+            '<iframe src="about:blank" title="Interface Specification Builder"></iframe>';
+        document.body.appendChild(overlay);
+        overlay.querySelector('.close').addEventListener('click', closeSpec);
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape' && overlay.classList.contains('open')) closeSpec();
+        });
+    }
+
+    function openSpec() {
+        buildSpecOverlay();
+        var overlay = document.getElementById(SPEC_OVERLAY_ID);
+        var iframe = overlay.querySelector('iframe');
+        var ns = currentNamespace();
+        // Only load once per open so a half-filled form is not wiped by a
+        // stray re-render of the host page.
+        if (!iframe.src || iframe.src === 'about:blank') {
+            iframe.src = '/agentic/spec/index.html?t=' + Date.now() +
+                         (ns ? '&ns=' + encodeURIComponent(ns) : '');
+        }
+        overlay.classList.add('open');
+        var tab = document.querySelector('.' + SPEC_MARK);
+        if (tab) tab.classList.add('is-active');
+    }
+
+    function closeSpec() {
+        var overlay = document.getElementById(SPEC_OVERLAY_ID);
+        if (!overlay) return;
+        overlay.classList.remove('open');
+        var tab = document.querySelector('.' + SPEC_MARK);
+        if (tab) tab.classList.remove('is-active');
+        // Deliberately keep the iframe loaded so answers survive a close;
+        // the user can reopen and continue where they left off.
+    }
+
+    function ensureSpecTab() {
+        var dash = document.querySelector('.dashboard');
+        if (!dash) return false;
+        if (dash.querySelector('.' + SPEC_MARK)) return true;
+        injectStyles();
+        var tab = document.createElement('div');
+        tab.className = 'navbuttons ' + SPEC_MARK;
+        tab.innerHTML =
+            '<div class="agentic-tab-inner">' +
+              '<svg viewBox="0 0 20 20" width="18" height="18"><path d="M5 2h7l3 3v13H5V2zm7 1.5V6h2.5L12 3.5zM7 9h6v1.2H7V9zm0 3h6v1.2H7V12zm0 3h4v1.2H7V15z" fill="#0d9488"/></svg>' +
+              '<span>Interface Spec</span>' +
+            '</div>';
+        tab.addEventListener('click', function (e) {
+            e.preventDefault(); e.stopPropagation();
+            openSpec();
+        });
+        dash.appendChild(tab);
+        return true;
     }
 
     /* ---------------- cleanup helpers (REST calls from inject) -------- */
@@ -859,6 +975,7 @@
             ensureHeaderLoad();
         } else {
             ensureTab();
+            ensureSpecTab();
             ensureCleanupButtons();
             ensureHeaderChat();
         }

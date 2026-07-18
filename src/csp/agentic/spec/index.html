@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<title>Interface Specification Builder</title>
+<link rel="stylesheet" href="spec.css">
+</head>
+<body>
+
+<header id="hdr">
+  <h1>Interface Specification Builder</h1>
+  <span class="ns-pill" id="ns-pill" title="Target namespace">&mdash;</span>
+  <span class="spacer"></span>
+  <span class="progress" id="progress">0 of 0 required answered</span>
+</header>
+
+<div id="shell">
+
+  <!-- left rail: section navigation -->
+  <nav id="rail" aria-label="Sections"></nav>
+
+  <!-- main: the questionnaire -->
+  <main id="form-pane">
+    <div id="intro">
+      <h2>Specify an integration end to end</h2>
+      <p>
+        Answer what you know. Every question maps to something Health Connect
+        actually needs &mdash; transport, schema, acknowledgments, dead-letter
+        handling, retries, ordering. Anything you leave as
+        <em>Not sure</em> becomes an open question for the agent to ask about
+        rather than a silent assumption.
+      </p>
+      <p class="muted">
+        Required fields are marked. Recommended defaults are pre-filled and can
+        be changed. Advanced sections stay collapsed until you need them.
+      </p>
+    </div>
+    <form id="form" autocomplete="off"></form>
+  </main>
+
+</div>
+
+<footer id="foot">
+  <div class="foot-left">
+    <button type="button" class="btn ghost" id="btn-reset">Reset</button>
+    <span class="warn" id="warn"></span>
+  </div>
+  <div class="foot-right">
+    <button type="button" class="btn" id="btn-trial">Output Trial</button>
+    <button type="button" class="btn primary" id="btn-send">Send it to AIB</button>
+  </div>
+</footer>
+
+<!-- Output Trial preview -->
+<div id="preview" class="overlay" hidden>
+  <div class="panel">
+    <div class="panel-bar">
+      <span>Specification prompt &mdash; review before sending</span>
+      <button type="button" class="x" id="pv-close" title="Close">&#10005;</button>
+    </div>
+    <div class="panel-note" id="pv-note"></div>
+    <textarea id="pv-text" spellcheck="false"></textarea>
+    <div class="panel-foot">
+      <span class="muted" id="pv-stats"></span>
+      <span class="spacer"></span>
+      <button type="button" class="btn ghost" id="pv-copy">Copy</button>
+      <button type="button" class="btn" id="pv-back">Back to form</button>
+      <button type="button" class="btn primary" id="pv-send">Send it to AIB</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" hidden></div>
+
+<script src="spec.js"></script>
+</body>
+</html>
