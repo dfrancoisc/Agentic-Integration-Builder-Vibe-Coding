@@ -1,5 +1,14 @@
 # Health Interop AI Copilot - Product Requirements Document
 
+> **SUPERSEDED — historical reference only.**
+> The canonical product requirements are
+> [`Product_Requirements_Integration_Agentic_Builder.md`](Product_Requirements_Integration_Agentic_Builder.md).
+> That document merges this one with the Integration Agentic Builder MVP requirements
+> (epics and build order, the Epic-to-Quest driving use case, the US-numbered backlog,
+> Distribution and Deployment, and the AI Hub positioning).
+> The FHIR Assistant is a separate product: [`Product_Requirements_FHIR_Assistant.md`](Product_Requirements_FHIR_Assistant.md).
+> Kept for history — do not edit.
+
 ## 1. Product Overview
 
 ### What it is

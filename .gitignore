@@ -29,3 +29,6 @@ Thumbs.db
 # Build artifacts that should be regenerated
 build/
 out/
+
+# Word lock/temp files
+~$*
