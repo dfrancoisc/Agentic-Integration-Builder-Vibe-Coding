@@ -1501,7 +1501,7 @@ The IRIS Configuration Parameter File (`iris.cpf`) controls instance-wide behavi
 - `[Actions] ModifyNamespace:Interop=1` — promotes an existing non-interop namespace to interoperability-enabled.
 - `[Namespaces]` section — global flags per namespace; mainly informational since interop status is also derivable from mappings.
 
-For most agentic_interop work, the CPF is read-only — the chatbot exposes `get_cpf_parameter` (read), and `set_cpf_parameter` requires explicit user confirmation since CPF changes typically need IRIS restart and may affect other applications on the instance.
+For most Agentic Integration Builder work, the CPF is read-only — the chatbot exposes `get_cpf_parameter` (read), and `set_cpf_parameter` requires explicit user confirmation since CPF changes typically need IRIS restart and may affect other applications on the instance.
 
 ## Common production error codes (`<Ens>` domain)
 
@@ -1977,7 +1977,7 @@ JSON response format:
 
 Three high-level steps:
 
-1. Create an interoperability namespace for the ESB. (Per restriction #7 of the agentic_interop project, do this in any namespace the customer chooses — don't hardcode HSCUSTOM.)
+1. Create an interoperability namespace for the ESB. (Per restriction #7 of the Agentic Integration Builder project, do this in any namespace the customer chooses — don't hardcode HSCUSTOM.)
 2. Define roles and users for the Public Service Registry — `%EnsRole_ESBAdministrator` for full admin, `%EnsRole_ESBSearcher` for read-only registry queries via the REST API.
 3. Configure a CSP web application for the Public Service Registry REST API. Type 2 (REST). Dispatch class typically `EnsLib.ServiceRegistry.Public.API`. Authentication: typically password or OAuth depending on customer policy.
 

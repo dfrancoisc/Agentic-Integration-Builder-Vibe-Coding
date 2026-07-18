@@ -1,4 +1,4 @@
-# agentic_interop — Architecture and Build Plan
+# Agentic Integration Builder — Architecture and Build Plan
 
 This document is the source of truth for what we are building, what constraints apply, and what order things happen in. Updated at every phase boundary. Supersedes any prior kickoff spec where they conflict.
 
@@ -271,7 +271,7 @@ The vector tables are created in the install namespace (per restriction 7). Mult
 
 ## Build phases
 
-Each phase ends with a working slice and a commit + push to dfrancoisc/agentic_interop. README updated at every phase boundary (restriction 6).
+Each phase ends with a working slice and a commit + push to dfrancoisc/Agentic-Integration-Builder-Vibe-Coding. README updated at every phase boundary (restriction 6).
 
 ### Phase 0 — Skeleton + IPM compliance
 - Repo structure under `src/cls/AgenticInterop/...` matching MIGRATION.md

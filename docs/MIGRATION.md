@@ -1,4 +1,4 @@
-# agentic_interop — Class Build Map
+# Agentic Integration Builder — Class Build Map
 
 The full plan-to-repo mapping for every class, web app, vector table, and seed file the build will create. Updated BEFORE any class is written or moved (per the user's "build class-mapping tables before refactors" rule).
 

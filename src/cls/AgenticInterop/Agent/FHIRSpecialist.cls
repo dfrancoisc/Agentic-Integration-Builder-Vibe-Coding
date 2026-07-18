@@ -1,5 +1,5 @@
 /// AgenticInterop.Agent.FHIRSpecialist is a focused FHIR platform agent for
-/// the agentic_interop chatbot. It extends %AI.Agent and is dedicated to the
+/// the Agentic Integration Builder chatbot. It extends %AI.Agent and is dedicated to the
 /// InterSystems IRIS for Health FHIR stack: the FHIR R4 server (repository),
 /// SDA<->FHIR transformation, Bulk FHIR ($export), and the FHIR SQL Builder.
 ///

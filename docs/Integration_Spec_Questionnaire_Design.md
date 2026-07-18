@@ -1,10 +1,10 @@
 # Integration Specification Builder — High-Level Application Design
 
 > **Working name:** Integration Specification Builder (ISB)
-> **Relationship:** a new front-end application for the existing **Agentic Integration Builder** (`agentic_interop`). It does not replace the chatbot — it feeds it.
+> **Relationship:** a new front-end application for the existing **Agentic Integration Builder** (`Agentic Integration Builder`). It does not replace the chatbot — it feeds it.
 > **Platform:** InterSystems Health Connect / IRIS for Health 2026.2+, on the AI Hub (`%AI`) foundation
 > **Version:** 0.1 (design for review) · July 2026
-> **Grounded in:** `agentic_interop` @ `9a678b6` — tool signatures (`Tool/Production.cls`, `Tool/Transform.cls`, `Tool/Testing.cls`), the `HealthInterop.cls` INSTRUCTIONS gap-check contract, the skill catalog, and the `[[SPEC]]` workflow.
+> **Grounded in:** `Agentic Integration Builder` @ `9a678b6` — tool signatures (`Tool/Production.cls`, `Tool/Transform.cls`, `Tool/Testing.cls`), the `HealthInterop.cls` INSTRUCTIONS gap-check contract, the skill catalog, and the `[[SPEC]]` workflow.
 
 ---
 
@@ -392,7 +392,7 @@ P0–P2 is the MVP and is worth demoing on its own.
 
 ## 11. Open questions
 
-1. **Separate IPM module or part of `agentic_interop`?** Bundling is simpler; separating aligns with the independent-update goal in [`Product_Requirements_Integration_Agentic_Builder.md`](Product_Requirements_Integration_Agentic_Builder.md) §9 Distribution and Deployment. *Recommendation: same repo, separate module manifest, so it can ship on its own cadence.*
+1. **Separate IPM module or part of `Agentic Integration Builder`?** Bundling is simpler; separating aligns with the independent-update goal in [`Product_Requirements_Integration_Agentic_Builder.md`](Product_Requirements_Integration_Agentic_Builder.md) §9 Distribution and Deployment. *Recommendation: same repo, separate module manifest, so it can ship on its own cadence.*
 2. **Does the form replace or complement document upload?** *Recommendation: complement — best flow is upload the SoW, let the agent pre-populate the questionnaire from it, then have the human correct and complete it. That is strictly better than either alone, and should be the P4+ target.*
 3. **One template or an archetype library from day one?** *Recommendation: one Essential template in P0; archetypes at P4.*
 4. **How opinionated should defaults be?** Healthcare defaults (`FailureTimeout=-1`, `Validation=""`, `PoolSize=1` under FIFO) are strong opinions. *Recommendation: apply them, always labelled and always overridable.*

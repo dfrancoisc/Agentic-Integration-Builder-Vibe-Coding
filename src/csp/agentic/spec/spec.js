@@ -1,4 +1,4 @@
-/* Interface Specification Builder — agentic_interop
+/* Interface Specification Builder — Agentic Integration Builder
  *
  * A schema-driven questionnaire that collects everything Health Connect
  * needs to build an interface, then renders it as a [[SPEC]] prompt for

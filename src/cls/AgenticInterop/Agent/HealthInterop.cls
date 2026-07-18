@@ -1,5 +1,5 @@
 /// AgenticInterop.Agent.HealthInterop is the router agent for the
-/// agentic_interop chatbot. It extends %AI.Agent with the Daniel persona
+/// Agentic Integration Builder chatbot. It extends %AI.Agent with the Daniel persona
 /// (system integrator) system prompt and exposes thirteen specialist skills
 /// as sub-agent tools (registered at runtime by AgenticInterop.Agent.SkillLoader).
 /// Skills: Productions, DTL, BPL, RoutingRules, HL7v2, FHIRR4, FHIRInterop,

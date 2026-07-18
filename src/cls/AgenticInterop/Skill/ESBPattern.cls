@@ -76,7 +76,7 @@ JSON response format:
 
 Three high-level steps:
 
-1. Create an interoperability namespace for the ESB. (Per restriction #7 of the agentic_interop project, do this in any namespace the customer chooses — don't hardcode HSCUSTOM.)
+1. Create an interoperability namespace for the ESB. (Per restriction #7 of the Agentic Integration Builder project, do this in any namespace the customer chooses — don't hardcode HSCUSTOM.)
 2. Define roles and users for the Public Service Registry — `%EnsRole_ESBAdministrator` for full admin, `%EnsRole_ESBSearcher` for read-only registry queries via the REST API.
 3. Configure a CSP web application for the Public Service Registry REST API. Type 2 (REST). Dispatch class typically `EnsLib.ServiceRegistry.Public.API`. Authentication: typically password or OAuth depending on customer policy.
 

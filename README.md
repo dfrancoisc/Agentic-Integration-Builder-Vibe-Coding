@@ -1,4 +1,4 @@
-# agentic_interop
+# Agentic Integration Builder
 
 AI Copilot for InterSystems IRIS for Health. A configuration-driven chatbot that helps integration engineers **specify**, build, review, and optimize healthcare interoperability workflows through natural conversation. Built entirely on the InterSystems %AI Framework.
 
@@ -179,7 +179,7 @@ Uses the chatbot to monitor, triage, and review existing integrations at run-tim
 
 4. **Extend the MCP layer.** A developer creates a new %AI.MCP.Service subclass to expose a new domain of tools (for example, a Monitoring MCP for production health metrics). The MCP groups related ToolSets and is registered in the agent configuration through the admin UI.
 
-5. **Package and deploy via IPM.** A developer maintains the module.xml that defines the IPM package: ObjectScript classes, seed data, web application definitions, install/uninstall hooks. A single `zpm "load /path/to/agentic_interop"` command installs all 87 classes, two web apps, seed data, and the curated class catalog into any namespace.
+5. **Package and deploy via IPM.** A developer maintains the module.xml that defines the IPM package: ObjectScript classes, seed data, web application definitions, install/uninstall hooks. A single `zpm "load /path/to/Agentic-Integration-Builder-Vibe-Coding"` command installs all 87 classes, two web apps, seed data, and the curated class catalog into any namespace.
 
 ### AI Hub Admin (5 use cases)
 
@@ -324,15 +324,15 @@ Key features:
 ## Install
 
 ```bash
-git clone https://github.com/dfrancoisc/agentic_interop.git
-cd agentic_interop
+git clone https://github.com/dfrancoisc/Agentic-Integration-Builder-Vibe-Coding.git
+cd Agentic-Integration-Builder-Vibe-Coding
 ```
 
 In an IRIS terminal, switch to the namespace where you want the copilot installed:
 
 ```objectscript
 ZN "<your-namespace>"
-zpm "load /path/to/agentic_interop"
+zpm "load /path/to/Agentic-Integration-Builder-Vibe-Coding"
 ```
 
 The module installs all 87 classes, two web apps (`/agentic/` for the UI — chat, admin, observer, audit, upload and the Integration Spec Questionnaire — and `/api/agentic/` for REST), seed data, and the curated class catalog. To install in multiple namespaces, run the command once per namespace.

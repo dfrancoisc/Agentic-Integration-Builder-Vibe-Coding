@@ -28,7 +28,7 @@
 
 <!-- Static UI bundle (HTML/CSS/JS for /agentic/ and /agentic/admin/).
      Authenticated only — no anonymous access. The user must already
-     have an IRIS session before any agentic_interop asset is served
+     have an IRIS session before any Agentic Integration Builder asset is served
      (restriction #3: no UI visible to unauthenticated users).
      UseCookies=0 + CSRFToken=0 + SessionScope=0: fully stateless.
      Sessions cause 401 on the second chat turn — the CSP gateway
@@ -49,7 +49,7 @@
     DefaultTimeout="900"
     CookiePath="/"
     GroupById="%ISCMgtPortal"
-    Description="agentic_interop static UI bundle (chat + admin) — authenticated only (restriction #3: no UI before login), stateless (no sessions/cookies/CSRF)"
+    Description="Agentic Integration Builder static UI bundle (chat + admin) — authenticated only (restriction #3: no UI before login), stateless (no sessions/cookies/CSRF)"
 />
 
 <!-- REST API. JWTAuthEnabled=1 + GroupById=%ISCMgtPortal so the IRIS
@@ -74,7 +74,7 @@
     AutoCompile="0"
     CookiePath="/"
     GroupById="%ISCMgtPortal"
-    Description="agentic_interop REST API — stateless (no sessions/cookies/CSRF), auth via Authorization header + audited"
+    Description="Agentic Integration Builder REST API — stateless (no sessions/cookies/CSRF), auth via Authorization header + audited"
 />
 
 <!-- Patch the shipped IRIS Interop Editor to load /agentic/inject.js

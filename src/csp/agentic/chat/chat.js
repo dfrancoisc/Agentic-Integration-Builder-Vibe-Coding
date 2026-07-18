@@ -1,4 +1,4 @@
-// agentic_interop chat — Phase 3 streaming. POSTs to
+// Agentic Integration Builder chat — Phase 3 streaming. POSTs to
 // /api/agentic/chat/stream and consumes a text/event-stream of token,
 // tool_start, tool_result, tool_error, status, done, error events.
 // Auth pattern matches the admin SPA: try the parent SPA's bridge

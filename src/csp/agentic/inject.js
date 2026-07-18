@@ -1,4 +1,4 @@
-/* agentic_interop — AI launchers inside the IRIS Interop Editor.
+/* Agentic Integration Builder — AI launchers inside the IRIS Interop Editor.
  *
  * Two entry points, matching the established new-interoperability-health
  * pattern (which the customer pointed to as the reference):

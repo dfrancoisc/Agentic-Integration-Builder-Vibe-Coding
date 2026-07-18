@@ -1,4 +1,4 @@
-/// Audit trail for every agentic_interop REST request — editor CRUD, chat,
+/// Audit trail for every Agentic Integration Builder REST request — editor CRUD, chat,
 /// registry reads. Per restriction #3 (no UI/operation without an
 /// authenticated user) and the related audit requirement, every call to
 /// /api/agentic/* writes a row here from REST.Dispatch.OnPreDispatch /

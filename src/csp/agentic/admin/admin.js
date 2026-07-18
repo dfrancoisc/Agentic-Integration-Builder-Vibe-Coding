@@ -1,4 +1,4 @@
-// agentic_interop admin — vanilla JS SPA against /api/agentic/*
+// Agentic Integration Builder admin — vanilla JS SPA against /api/agentic/*
 //
 // Auth model:
 // When opened from inject.js inside the Interop Editor (URL has

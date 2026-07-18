@@ -1,7 +1,7 @@
 # FHIR Server — Bug & CORE-API Findings Log
 
 Bugs, CORE-API quirks, and environment gotchas found while building the FHIR Server
-MCP (Tools + Skill) for the agentic_interop FHIR Assistant.
+MCP (Tools + Skill) for the Agentic Integration Builder FHIR Assistant.
 
 **Methodology (project rule):** use the InterSystems **CORE** methods first
 (`HS.FHIRServer.*`, `HS.FHIRMeta.*`, `HS.BulkFHIR.*`, `SYS.*`). When a CORE method
