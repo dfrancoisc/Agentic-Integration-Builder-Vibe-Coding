@@ -55,6 +55,8 @@
         placeholder="e.g. Receive HL7 v2.5 ADT^A01 from the HIS over MLLP on port 5000. Strip the dashes from the SSN in PID:19 and set the sending application to EPIC. Transform to ORU^R01 and send to the LIS at 10.1.4.22:6000. Anything that fails goes to /data/hl7/deadletter/."></textarea>
       <div class="seed-actions">
         <button type="button" class="btn primary sm" id="seed-go">Fill the form</button>
+        <button type="button" class="btn sm" id="seed-demo"
+          title="Load an example description. Click again for the next one.">Example</button>
         <button type="button" class="btn ghost sm" id="seed-clear">Clear</button>
       </div>
       <div id="seed-status" hidden></div>

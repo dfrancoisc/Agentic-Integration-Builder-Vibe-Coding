@@ -1229,6 +1229,63 @@ function schemaForLLM() {
     return out;
 }
 
+/* Worked examples for the Example button. Demo material, but deliberately
+ * realistic: each one is phrased the way an integration engineer actually
+ * describes a feed, and each exercises a different path through the
+ * extractor — TCP vs file, one destination vs several, HL7-to-HL7 vs
+ * HL7-to-FHIR, mappings, code translations, ACK targets, dead-lettering.
+ * Example 1 is the Epic-to-Quest case the product is scoped around. */
+var DEMOS = [
+    {
+        title: 'Epic to Quest — the driving use case',
+        text: 'Epic sends us HL7 v2.5 ADT^A01 admission messages over MLLP on port 5000. ' +
+              'Quest needs them over MLLP at 10.20.4.15:6100, transformed to ORU^R01. ' +
+              'From PID:3 take only the MRN whose assigning authority is USDMC, strip the ' +
+              'dashes out of the SSN in PID:19, and set the sending application MSH:3 to EPIC. ' +
+              'Messages for the same patient must stay in order. Anything that fails goes to ' +
+              '/data/hl7/deadletter/ and should alert integration-ops@hospital.org.'
+    },
+    {
+        title: 'File-based ADT routing, one to many, with ACKs',
+        text: 'We pick up HL7 v2.5.1 ADT files from /data/hl7/in/ matching *.hl7 and archive ' +
+              'them to /data/hl7/archive/. Route ADT^A01 and ADT^A08 to the LIS at ' +
+              '10.1.4.22:6000 over MLLP, and also write a copy as files to ' +
+              '/data/warehouse/out/ for the reporting warehouse. Only route messages where ' +
+              'MSH:4 is USDMC. Translate the gender code: Male to M, Female to F, Unknown to U. ' +
+              'We need application acknowledgments written to /data/hl7/ack/. Bad messages go ' +
+              'to /data/hl7/deadletter/.'
+    },
+    {
+        title: 'HL7 to FHIR pipeline',
+        text: 'Take any HL7 v2.5.1 ADT or ORU message arriving on MLLP port 5100 and convert ' +
+              'it to FHIR R4 using the built-in HL7 to SDA to FHIR pipeline, then POST the ' +
+              'bundle to our FHIR server at https://fhir.internal.example.org/r4. Keep ' +
+              'messages in order for the same patient. Anything that fails validation goes to ' +
+              '/data/hl7/deadletter/ and should raise an alert to integration-ops@hospital.org.'
+    },
+    {
+        title: 'Lab orders and results',
+        text: 'Receive ORM^O01 lab orders from the EMR over MLLP on port 5200 and forward them ' +
+              'to the lab system at 10.30.1.40:7100. Results come back as ORU^R01 on port 5201 ' +
+              'and get written as files to /data/results/out/. Set OBX:11 to F for final ' +
+              'results and copy the ordering provider from PV1:7 into OBR:16. Failures go to ' +
+              '/data/hl7/deadletter/.'
+    }
+];
+var demoIndex = -1;
+
+function loadDemo() {
+    demoIndex = (demoIndex + 1) % DEMOS.length;
+    var d = DEMOS[demoIndex];
+    var ta = document.getElementById('seed-text');
+    ta.value = d.text;
+    ta.dispatchEvent(new Event('input', { bubbles: true }));
+    seedNotes(null);
+    seedStatus('Example ' + (demoIndex + 1) + ' of ' + DEMOS.length + ' — ' + d.title +
+               '. Click Fill the form.', '');
+    ta.scrollTop = 0;
+}
+
 function seedStatus(msg, kind, busy) {
     var el0 = document.getElementById('seed-status');
     el0.className = kind || '';
@@ -1429,6 +1486,7 @@ async function boot() {
 
     // Describe-it-first: prose in, structured form out, user verifies.
     document.getElementById('seed-go').addEventListener('click', seedFromPrompt);
+    document.getElementById('seed-demo').addEventListener('click', loadDemo);
     document.getElementById('seed-text').addEventListener('keydown', function (e) {
         if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') seedFromPrompt();
     });
@@ -1436,6 +1494,7 @@ async function boot() {
         document.getElementById('seed-text').value = '';
         document.getElementById('seed-status').hidden = true;
         document.getElementById('seed-notes').hidden = true;
+        demoIndex = -1;   // next Example starts the cycle again at the first one
     });
 
     document.getElementById('btn-send').addEventListener('click', function () {
