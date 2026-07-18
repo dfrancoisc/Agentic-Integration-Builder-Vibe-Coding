@@ -506,6 +506,90 @@ textarea { resize: vertical; min-height: 68px; line-height: 1.5; }
   border-top: 1px solid var(--line);
 }
 
+/* ---------------- catalog picker ---------------- */
+
+.cp-search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 15px;
+  border-bottom: 1px solid var(--line);
+}
+.cp-search input { flex: 1; }
+.cp-search .muted { font-size: 11.5px; white-space: nowrap; }
+
+#cp-list {
+  flex: 1;
+  min-height: 240px;
+  max-height: 52vh;
+  overflow-y: auto;
+  padding: 6px 0;
+}
+
+.cp-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  color: var(--fg);
+  font: inherit;
+  padding: 10px 15px;
+  cursor: pointer;
+}
+.cp-item:hover { background: rgba(79,70,229,.10); }
+.cp-item .cp-cls {
+  display: block;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12.5px;
+  color: #a5b4fc;
+  margin-bottom: 3px;
+}
+.cp-item .cp-kind {
+  display: inline-block;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .4px;
+  color: var(--muted);
+  border: 1px solid var(--line2);
+  border-radius: 3px;
+  padding: 0 4px;
+  margin-left: 6px;
+  vertical-align: 1px;
+}
+.cp-item .cp-desc { display: block; font-size: 12px; line-height: 1.5; color: #b9bfc9; }
+.cp-empty { padding: 22px 15px; text-align: center; color: var(--muted); font-size: 12.5px; }
+
+/* a field whose value comes from the catalog */
+.cat-field { display: flex; gap: 7px; align-items: center; }
+.cat-field input { flex: 1; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px; }
+.cat-desc {
+  margin-top: 5px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--muted);
+  border-left: 2px solid var(--line2);
+  padding-left: 8px;
+}
+
+/* Data Atlas hand-off */
+.atlas-box {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 12px;
+  margin-bottom: 15px;
+  border: 1px solid var(--line2);
+  border-left: 2px solid #0d9488;
+  border-radius: 6px;
+  background: rgba(13,148,136,.06);
+}
+.atlas-box .atlas-txt { flex: 1; font-size: 12px; line-height: 1.5; color: #b9bfc9; }
+.atlas-box .atlas-txt b { color: #5eead4; font-weight: 600; }
+.btn.atlas { background: #0d9488; border-color: #0d9488; color: #fff; white-space: nowrap; }
+.btn.atlas:hover { background: #0f766e; }
+
 /* ---------------- toast ---------------- */
 
 #toast {

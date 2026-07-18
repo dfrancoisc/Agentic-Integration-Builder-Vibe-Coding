@@ -105,6 +105,28 @@
   </div>
 </div>
 
+<!-- Catalog picker: choose a business host, adapter or transformation
+     from what is actually indexed on this instance. -->
+<div id="catpick" class="overlay" hidden>
+  <div class="panel">
+    <div class="panel-bar">
+      <span id="cp-title">Choose from the catalog</span>
+      <button type="button" class="x" id="cp-close" title="Close">&#10005;</button>
+    </div>
+    <div class="panel-note" id="cp-note"></div>
+    <div class="cp-search">
+      <input type="text" id="cp-q" placeholder="Filter by name or description — e.g. MLLP, file, FHIR, ADT">
+      <span class="muted" id="cp-count"></span>
+    </div>
+    <div id="cp-list"></div>
+    <div class="panel-foot">
+      <span class="muted">Selecting a class records it in the specification, so the agent uses it instead of choosing one.</span>
+      <span class="spacer"></span>
+      <button type="button" class="btn ghost" id="cp-cancel">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <div id="toast" hidden></div>
 
 <script src="spec.js"></script>

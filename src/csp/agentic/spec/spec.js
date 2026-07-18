@@ -198,6 +198,19 @@ var SCHEMA = [
           hint: 'A file service has no return channel, so application ACKs need a destination, e.g. /data/hl7/ack/',
           why: 'AckTargetConfigNames — without it the ACK silently lands nowhere' },
 
+        /* Catalog-backed: pick the exact class if you already know it.
+         * Leave blank and the agent searches the catalog and proposes one. */
+        { id: 'srcHostClass', label: 'Inbound business service class', type: 'catalog',
+          catalog: 'ens', kinds: ['BS'],
+          pickTitle: 'Choose an inbound business service',
+          pickNote: 'Business services indexed on this instance. Leave unset to let the agent choose based on your transport and format.',
+          hint: 'Optional. Choose from the catalog if you already know which service class you want.' },
+        { id: 'srcAdapter', label: 'Inbound adapter class', type: 'catalog',
+          catalog: 'ens', kinds: ['IBA'],
+          pickTitle: 'Choose an inbound adapter',
+          pickNote: 'Inbound adapters indexed on this instance. Most business services already carry the right adapter — set this only when you need a specific one.',
+          hint: 'Optional. Only needed when the service does not imply the adapter you want.' },
+
         { id: 'fifo', label: 'Must messages be processed strictly in order (FIFO)?', type: 'radio', default: 'yes',
           options: [{ v: 'yes', l: 'Yes' }, { v: 'no', l: 'No' }, { v: UNSURE, l: 'Not sure' }],
           why: 'Agent gap item — FIFO forces Pool Size 1' },
@@ -223,6 +236,16 @@ var SCHEMA = [
                 hint: 'Host:port for TCP, directory for file, URL for REST' },
               { id: 'filter', label: 'Which messages go here?', type: 'text',
                 hint: 'e.g. only ADT_A01 where MSH:4 = USDMC. Leave blank for everything.' },
+              { id: 'hostClass', label: 'Outbound business operation class', type: 'catalog',
+                catalog: 'ens', kinds: ['BO'],
+                pickTitle: 'Choose an outbound business operation',
+                pickNote: 'Business operations indexed on this instance. Leave unset to let the agent choose based on the transport and format above.',
+                hint: 'Optional — choose from the catalog if you know it.' },
+              { id: 'adapter', label: 'Outbound adapter class', type: 'catalog',
+                catalog: 'ens', kinds: ['OBA'],
+                pickTitle: 'Choose an outbound adapter',
+                pickNote: 'Outbound adapters indexed on this instance. Most operations already carry the right adapter.',
+                hint: 'Optional.' },
               { id: 'transform', label: 'Needs a transformation?', type: 'select', default: 'no',
                 options: [{ v: 'no', l: 'No, send as received' }, { v: 'yes', l: 'Yes' }] },
               { id: 'retry', label: 'Retry interval (seconds)', type: 'number', default: '30' },
@@ -267,10 +290,20 @@ var SCHEMA = [
           when: function (a) { return a.needsTransform === 'yes'; },
           options: [
               { v: 'auto',    l: 'Let the agent decide' },
-              { v: 'builtin', l: 'Use built-in SDA pipeline' },
-              { v: 'dtl',     l: 'Custom DTL' },
+              { v: 'builtin', l: 'Use an existing transformation' },
+              { v: 'dtl',     l: 'Build a custom DTL' },
               { v: 'bpl',     l: 'BPL orchestration' }
           ] },
+
+        /* Reuse before build. InterSystems ships hundreds of transformation
+         * classes; the catalog is how an engineer finds the one that already
+         * does the job instead of commissioning a new DTL. */
+        { id: 'transformClass', label: 'Existing transformation to use', type: 'catalog',
+          catalog: 'hs',
+          when: function (a) { return a.needsTransform === 'yes'; },
+          pickTitle: 'Available transformations',
+          pickNote: 'Transformation classes indexed on this instance, with what each one does. Pick one to reuse it; leave unset and the agent searches for the best match and proposes it.',
+          hint: 'Optional. Browse to see every transformation available on this instance and what it does.' },
         { id: 'mappings', label: 'Field mappings', type: 'repeat',
           when: function (a) { return a.needsTransform === 'yes'; },
           addLabel: 'Add a mapping', itemLabel: 'Mapping',
@@ -324,6 +357,124 @@ var SCHEMA = [
 }
 
 ];
+
+/* ==================== catalog picker ====================
+ * The instance's own indexed catalogs — 164 Ens and EnsLib business hosts
+ * and adapters, 58 HS transformation classes — each with the curated
+ * description the agent itself searches. An engineer who already knows
+ * which class they want picks it here, and the agent uses it instead of
+ * choosing one. Everything is read-only: browsing the catalog changes
+ * nothing on the instance. */
+
+var catalogCache = {};   // 'ens' | 'hs' -> [entries]
+var catalogDesc  = {};   // className -> description, for the inline caption
+
+function catKindLabel(k) {
+    return ({
+        BS: 'Business service', BO: 'Business operation', BP: 'Business process',
+        IBA: 'Inbound adapter', OBA: 'Outbound adapter', MSG: 'Message',
+        UTL: 'Utility', DTL: 'Transformation', BPL: 'Business process',
+        PRD: 'Production', SCH: 'Schema', 'FHIR-DTL': 'FHIR transformation',
+        'CDA-Mapping': 'CDA mapping', Gateway: 'Gateway', API: 'API',
+        'HS-Message': 'Message', 'FHIR-Interop': 'FHIR interop'
+    })[k] || k || '';
+}
+
+/* The catalog text is "ClassName — Kind. Purpose: … When to use: …".
+ * Strip the leading class name so the list is not redundant. */
+function catDescription(entry) {
+    var t = String(entry.text || '');
+    var cls = (entry.metadata && entry.metadata.className) || entry.source || '';
+    if (cls && t.indexOf(cls) === 0) t = t.slice(cls.length).replace(/^\s*[—-]\s*/, '');
+    return t.trim();
+}
+
+async function loadCatalog(name) {
+    if (catalogCache[name]) return catalogCache[name];
+    var headers = {};
+    var auth = authHeader();
+    if (auth) headers['Authorization'] = auth;
+    var ns = currentNamespace();
+    if (ns) headers['X-IRIS-Namespace'] = ns;
+
+    var res = await fetch(API + '/catalog/browse?catalog=' + encodeURIComponent(name) +
+                          '&pageSize=500&_t=' + Date.now(),
+                          { headers: headers, credentials: 'include' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    var j = await res.json();
+    var entries = (j.entries || []).map(function (e) {
+        var md = e.metadata || {};
+        var cls = md.className || e.source || '';
+        var d = catDescription(e);
+        if (cls) catalogDesc[cls] = d;
+        return { cls: cls, kind: md.kind || '', desc: d, pkg: md.package || '' };
+    }).filter(function (e) { return e.cls; });
+    entries.sort(function (a, b) { return a.cls.localeCompare(b.cls); });
+    catalogCache[name] = entries;
+    return entries;
+}
+
+var cpState = { onPick: null, entries: [], kinds: null };
+
+async function openCatalogPicker(opts) {
+    cpState.onPick = opts.onPick;
+    cpState.kinds = opts.kinds || null;
+    document.getElementById('cp-title').textContent = opts.title || 'Choose from the catalog';
+    document.getElementById('cp-note').innerHTML = opts.note || '';
+    document.getElementById('cp-q').value = '';
+    document.getElementById('cp-list').innerHTML =
+        '<div class="cp-empty">Loading the catalog…</div>';
+    document.getElementById('catpick').hidden = false;
+
+    try {
+        var all = await loadCatalog(opts.catalog);
+        cpState.entries = cpState.kinds
+            ? all.filter(function (e) { return cpState.kinds.indexOf(e.kind) >= 0; })
+            : all;
+        renderCatalogList('');
+        document.getElementById('cp-q').focus();
+    } catch (e) {
+        document.getElementById('cp-list').innerHTML =
+            '<div class="cp-empty">Could not load the catalog: ' + e.message +
+            '.<br>If this page is open on its own, sign in through the chat first.</div>';
+        document.getElementById('cp-count').textContent = '';
+    }
+}
+
+function renderCatalogList(q) {
+    var list = document.getElementById('cp-list');
+    var needle = String(q || '').toLowerCase().trim();
+    var rows = cpState.entries.filter(function (e) {
+        if (!needle) return true;
+        return (e.cls + ' ' + e.desc).toLowerCase().indexOf(needle) >= 0;
+    });
+    document.getElementById('cp-count').textContent =
+        rows.length + ' of ' + cpState.entries.length;
+    list.innerHTML = '';
+    if (!rows.length) {
+        list.appendChild(el('div', 'cp-empty', 'Nothing matches "' + q + '".'));
+        return;
+    }
+    rows.slice(0, 300).forEach(function (e) {
+        var b = el('button', 'cp-item');
+        b.type = 'button';
+        var top = el('span', 'cp-cls', e.cls);
+        top.appendChild(el('span', 'cp-kind', catKindLabel(e.kind)));
+        b.appendChild(top);
+        if (e.desc) b.appendChild(el('span', 'cp-desc', e.desc));
+        b.addEventListener('click', function () {
+            var cb = cpState.onPick;
+            closeCatalogPicker();
+            if (cb) cb(e);
+        });
+        list.appendChild(b);
+    });
+}
+
+function closeCatalogPicker() {
+    document.getElementById('catpick').hidden = true;
+    cpState.onPick = null;
+}
 
 /* ============================ state ============================ */
 
@@ -399,6 +550,11 @@ function renderSection(sec) {
     if (sec.help) wrap.appendChild(el('div', 'section-help', sec.help));
 
     var body = el('div', 'section-body');
+
+    // Escape hatch: mapping work beyond a simple table belongs in the
+    // dedicated visual tool, not in this form.
+    if (sec.id === 'transform') body.appendChild(renderAtlas());
+
     sec.questions.forEach(function (q) {
         if (!visible(q)) return;
         body.appendChild(renderQuestion(q));
@@ -449,6 +605,17 @@ function renderQuestion(q) {
         });
         inp.addEventListener('change', maybeRerender(q));
         f.appendChild(inp);
+
+    } else if (q.type === 'catalog') {
+        f.appendChild(catalogControl({
+            value: v == null ? '' : v,
+            catalog: q.catalog,
+            kinds: q.kinds,
+            title: q.pickTitle || q.label,
+            note: q.pickNote || '',
+            placeholder: q.placeholder || 'Not chosen — the agent will select one',
+            onChange: function (cls) { answers[q.id] = cls; rerender(); }
+        }));
 
     } else if (q.type === 'textarea') {
         var ta = document.createElement('textarea');
@@ -503,6 +670,45 @@ function renderQuestion(q) {
     return f;
 }
 
+/* Shared control for any catalog-backed field, used by both top-level
+ * questions and repeat sub-fields: a read-only class name, a Browse button,
+ * and the catalog's own description of whatever was chosen. */
+function catalogControl(cfg) {
+    var wrap = el('div');
+    var row = el('div', 'cat-field');
+
+    var inp = document.createElement('input');
+    inp.type = 'text';
+    inp.readOnly = true;
+    inp.value = cfg.value || '';
+    inp.placeholder = cfg.placeholder || '';
+    row.appendChild(inp);
+
+    var browse = el('button', 'btn sm', 'Browse');
+    browse.type = 'button';
+    browse.addEventListener('click', function () {
+        openCatalogPicker({
+            catalog: cfg.catalog, kinds: cfg.kinds,
+            title: cfg.title, note: cfg.note,
+            onPick: function (e) { cfg.onChange(e.cls); }
+        });
+    });
+    row.appendChild(browse);
+
+    if (cfg.value) {
+        var clr = el('button', 'btn ghost sm', 'Clear');
+        clr.type = 'button';
+        clr.addEventListener('click', function () { cfg.onChange(''); });
+        row.appendChild(clr);
+    }
+
+    wrap.appendChild(row);
+    if (cfg.value && catalogDesc[cfg.value]) {
+        wrap.appendChild(el('div', 'cat-desc', catalogDesc[cfg.value]));
+    }
+    return wrap;
+}
+
 function maybeRerender(q) {
     return function () { if (q.id === 'shortName' || q.id === 'srcSystem') rerender(); };
 }
@@ -539,7 +745,15 @@ function renderRepeat(q) {
             if (fl.why)  lab.appendChild(el('span', 'why', fl.why));
             sub.appendChild(lab);
 
-            if (fl.type === 'select') {
+            if (fl.type === 'catalog') {
+                sub.appendChild(catalogControl({
+                    value: row[fl.id] || '',
+                    catalog: fl.catalog, kinds: fl.kinds,
+                    title: fl.pickTitle || fl.label, note: fl.pickNote || '',
+                    placeholder: fl.placeholder || 'Not chosen — the agent will select one',
+                    onChange: function (cls) { row[fl.id] = cls; rerender(); }
+                }));
+            } else if (fl.type === 'select') {
                 var sel = document.createElement('select');
                 (fl.options || []).forEach(function (o) {
                     var op = document.createElement('option');
@@ -582,6 +796,33 @@ function names() {
         rules:   (answers.production || 'USER') + '.Rules.' + src + 'Rules',
         dtlBase: src
     };
+}
+
+/* Data Atlas hand-off. The questionnaire's mapping table is deliberately
+ * simple — good for a handful of rules, wrong for a 200-row field mapping.
+ * Rather than grow the form into a mapping tool, hand the user to the
+ * dedicated one and let them come back. The target is configurable per
+ * deployment via ?atlas=<url>. */
+function atlasUrl() {
+    return qp('atlas') || '/agentic/admin/index.html#transforms';
+}
+
+function renderAtlas() {
+    var box = el('div', 'atlas-box');
+    var txt = el('div', 'atlas-txt');
+    txt.innerHTML = 'Mapping something complex? <b>Data Atlas</b> is the visual tool for ' +
+        'building transformations field by field. Work there and come back &mdash; anything ' +
+        'you build is available to this specification.';
+    box.appendChild(txt);
+    var b = el('button', 'btn atlas', 'GO TO DATA ATLAS');
+    b.type = 'button';
+    b.title = 'Open Data Atlas to build transformations visually';
+    b.addEventListener('click', function () {
+        window.open(atlasUrl(), '_blank');
+        toast('Opening Data Atlas in a new tab.');
+    });
+    box.appendChild(b);
+    return box;
 }
 
 function renderDerived() {
@@ -732,6 +973,10 @@ function buildPrompt() {
     if (a.srcTransport === 'mqtt' && a.srcMqttTopic) inbound.push('topic ' + a.srcMqttTopic);
     if (inbound.length) L.push('- Inbound transport detail: ' + inbound.join('; '));
 
+    // Explicit class choices override the agent's own catalog search.
+    if (a.srcHostClass) L.push('- Inbound business service class (chosen from the catalog): ' + a.srcHostClass);
+    if (a.srcAdapter)   L.push('- Inbound adapter class (chosen from the catalog): ' + a.srcAdapter);
+
     /* outputs */
     var tgts = (repeats.targets || []).filter(function (t) { return String(t.name || '').trim(); });
     if (tgts.length) {
@@ -742,6 +987,8 @@ function buildPrompt() {
                        ' over ' + transportLabel(t.transport) +
                        ' at ' + (t.endpoint || 'address not specified');
             if (t.transform === 'yes') line += '; requires transformation';
+            if (t.hostClass) line += '; use business operation class ' + t.hostClass;
+            if (t.adapter)   line += '; adapter ' + t.adapter;
             L.push(line);
         });
     } else {
@@ -773,6 +1020,10 @@ function buildPrompt() {
             a.lookups.split('\n').forEach(function (l) {
                 if (l.trim()) L.push('  - ' + l.trim());
             });
+        }
+        if (a.transformClass) {
+            L.push('- Use the existing transformation class ' + a.transformClass +
+                   ' (chosen from the catalog) rather than creating a new one.');
         }
         if (a.approach && a.approach !== 'auto') {
             var ap = { builtin: 'Use the built-in SDA pipeline', dtl: 'Use a custom DTL', bpl: 'Use a BPL orchestration' }[a.approach];
@@ -965,6 +1216,8 @@ function buildJson() {
         httpEndpoint:   av('srcHttpEndpoint'),
         sqlQuery:       av('srcSqlQuery'),
         mqttTopic:      av('srcMqttTopic'),
+        hostClass:      av('srcHostClass'),
+        adapterClass:   av('srcAdapter'),
         ackMode:        av('ackMode'),
         ackTarget:      av('ackTarget'),
         fifoRequired:   a.fifo === 'yes' ? true : (a.fifo === 'no' ? false : undefined),
@@ -981,6 +1234,8 @@ function buildJson() {
                 messageType:    val(t.msgType),
                 transport:      val(t.transport),
                 endpoint:       val(t.endpoint),
+                hostClass:      val(t.hostClass),
+                adapterClass:   val(t.adapter),
                 routeWhen:      val(t.filter) || 'all',
                 needsTransform: t.transform === 'yes',
                 retryInterval:  val(t.retry),
@@ -1034,6 +1289,7 @@ function buildJson() {
         transformation: {
             required:          a.needsTransform === 'yes' ? true : (a.needsTransform === 'no' ? false : undefined),
             approach:          (av('approach') && a.approach !== 'auto') ? a.approach : undefined,
+            reuseClass:        av('transformClass'),
             mappings:          maps.length ? maps : undefined,
             codeTranslations:  lookups.length ? lookups : undefined,
             stampSegmentTerminator: visible(findQ('segTerminator'))
@@ -1548,8 +1804,20 @@ async function boot() {
         }
     });
 
+    // Catalog picker wiring
+    document.getElementById('cp-close').addEventListener('click', closeCatalogPicker);
+    document.getElementById('cp-cancel').addEventListener('click', closeCatalogPicker);
+    document.getElementById('cp-q').addEventListener('input', function (e) {
+        renderCatalogList(e.target.value);
+    });
+    document.getElementById('catpick').addEventListener('click', function (e) {
+        if (e.target.id === 'catpick') closeCatalogPicker();
+    });
+
     document.addEventListener('keydown', function (e) {
-        if (e.key === 'Escape' && !document.getElementById('preview').hidden) closePreview();
+        if (e.key !== 'Escape') return;
+        if (!document.getElementById('catpick').hidden) { closeCatalogPicker(); return; }
+        if (!document.getElementById('preview').hidden) closePreview();
     });
 
     // Keep the namespace pill in step with the namespace answer.
