@@ -6,7 +6,7 @@ This document is the source of truth for what we are building, what constraints 
 
 A configuration-driven AI Copilot for IRIS for Health. The end user opens a chatbot mounted into a post-login Angular page, asks questions in natural language about Productions, Transformations, HL7, and FHIR, and the copilot uses tools backed by IRIS to answer or act. Everything (Agents, MCP groupings, Toolsets, Tools, Skills, LLM Providers) is configurable through an admin UI — no code edits to add a tool or change a model.
 
-Single agent in v1, named Agentic Interoperability Builder. Multi-agent supported by data model from day one.
+Single agent in v1, named Agentic Integration Builder. Multi-agent supported by data model from day one.
 
 ## Restrictions (immutable)
 

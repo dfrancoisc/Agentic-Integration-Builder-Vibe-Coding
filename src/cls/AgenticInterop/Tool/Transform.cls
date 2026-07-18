@@ -2395,9 +2395,9 @@ ClassMethod ConfigureSDAToFHIRProcess(production As %String, hostName As %String
 
 /// Add (or update) an HS.FHIRServer.Interop.HTTPOperation business operation
 /// that SENDS FHIR requests to an internal or EXTERNAL FHIR endpoint over
-/// HTTP. This is the operation Agentic Interoperability Builder uses to POST a FHIR Bundle
+/// HTTP. This is the operation Agentic Integration Builder uses to POST a FHIR Bundle
 /// (e.g. the output of the HL7-to-SDA-to-FHIR pipeline) to an external FHIR
-/// server such as https://fhir.example.com/r4. Agentic Interoperability Builder does NOT create
+/// server such as https://fhir.example.com/r4. Agentic Integration Builder does NOT create
 /// FHIR servers — it configures productions to TALK to them.
 ///
 /// The connection + OAuth settings live on the operation's adapter
@@ -2536,7 +2536,7 @@ ClassMethod ConfigureFHIRHTTPOperation(production As %String, hostName As %Strin
 /// IMPORTANT two-step wiring: adding this service is only half the job. You
 /// must also set the FHIR server endpoint's "Service Config Name" field to
 /// this host's name (Health > <namespace> > FHIR Server Management > Edit >
-/// Advanced Configuration). Agentic Interoperability Builder configures the PRODUCTION side;
+/// Advanced Configuration). Agentic Integration Builder configures the PRODUCTION side;
 /// the endpoint side is set in FHIR Server Management (FHIR Assistant).
 ///
 /// Settings (Host): TargetConfigName (downstream host that receives the

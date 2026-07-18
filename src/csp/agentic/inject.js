@@ -76,7 +76,7 @@
     }
     var CHATBOT_KEY = selfParam('chatbot') || 'interop';
     var INJECT_MODE = selfParam('mode') || 'interop';
-    var CHAT_TITLE  = selfParam('title') || 'Agentic Interoperability Builder';
+    var CHAT_TITLE  = selfParam('title') || 'Agentic Integration Builder';
 
     /* ---------------- JWT helpers ---------------- */
 
@@ -423,11 +423,11 @@
         overlay.innerHTML =
             '<div class="panel">' +
               '<div class="bar">' +
-                '<span>' + (CHAT_TITLE || 'Agentic Interoperability Builder') + '</span>' +
+                '<span>' + (CHAT_TITLE || 'Agentic Integration Builder') + '</span>' +
                 '<a class="obs-link" title="Open Observer in a new tab — shows every internal step as the agent works">Observer</a>' +
                 '<button class="close" type="button" title="Close">✕</button>' +
               '</div>' +
-              '<iframe src="about:blank" title="Agentic Interoperability Builder"></iframe>' +
+              '<iframe src="about:blank" title="Agentic Integration Builder"></iframe>' +
             '</div>';
         document.body.appendChild(overlay);
         overlay.querySelector('.obs-link').addEventListener('click', function () {
@@ -763,7 +763,7 @@
         var wrap = document.createElement('div');
         wrap.className = 'dropdown ' + HDR_MARK;
         wrap.innerHTML =
-            '<button type="button" aria-label="Open the Agentic Interoperability Builder" title="Chat with the Agentic Interoperability Builder">' +
+            '<button type="button" aria-label="Open the Agentic Integration Builder" title="Chat with the Agentic Integration Builder">' +
               '<svg viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-2 12H6v-2h12v2zm0-3H6V9h12v2zm0-3H6V6h12v2z" fill="currentColor"/></svg>' +
               '<span class="dot" aria-hidden="true"></span>' +
             '</button>';
@@ -926,8 +926,8 @@
         var fab = document.createElement('button');
         fab.id = FAB_ID;
         fab.type = 'button';
-        fab.setAttribute('aria-label', 'Open ' + (CHAT_TITLE || 'Agentic Interoperability Builder'));
-        fab.title = 'Chat with the ' + (CHAT_TITLE || 'Agentic Interoperability Builder');
+        fab.setAttribute('aria-label', 'Open ' + (CHAT_TITLE || 'Agentic Integration Builder'));
+        fab.title = 'Chat with the ' + (CHAT_TITLE || 'Agentic Integration Builder');
         fab.innerHTML =
             '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z" fill="#fff"/></svg>' +
             '<span class="agentic-fab-dot" aria-hidden="true"></span>';

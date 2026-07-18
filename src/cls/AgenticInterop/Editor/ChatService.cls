@@ -2,7 +2,7 @@
 /// client-side history replay AND iteration-monitor protection against
 /// the framework's known tool-result hang. Resolves the default
 /// AgenticInterop.Data.Connection via AgenticInterop.Connections.GetProvider,
-/// builds the Agentic Interoperability Builder (AIB) agent, replays the prior turns into a
+/// builds the Agentic Integration Builder (AIB) agent, replays the prior turns into a
 /// fresh %AI.Agent.Session, runs the agent loop with a wall-clock +
 /// token-budget Monitor, returns the response.
 ///

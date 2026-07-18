@@ -309,7 +309,7 @@ function renderEmptyState(target) {
             `<span class="ex-title">${escapeHtml(e.title)}</span>` +
         `</button>`;
     wrap.innerHTML =
-        '<p class="hero-eyebrow">' + escapeHtml(CHATBOT_TITLE || 'Agentic Interoperability Builder') + ' &middot; Copilot</p>' +
+        '<p class="hero-eyebrow">' + escapeHtml(CHATBOT_TITLE || 'Agentic Integration Builder') + ' &middot; Copilot</p>' +
         '<h1 class="hero-title">How can I help?</h1>' +
         '<p class="hero-sub">Describe your interoperability goal in plain English &mdash; or pick a starter below. ' +
         'The agent reaches into IRIS for Health to read productions, validate messages, and build integrations. ' +
@@ -385,7 +385,7 @@ function showLoginOverlay(message) {
             'display:flex;align-items:center;justify-content:center;color:#e6e8eb;';
         overlay.innerHTML =
             '<form id="agentic-login-form" style="background:#161a21;border:1px solid #2a313c;border-radius:6px;padding:24px;width:340px;display:flex;flex-direction:column;gap:12px;">' +
-            '<div style="font-weight:600;font-size:14px;">Sign in to the Agentic Interoperability Builder</div>' +
+            '<div style="font-weight:600;font-size:14px;">Sign in to the Agentic Integration Builder</div>' +
             '<div style="color:#8b95a6;font-size:12px;line-height:1.4;">' + (message || 'Enter your IRIS credentials.') + '</div>' +
             '<label style="color:#8b95a6;font-size:11px;text-transform:uppercase;letter-spacing:0.04em;">Username' +
               '<input id="agentic-login-user" type="text" autocomplete="username" autofocus style="width:100%;background:#0b0d11;color:#e6e8eb;border:1px solid #2a313c;border-radius:4px;padding:8px;font:inherit;margin-top:4px;">' +

@@ -73,7 +73,7 @@ ClassMethod EnsureSeed() As %Status
 {
     Set tSC = $$$OK
     Try {
-        Do ..seedOne("interop", "Agentic Interoperability Builder", "AgenticInterop.Agent.HealthInterop", "/ui/interop", "Interoperability copilot — productions, DTL, routing rules, HL7 and FHIR.")
+        Do ..seedOne("interop", "Agentic Integration Builder", "AgenticInterop.Agent.HealthInterop", "/ui/interop", "Interoperability copilot — productions, DTL, routing rules, HL7 and FHIR.")
         Do ..seedOne("fhir-management", "FHIR Assistant", "AgenticInterop.Agent.FHIRSpecialist", "/csp/fhir-management", "FHIR Server, Bulk FHIR, and FHIR SQL Builder specialist.")
     } Catch ex {
         Set tSC = ex.AsStatus()

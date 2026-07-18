@@ -1,13 +1,13 @@
-# Agentic Agentic Interoperability Buildererability - Technical Build Specification
+# Agentic Agentic Integration Buildererability - Technical Build Specification
 
 > Version 1.0 | May 2026 | InterSystems AI Hub  
-> What InterSystems needs to build to deliver an Agentic Agentic Interoperability Buildererability solution
+> What InterSystems needs to build to deliver an Agentic Agentic Integration Buildererability solution
 
 ---
 
 ## 1. Executive Summary
 
-This document specifies the components InterSystems must build to deliver a production-grade Agentic Agentic Interoperability Buildererability solution. The system is a configuration-driven AI Copilot embedded in IRIS for Health that enables integration engineers to build Productions, create Transformations, and test healthcare messages through natural-language conversation.
+This document specifies the components InterSystems must build to deliver a production-grade Agentic Agentic Integration Buildererability solution. The system is a configuration-driven AI Copilot embedded in IRIS for Health that enables integration engineers to build Productions, create Transformations, and test healthcare messages through natural-language conversation.
 
 The solution is built on the IRIS %AI Framework (Agent, MCP, ToolSet, Tool, Skill primitives) and extends it with application-specific infrastructure: a chat UX, an admin UI, vector catalogs, the Transformation and Mapping Catalog, connection management, and audit/security controls.
 

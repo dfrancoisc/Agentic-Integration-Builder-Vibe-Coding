@@ -10,7 +10,7 @@ The copilot bridges the gap between healthcare data expertise and InterSystems p
 
 This repository ships **three `%AI.Agent` agents**, all built here on the InterSystems %AI Framework:
 
-1. **Agentic Interoperability Builder** (`AgenticInterop.Agent.HealthInterop`) — the generalist interoperability builder. Productions, DTLs, BPLs, routing rules, HL7 v2, and FHIR interop. Surfaced as a launcher in the Interop Editor.
+1. **Agentic Integration Builder** (`AgenticInterop.Agent.HealthInterop`) — the generalist interoperability builder. Productions, DTLs, BPLs, routing rules, HL7 v2, and FHIR interop. Surfaced as a launcher in the Interop Editor.
 2. **FHIR Assistant** (`AgenticInterop.Agent.FHIRSpecialist`) — a focused FHIR-platform specialist. Surfaced as a launcher **inside the shipped IRIS for Health FHIR Server Management portal at `/csp/fhir-management`**.
 
 3. **SpecExtractor** (`AgenticInterop.Agent.SpecExtractor`) — a deliberately lean extraction agent (one iteration, temperature 0, no MCPs, no skills, no tools) that turns a prose description of an interface into structured answers for the Integration Spec Questionnaire. Not a chat surface; invoked directly by the questionnaire.
@@ -78,7 +78,7 @@ See [docs/Integration_Spec_Questionnaire_Specification.md](docs/Integration_Spec
 | Metric | Value |
 |---|---|
 | ObjectScript classes | 86 |
-| Agents (%AI.Agent) | 2 (Agentic Interoperability Builder generalist, FHIR Specialist) |
+| Agents (%AI.Agent) | 2 (Agentic Integration Builder generalist, FHIR Specialist) |
 | Tool classes (%AI.Tool) | 7 (Production, Transform, Testing, Catalog, Monitoring, FHIR Server, Bulk FHIR) |
 | Tools (public ClassMethods) | 122 |
 | ToolSets (%AI.ToolSet) | 7 |
@@ -96,10 +96,10 @@ See [docs/Integration_Spec_Questionnaire_Specification.md](docs/Integration_Spec
 - 122 tools across 7 domains: Production, Transform, Testing, Catalog, Monitoring, FHIR Server, Bulk FHIR
 - FHIR Server Audit panel: a left-nav menu in the FHIR Management app showing FHIR server storage (the per-endpoint repository databases via CORE `SYS.Database`, not the namespace DB), resource counts by type (CORE FHIR `_summary=count`), and ingestion performance (duration, resources/sec, bottlenecks) — backed by `GET /api/agentic/fhir/audit`
 - Load FHIR Data menu: a left-nav menu in the FHIR Management app to upload FHIR JSON files to a server-readable staging folder (`mgr/Temp/agentic-fhir-upload/`), so the FHIR Assistant can then load them into a FHIR server with `LoadFHIRDirectory` — backed by `POST/GET/DELETE /api/agentic/fhir/upload`
-- Three agents: Agentic Interoperability Builder (generalist builder), FHIR Specialist (FHIR platform), and SpecExtractor (prose-to-schema extraction for the questionnaire)
+- Three agents: Agentic Integration Builder (generalist builder), FHIR Specialist (FHIR platform), and SpecExtractor (prose-to-schema extraction for the questionnaire)
 - 16 domain skills covering Productions, DTL, BPL, Routing Rules, HL7v2, FHIR R4, FHIR Interop (production-to-FHIR-server connectivity), FHIR Server, Bulk FHIR, FHIR SQL Builder, SDA, REST, ESB, X12/HIPAA, CDA/C-CDA, and Adapters
-- FHIR Specialist agent: a dedicated FHIR platform agent (FHIR Server MCP + Bulk FHIR MCP + Catalog, with the FHIR Server / FHIR R4 / SDA / Bulk FHIR / FHIR SQL Builder skills) alongside the generalist Agentic Interoperability Builder (AIB) agent
-- Chatbot configuration layer: bind each chatbot surface to an agent in the admin "Chatbots" tab (the chat resolves its agent from the chatbot key at request time — no redeploy). Ships an Interop chatbot (Agentic Interoperability Builder, in the Interop Editor) and a FHIR Management chatbot (FHIR Specialist, a launcher button injected into the header of the shipped `/csp/fhir-management` FHIR Server Management page)
+- FHIR Specialist agent: a dedicated FHIR platform agent (FHIR Server MCP + Bulk FHIR MCP + Catalog, with the FHIR Server / FHIR R4 / SDA / Bulk FHIR / FHIR SQL Builder skills) alongside the generalist Agentic Integration Builder (AIB) agent
+- Chatbot configuration layer: bind each chatbot surface to an agent in the admin "Chatbots" tab (the chat resolves its agent from the chatbot key at request time — no redeploy). Ships an Interop chatbot (Agentic Integration Builder, in the Interop Editor) and a FHIR Management chatbot (FHIR Specialist, a launcher button injected into the header of the shipped `/csp/fhir-management` FHIR Server Management page)
 - Confirmation gate on every mutating tool -- create, update, delete, compile, start, stop all require explicit user approval before executing
 - Semantic vector search over the IRIS class library (164 Business Hosts, 58 transformation classes) using FastEmbed 384-dimensional embeddings and HNSW index
 - Transformation and Mapping Catalog with 1,538 pre-computed field-level mappings across HL7 v2, SDA3, FHIR R4, CDA, and X12
@@ -391,7 +391,7 @@ Product requirements and build documentation live in [`docs/`](docs/). Each prod
 | Document | What it covers |
 |---|---|
 | [FHIR Assistant PRD](docs/Product_Requirements_FHIR_Assistant.md) (`.docx`) | Product requirements for the **FHIR Assistant** (`FHIRSpecialist`): personas, the load/query/share use case, the Agent (tools, skills, catalogs, policies), the Chat Experience in the FHIR portal, the AI Setting Experience, walkthrough, Definition of Done, and non-functional requirements. Generated by `docs/build_prd_fhir_assistant.py` |
-| [Agentic Interoperability Builder PRD](docs/Product_Requirements_Integration_Agentic_Builder.md) (`.docx`) | Product requirements for the interface-building agent (Agentic Interoperability Builder) on Health Connect Cloud. Generated by `docs/build_prd_aiadmin.py` |
+| [Agentic Integration Builder PRD](docs/Product_Requirements_Integration_Agentic_Builder.md) (`.docx`) | Product requirements for the interface-building agent (Agentic Integration Builder) on Health Connect Cloud. Generated by `docs/build_prd_aiadmin.py` |
 | Requirements / Build Spec / Lessons Learned (`FHIRAssistant_v1.1.0`, `HealthInterop_v1.1.0`) | Per-agent requirement stories, technical build specification, and lessons learned. Generated by `docs/build_fhir_assistant_docx.py` and `docs/build_all_docx.py` |
 | [Integration Spec Questionnaire — Specification](docs/Integration_Spec_Questionnaire_Specification.md) (`.docx`) | Business need, the Epic-to-Quest use case, 29 functional and 17 technical requirements for the questionnaire, and a traceability appendix mapping every agent gap-check item to its field |
 | [Integration Spec Questionnaire — Design](docs/Integration_Spec_Questionnaire_Design.md) | Design rationale: why the agent's gap-check list is the specification schema, the prior art in InterSystems documentation, and the phasing |

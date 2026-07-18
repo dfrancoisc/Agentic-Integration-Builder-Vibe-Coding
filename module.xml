@@ -120,7 +120,7 @@
 <Invoke Class="AgenticInterop.Reference.SystemError" Method="Seed" Phase="Activate" />
 
 <!-- Seed the two shipped chatbots for the chatbot config layer:
-     interop -> Agentic Interoperability Builder (generalist), fhir-management -> FHIR
+     interop -> Agentic Integration Builder (generalist), fhir-management -> FHIR
      Specialist. Idempotent; never overwrites a user-edited row. -->
 <Invoke Class="AgenticInterop.Data.Chatbot" Method="EnsureSeed" Phase="Activate" />
 

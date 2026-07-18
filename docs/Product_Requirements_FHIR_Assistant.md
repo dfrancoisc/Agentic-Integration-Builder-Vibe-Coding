@@ -18,7 +18,7 @@ The FHIR Assistant is an implementation of the InterSystems AI Hub Framework. Th
 
 The AI Hub on its own is a foundation. The FHIR Assistant is what turns that foundation into value for FHIR work. It applies the framework to a real job, and it does that job from inside the tool the user already has open: the FHIR Server Management portal. The framework makes the agent possible. The FHIR Assistant makes it useful.
 
-The FHIR Assistant is a sibling of the Agentic Interoperability Builder. The Agentic Interoperability Builder builds interfaces (productions, transformations, routing). The FHIR Assistant runs the FHIR platform (the repository, data loading, transformation, bulk export, and SQL projection). They share the same framework, the same safe loop, the same policies, and the same AI Setting Experience. This document states what the FHIR Assistant must do. It does not state how it is engineered.
+The FHIR Assistant is a sibling of the Agentic Integration Builder. The Agentic Integration Builder builds interfaces (productions, transformations, routing). The FHIR Assistant runs the FHIR platform (the repository, data loading, transformation, bulk export, and SQL projection). They share the same framework, the same safe loop, the same policies, and the same AI Setting Experience. This document states what the FHIR Assistant must do. It does not state how it is engineered.
 
 
 ### 1.1 How to read this document
@@ -40,7 +40,7 @@ The MVP centers on the FHIR platform lifecycle: create a server, load data, tran
 | The Agent | The FHIR Assistant itself. Its tools, skills, policies, catalogs, and LLM connection are defined and built. | Yes. This is the core. | Yes, through the chat. The customer experiences the agent, not its internals. |
 | The Chat Experience | The launcher and slide-in chat panel inside the FHIR Server Management portal, plus the Load FHIR Data and FHIR Server Audit helpers. | Yes. | Yes. This is the customer facing surface, embedded in the FHIR portal the engineer already uses. |
 | The AI Setting Experience | The screens where an AI Admin assembles the agent. For this product the AI Admin is an InterSystems person. | Partially. | No. InterSystems operates it. Customers do not see it in the MVP. |
-| Other agents | More specialized agents beyond the FHIR Assistant, such as the Agentic Interoperability Builder or monitoring agents. | No. Those are separate deliverables. | No. |
+| Other agents | More specialized agents beyond the FHIR Assistant, such as the Agentic Integration Builder or monitoring agents. | No. Those are separate deliverables. | No. |
 
 
 ### 1.3 Platform constraints
@@ -601,7 +601,7 @@ The MVP is done when all of these are true, from inside the FHIR Server Manageme
 13. Every action is recorded in the audit trail.
 14. The solution uses only what the platform provides. No CLI. No file server access for the user. No developer tools.
 
-> Scope reminder. The MVP has three parts. The Agent and the Chat Experience are customer facing, embedded in the FHIR Server Management portal. The AI Setting Experience is built and operated by InterSystems, and it is not shown to customers in the MVP. The AI Admin for this product is an InterSystems person. More agents, including the Agentic Interoperability Builder, are separate deliverables.
+> Scope reminder. The MVP has three parts. The Agent and the Chat Experience are customer facing, embedded in the FHIR Server Management portal. The AI Setting Experience is built and operated by InterSystems, and it is not shown to customers in the MVP. The AI Admin for this product is an InterSystems person. More agents, including the Agentic Integration Builder, are separate deliverables.
 
 
 ## 6. Non functional requirements

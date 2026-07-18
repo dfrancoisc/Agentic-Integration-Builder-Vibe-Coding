@@ -3,7 +3,7 @@
 > **SUPERSEDED — historical reference only.**
 > The canonical product requirements are
 > [`Product_Requirements_Integration_Agentic_Builder.md`](Product_Requirements_Integration_Agentic_Builder.md).
-> That document merges this one with the Agentic Interoperability Builder MVP requirements
+> That document merges this one with the Agentic Integration Builder MVP requirements
 > (epics and build order, the Epic-to-Quest driving use case, the US-numbered backlog,
 > Distribution and Deployment, and the AI Hub positioning).
 > The FHIR Assistant is a separate product: [`Product_Requirements_FHIR_Assistant.md`](Product_Requirements_FHIR_Assistant.md).

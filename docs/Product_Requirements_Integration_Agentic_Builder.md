@@ -1,6 +1,6 @@
-# Agentic Interoperability Builder — Product Requirements
+# Agentic Integration Builder — Product Requirements
 
-> **Product:** Agentic Interoperability Builder (AIB). An AI agent that builds healthcare interfaces by chat.
+> **Product:** Agentic Integration Builder (AIB). An AI agent that builds healthcare interfaces by chat.
 > **Built on:** the InterSystems AI Hub (`%AI`) framework.
 > **Platform (MVP):** Health Connect Cloud. The product runs on IRIS for Health / Health Connect 2026.2+.
 > **Status:** Draft for review. **Date:** July 2026.
@@ -14,7 +14,7 @@
 
 ### 1.1 What it is
 
-The Agentic Interoperability Builder helps an integration engineer build healthcare interfaces in Health Connect Cloud by describing them in plain language — or by handing over a specification document. The agent researches the platform, proposes a plan, and, on the engineer's approval, builds the productions, transformations, routing rules and lookup tables using real IRIS APIs.
+The Agentic Integration Builder helps an integration engineer build healthcare interfaces in Health Connect Cloud by describing them in plain language — or by handing over a specification document. The agent researches the platform, proposes a plan, and, on the engineer's approval, builds the productions, transformations, routing rules and lookup tables using real IRIS APIs.
 
 It is a **development-time tool, not a production runtime component.** It accelerates the *authoring* of interfaces; it does not sit in the live message path. Once an interface is built, tested and promoted, the agent has no role in its execution. Nothing it produces depends on the agent being present at runtime — the artifacts are standard IRIS classes.
 
@@ -574,5 +574,5 @@ The MVP is done when all of these are true on Health Connect Cloud.
 
 Consolidated from `docs/01_Requirements_User_Stories.md`, `docs/02_Technical_Build_Specification.md`, `docs/03_Lessons_Learned.md`, `docs/system_integrator_persona.md`, `docs/AttachmentWorkflow.md`, `docs/UseCase-SpecDrivenBuild.md`, `docs/PLAN.md`, the live agent instructions, and the InterSystems product documentation (notably *Best Practices for Creating Productions*, *Configuring Productions*, *Routing HL7 Version 2 Messages in Productions*, and *HL7 Productivity Tools*).
 
-**Supersedes:** `docs/PRD.md` (Agentic Interoperability Builder) and the standalone `PRD_Agentic_Integration_Builder` draft.
+**Supersedes:** `docs/PRD.md` (Agentic Integration Builder) and the standalone `PRD_Agentic_Integration_Builder` draft.
 **Sibling product:** `docs/Product_Requirements_FHIR_Assistant.md` — out of scope here.
