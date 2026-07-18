@@ -42,9 +42,22 @@ def do_login(page):
         print("  no login overlay (already authenticated)")
 
 
-def click_tab(page, index):
-    """Click a nav tab by index."""
-    page.evaluate(f"document.querySelectorAll('nav button')[{index}].click()")
+def click_tab(page, label):
+    """Click a nav tab by its visible label.
+
+    Was index-based, which silently broke when the Chatbots tab was added
+    at position 6 -- every later index shifted by one and the Catalogs,
+    Transforms and Audit shots were saved under the wrong names. Matching
+    on the label survives tabs being added or reordered.
+    """
+    found = page.evaluate("""(want) => {
+        const btns = [...document.querySelectorAll('nav button')];
+        const b = btns.find(x => x.textContent.trim().toLowerCase() === want.toLowerCase());
+        if (b) { b.click(); return true; }
+        return false;
+    }""", label)
+    if not found:
+        raise RuntimeError(f"nav tab not found: {label}")
     time.sleep(1.5)
 
 
@@ -83,15 +96,15 @@ def main():
         shot(page, "02_agent_detail")
 
         # 3. MCPs tab
-        click_tab(page, 1)
+        click_tab(page, "MCPs")
         shot(page, "03_mcps_list")
 
         # 4. ToolSets tab
-        click_tab(page, 2)
+        click_tab(page, "ToolSets")
         shot(page, "04_toolsets_list")
 
         # 5. Tools tab
-        click_tab(page, 3)
+        click_tab(page, "Tools")
         shot(page, "05_tools_list")
 
         # 6. Tool detail
@@ -99,7 +112,7 @@ def main():
         shot(page, "06_tool_detail")
 
         # 7. Skills tab
-        click_tab(page, 4)
+        click_tab(page, "Skills")
         shot(page, "07_skills_list")
 
         # 8. Skill detail
@@ -107,7 +120,7 @@ def main():
         shot(page, "08_skill_detail")
 
         # 9. Connections tab
-        click_tab(page, 5)
+        click_tab(page, "Connections")
         shot(page, "09_connections_list")
 
         # 10. Connection detail
@@ -115,11 +128,11 @@ def main():
         shot(page, "10_connection_detail")
 
         # 11. Catalogs tab
-        click_tab(page, 6)
+        click_tab(page, "Catalogs")
         shot(page, "11_catalogs")
 
         # 12. Transforms tab (empty)
-        click_tab(page, 7)
+        click_tab(page, "Transforms")
         shot(page, "12_transforms_empty")
 
         # 13. Transforms with HL7 v2 -> FHIR R4.
@@ -143,7 +156,7 @@ def main():
             print(f"  WARN: skipping 13_transforms_hl7_fhir — {e}")
 
         # 14. Audit tab
-        click_tab(page, 8)
+        click_tab(page, "Audit")
         shot(page, "14_audit")
 
         # ---- Chatbot ----
