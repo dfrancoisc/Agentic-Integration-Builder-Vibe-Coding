@@ -19,6 +19,8 @@ The two chat agents are configuration-driven: which agent powers which chat surf
 
 ## FHIR Assistant
 
+![FHIR Assistant in the FHIR Server Management portal](docs/img/21_fhir_chatbot.png)
+
 The **FHIR Assistant** is the FHIR-platform agent. When you open `http://<host>:<port>/csp/fhir-management/`, the IPM install has patched that page (`AgenticInterop.Install.FHIRManagementPatch`, reverted on uninstall) to inject three launcher buttons into the portal header — appearing only after login:
 
 - **Chat** — opens the FHIR Assistant in a right-side slide-in panel, so the FHIR Management UI stays visible. It captures the portal's IRIS JWT and active namespace, so there is no second login and every action is namespace-scoped.
@@ -48,20 +50,13 @@ Version 1.2 ships. All build phases complete (Phase 0 through Phase 7), the 1.1 
 
 ## What's new in 1.2
 
-**InterSystems Integration Spec Questionnaire** (`/agentic/spec/`) — a schema-driven form that collects everything Health Connect needs to build an interface, opened from the **Integration Spec** tab in the Interop Editor.
+**InterSystems Integration Spec Questionnaire** (`/agentic/spec/`) — a schema-driven form that collects everything Health Connect needs to build an interface, then hands the specification to the agent. It attacks the step upstream of building: customers struggle to *specify* interfaces more than to build them.
 
-The premise: the agent already defines what a complete specification is. `HealthInterop` carries a mandatory "check for gaps" step listing every decision it must never silently default — ACK mode and target, dead-letter destination, retry and failure timeout, pool size under FIFO, `MessageSchemaCategory`, archive path, HL7-to-HL7 segment terminator, plus a never-assume list (transport, HL7 version, schema category). That list *is* the specification schema; the questionnaire asks it up front instead of discovering it mid-conversation.
+Describe the interface in prose and the form fills itself in for you to verify; or fill it in directly; or pick exact business hosts, adapters and transformations from this instance's own catalogs. Output is prose, JSON, or both, and enters the existing plan → approve → build → validate loop with no new agent path.
 
-- **Describe it first.** Write the interface in prose and the form fills itself in. `AgenticInterop.Agent.SpecExtractor` — a deliberately lean agent (one iteration, temperature 0, no tools, no skills) — maps the description onto the schema. Every filled field is marked **verify**; anything the description did not state is listed, never invented. Roughly 16-23 seconds, ~3k tokens.
-- **Catalog-backed selection.** Choose the inbound business service and adapter, the outbound operation and adapter per destination, and an existing transformation to reuse — from this instance's own indexed catalogs (164 business hosts and adapters, 58 transformation classes), each shown with the curated description the agent itself searches. Optional: left unset, the agent searches and proposes as before.
-- **Gap-check coverage.** The generated specification carries a `Confirmed defaults` block pre-answering the applicable gap items, so the agent goes straight from specification to plan without a clarification round. "Not sure" is a first-class answer that becomes an open question rather than a silent default.
-- **Prose, JSON, or both.** Prose conforms to the existing `[[SPEC]]` contract so it renders as the current approval card; JSON is keyed to tool parameter names, and an absent key means *ask*, never *assume*.
-- **Send it to AIB.** Hands the specification to the chatbot in the same namespace as the first turn of a conversation, entering the existing plan → approve → build → validate loop. No new agent path, no new REST endpoints.
-- **Worked examples** and a **GO TO DATA ATLAS** hand-off for mapping work beyond a simple table (placeholder; target configurable via `?atlas=<url>`).
+Also new: `AgenticInterop.Agent.SpecExtractor`, the lean extraction agent behind the describe-it-first flow.
 
-Artifact names are generated from the documented InterSystems naming conventions (`From<Src>` / `To<Tgt>` / `<Src>Router` / `<Src>Rules`), and the form is read-only against the instance — it creates nothing. All state change stays behind the agent's approval gate.
-
-See [docs/Integration_Spec_Questionnaire_Specification.md](docs/Integration_Spec_Questionnaire_Specification.md) for the business need, use case and requirements.
+→ Full walkthrough with screenshots: [Integration Spec Questionnaire](#integration-spec-questionnaire) · Requirements: [specification](docs/Integration_Spec_Questionnaire_Specification.md)
 
 ## What's new in 1.1
 
@@ -252,6 +247,8 @@ Features:
 
 ## Tools
 
+![Tools tab](docs/img/05_tools_list.png)
+
 The agent's capabilities are organized into 7 Tool classes (122 tools total). Each Tool class is a `%AI.Tool` subclass where every public ClassMethod is a tool the LLM can call.
 
 | Tool class | Tools | Purpose |
@@ -265,6 +262,8 @@ The agent's capabilities are organized into 7 Tool classes (122 tools total). Ea
 | Bulk FHIR | 13 | Bulk FHIR Coordinator (BFC): list/get/schema/create/configure/activate/delete configs, start exports, monitor sessions, and provision prerequisites end to end (storage directory, SSL/TLS config, interop credential, SMART-backend OAuth server + client) — fetch from a source FHIR endpoint to ndjson or ingest into a target FHIR server |
 
 ## Skills
+
+![Skill detail](docs/img/08_skill_detail.png)
 
 Sixteen domain skills teach the agents IRIS-specific concepts. Each skill is a `%AI.Agent.Skill` subclass with markdown INSTRUCTIONS distilled from InterSystems documentation. The FHIR Assistant draws on the FHIRServer, FHIRR4, SDA, BulkFHIR, and FHIRSQLBuilder skills.
 
@@ -302,6 +301,88 @@ Technical details:
 - Vector storage: `%AI.RAG.KnowledgeBase` with HNSW index
 - Query path: `%AI.ToolMgr.ExecuteTool(kbName, args)` (SQL `EMBEDDING()` does not work with bundled FastEmbed)
 - Document format: curated prose descriptions (class name + description + superclass + key parameters), not raw class dumps
+
+## Integration Spec Questionnaire
+
+![Integration Spec Questionnaire](docs/img/30_spec_questionnaire.png)
+
+Customers struggle to **specify** interfaces more than they struggle to build them. The agent can only build what it has been told, and Statements of Work — written for humans — routinely omit exactly what Health Connect needs: which acknowledgment mode, where ACKs go on a file feed, what happens to a failed transform, whether ordering matters.
+
+An incomplete specification produces a clarification loop, or worse, a silent wrong assumption: the build succeeds, the demo passes, and the defect surfaces in production. Three that all produce a *working-looking* interface:
+
+- Application ACKs on a file-based service, which has no return channel — the production logs a warning and nothing else happens
+- `MessageSchemaCategory` unset, so messages carry no document type and no routing rule ever matches
+- An HL7-to-HL7 target with no segment terminator, which writes only the MSH
+
+### The premise
+
+**We did not have to invent what a complete specification is — the agent already defines it.** `HealthInterop` carries a mandatory "check for gaps" step listing every decision it must never silently default. That list *is* the specification schema. The questionnaire asks it **up front**, in a form, instead of discovering it mid-conversation.
+
+| Agent gap-check item | Questionnaire field |
+|---|---|
+| ACK mode | Acknowledgment mode |
+| ACK target for file/FTP | Where ACKs are written (appears only when relevant) |
+| Dead-letter / bad-message destination | Dead-letter destination (required) |
+| Retry interval and failure timeout | Per destination, defaulted to `-1` |
+| Pool size when FIFO matters | Ordering required → pool size 1 |
+| `MessageSchemaCategory` | HL7 schema category (required) |
+| Archive path for file pickups | Archive directory (conditional) |
+| Segment terminator on HL7-to-HL7 | Stamp a segment terminator |
+| Never assume transport | Inbound transport (required) |
+| Never assume HL7 version | HL7 schema category (required) |
+
+This is not an InterSystems-invented novelty. *Best Practices for Creating Productions* §2.3 already defines a "production spreadsheet" intake template, and §2.5 the naming conventions the form generates from. **Documented best practice made executable.**
+
+### Three ways in
+
+**1. Describe it.** Write the interface in prose. `AgenticInterop.Agent.SpecExtractor` — a deliberately lean agent (one iteration, temperature 0, no tools, no skills) — maps the description onto the schema and fills the form in.
+
+![Describe the interface](docs/img/31_spec_describe.png)
+
+Every field it fills is marked **VERIFY**, and anything the description did not state is listed rather than invented. You confirm or correct before anything is sent. Roughly 16–23 seconds, ~3k tokens.
+
+![Form populated from the description](docs/img/32_spec_filled.png)
+
+**2. Fill it in.** A guided form, tiered Essential / Recommended / Advanced and revealed conditionally — no MLLP port question unless the transport is TCP, no ACK-target question unless the inbound is file-based and application ACKs were asked for. *Not sure* is a first-class answer that becomes an open question rather than a silent default.
+
+**3. Pick from the catalog.** Choose the inbound business service and adapter, the outbound operation and adapter per destination, or an existing transformation to reuse — from this instance's own indexed catalogs (164 business hosts and adapters, 58 transformation classes), each shown with the curated description the agent itself searches.
+
+![Catalog picker](docs/img/33_spec_catalog_picker.png)
+
+Every catalog selection is optional. Left unset, the agent searches and proposes as before; set, the choice is recorded and the agent uses it instead of choosing. Reuse before you build.
+
+### What it produces
+
+![Generated specification](docs/img/34_spec_output_trial.png)
+
+**Output Trial** renders an editable preview. Three formats:
+
+- **Prompt + JSON** (default) — JSON is the authoritative machine payload, keyed to tool parameter names; the prose is the human-readable rendering and drives the approval card
+- **Prompt only** — human-readable; the agent infers values from prose
+- **JSON only** — fastest for the agent, least readable for you
+
+The prose conforms to the existing `[[SPEC]]` contract, so it renders as the current approval card and enters the existing plan → approve → build → validate loop. **No new agent path, no new REST endpoints.**
+
+Two things make the output more than a transcript of the form:
+
+- A **`Confirmed defaults`** block pre-answers the applicable gap items, so the agent goes straight from specification to plan without a clarification round
+- An absent JSON key means *not specified*, and the payload instructs the agent to **ask rather than assume**
+
+Artifact names are generated from the documented naming conventions (`From<Src>` / `To<Tgt>` / `<Src>Router` / `<Src>Rules`) and shown before you send.
+
+### Then hand it over
+
+**Send it to AIB** delivers the specification to the chatbot in the same namespace, as the first turn of a conversation. **GO TO DATA ATLAS** hands off to the visual tool for mapping work beyond a simple table (placeholder for now; target configurable via `?atlas=<url>`).
+
+### What it does not do
+
+The questionnaire is **read-only against the instance — it creates nothing**. It reads environment metadata to populate options, and every state change stays behind the agent's approval gate.
+
+### Opening it
+
+The **Integration Spec** tab in the Interop Editor toolbar, or `/agentic/spec/index.html` directly. It inherits the editor's session, so there is no second login; opened standalone it needs the chat to have been signed into first in that browser.
+
+Full requirements and the Epic-to-Quest use case: [Integration Spec Questionnaire — Specification](docs/Integration_Spec_Questionnaire_Specification.md).
 
 ## Chatbot experience
 
@@ -357,6 +438,8 @@ This section applies only if you want to embed the chat into a *different* appli
 **Standalone mode.** Open `/agentic/chat/index.html` directly. The page shows an inline credentials overlay on first visit; credentials persist in `localStorage`.
 
 ## Operations runbook
+
+![Audit trail](docs/img/14_audit.png)
 
 **Daily.** No action required. The chat surface is self-serve and the audit log captures every request.
 
