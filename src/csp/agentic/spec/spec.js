@@ -414,18 +414,20 @@ function renderSection(sec) {
 function labelFor(q) {
     var lab = el('label', null, q.label);
     if (q.required) lab.appendChild(el('span', 'req', '*'));
+    if (seededFields[q.id]) lab.appendChild(el('span', 'seeded-tag', 'verify'));
     if (q.hint) lab.appendChild(el('span', 'hint', q.hint));
     if (q.why)  lab.appendChild(el('span', 'why', q.why));
     return lab;
 }
 
 function renderQuestion(q) {
-    var f = el('div', 'field');
+    var f = el('div', 'field' + (seededFields[q.id] ? ' seeded' : ''));
     f.dataset.qid = q.id;
 
     if (q.type === 'repeat') {
         var lw = el('div', 'flabel', q.label);
         if (q.required) lw.appendChild(el('span', 'req', '*'));
+        if (seededFields[q.id]) lw.appendChild(el('span', 'seeded-tag', 'verify'));
         if (q.hint) lw.appendChild(el('span', 'hint', q.hint));
         f.appendChild(lw);
         f.appendChild(renderRepeat(q));
@@ -1164,12 +1166,258 @@ function currentNamespace() {
     return (answers.namespace || '').trim() || qp('ns') || qp('namespace') || '';
 }
 
+/* ==================== describe-it-first (prompt -> form) ====================
+ * The reverse of this page's normal direction. The user describes the
+ * integration in prose; a lean extractor agent maps it onto the schema and
+ * the form fills itself in. The user then VERIFIES — seeded fields are
+ * visually marked, and nothing is built from the description itself. */
+
+var API = '/api/agentic';
+var AUTH_KEY = 'AGENTIC_AUTH';       // shared with the chat, so one login covers both
+var EXTRACTOR = 'AgenticInterop.Agent.SpecExtractor';
+
+var bridgeBearer = '';
+var seededFields = {};   // fieldId -> true, for the "verify this" highlight
+
+/* The host page (Interop Editor) holds the SPA's IRIS JWT. Ask for it the
+ * same way chat.js does, so the questionnaire authenticates without a
+ * second login. Falls back to whatever the chat stored locally. */
+function fetchBridgeAuth() {
+    return new Promise(function (resolve) {
+        var done = false;
+        function finish(p) { if (done) return; done = true; resolve(p || {}); }
+        function listener(e) {
+            var d = e.data || {};
+            if (d && d.type === 'agentic:auth:response') {
+                window.removeEventListener('message', listener);
+                finish(d);
+            }
+        }
+        window.addEventListener('message', listener);
+        try { window.parent.postMessage({ type: 'agentic:auth:request' }, '*'); } catch (e) {}
+        setTimeout(function () { window.removeEventListener('message', listener); finish({}); }, 1500);
+    });
+}
+
+function authHeader() {
+    if (bridgeBearer) return bridgeBearer;
+    try { return localStorage.getItem(AUTH_KEY) || ''; } catch (e) { return ''; }
+}
+
+/* Serialize the CURRENT schema for the model — ids, types and the exact
+ * option values it is allowed to return. Sent with every request rather
+ * than baked into the agent, so a customer who adds, removes or relabels a
+ * field gets correct extraction with no backend change. */
+function schemaForLLM() {
+    var out = [];
+    SCHEMA.forEach(function (sec) {
+        var qs = [];
+        sec.questions.forEach(function (q) {
+            var e = { id: q.id, label: q.label, type: q.type };
+            if (q.options) e.allowedValues = q.options.map(function (o) { return o.v; });
+            if (q.type === 'repeat') {
+                e.rowFields = q.fields.map(function (f) {
+                    var g = { id: f.id, label: f.label, type: f.type };
+                    if (f.options) g.allowedValues = f.options.map(function (o) { return o.v; });
+                    return g;
+                });
+            }
+            qs.push(e);
+        });
+        out.push({ section: sec.id, title: sec.title, questions: qs });
+    });
+    return out;
+}
+
+function seedStatus(msg, kind, busy) {
+    var el0 = document.getElementById('seed-status');
+    el0.className = kind || '';
+    el0.innerHTML = '';
+    if (busy) el0.appendChild(el('span', 'spinner'));
+    el0.appendChild(el('span', null, msg));
+    el0.hidden = false;
+}
+
+function seedNotes(notes) {
+    var box = document.getElementById('seed-notes');
+    if (!notes || !notes.length) { box.hidden = true; return; }
+    box.innerHTML = '';
+    box.appendChild(el('b', null, 'Could not determine — please fill in'));
+    var ul = document.createElement('ul');
+    notes.forEach(function (n) { ul.appendChild(el('li', null, String(n))); });
+    box.appendChild(ul);
+    box.hidden = false;
+}
+
+/* Pull the JSON object out of the model's reply. The extractor is told to
+ * return bare JSON, but models sometimes wrap it in a fence anyway, so
+ * tolerate that rather than failing the whole flow. */
+function parseExtraction(text) {
+    if (!text) return null;
+    var s = String(text).trim();
+    s = s.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '').trim();
+    var start = s.indexOf('{');
+    if (start < 0) return null;
+    var depth = 0, inStr = false, esc = false;
+    for (var i = start; i < s.length; i++) {
+        var c = s[i];
+        if (inStr) {
+            if (esc) esc = false;
+            else if (c === '\\') esc = true;
+            else if (c === '"') inStr = false;
+            continue;
+        }
+        if (c === '"') inStr = true;
+        else if (c === '{') depth++;
+        else if (c === '}') { depth--; if (depth === 0) { s = s.slice(start, i + 1); break; } }
+    }
+    try { return JSON.parse(s); } catch (e) { return null; }
+}
+
+/* Apply an extraction to the form. Only known ids are accepted, and an
+ * option-backed field only accepts a listed value — a hallucinated field or
+ * value is dropped rather than silently corrupting the form. */
+function applyExtraction(data) {
+    var applied = 0, rejected = [];
+    seededFields = {};
+
+    /* Normalise before applying. Models routinely put a multi-select field
+     * (message types) under `repeats` because it holds several values, and
+     * occasionally put a repeat group under `answers`. Both are the model
+     * being reasonable about ambiguous wording, not a failure — so route by
+     * what the SCHEMA says the field is, rather than dropping the value. */
+    var ans = Object.assign({}, (data && data.answers) || {});
+    var reps0 = Object.assign({}, (data && data.repeats) || {});
+    Object.keys(reps0).forEach(function (id) {
+        var q = findQ(id);
+        if (q && q.type !== 'repeat') { ans[id] = reps0[id]; delete reps0[id]; }
+    });
+    Object.keys(ans).forEach(function (id) {
+        var q = findQ(id);
+        if (q && q.type === 'repeat' && Array.isArray(ans[id])) { reps0[id] = ans[id]; delete ans[id]; }
+    });
+    data = { answers: ans, repeats: reps0, notes: data && data.notes };
+    Object.keys(ans).forEach(function (id) {
+        var q = findQ(id);
+        if (!q) { rejected.push(id); return; }
+        var v = ans[id];
+        if (q.options && q.type !== 'checkbox') {
+            var ok = q.options.some(function (o) { return String(o.v) === String(v); });
+            if (!ok) { rejected.push(id + '=' + v); return; }
+        }
+        if (q.type === 'checkbox') {
+            var arr = Array.isArray(v) ? v : [v];
+            arr = arr.filter(function (x) {
+                return q.options.some(function (o) { return String(o.v) === String(x); });
+            });
+            if (!arr.length) { rejected.push(id); return; }
+            answers[id] = arr;
+        } else {
+            answers[id] = v;
+        }
+        seededFields[id] = true;
+        applied++;
+    });
+
+    var reps = reps0;
+    Object.keys(reps).forEach(function (id) {
+        var q = findQ(id);
+        if (!q || q.type !== 'repeat' || !Array.isArray(reps[id]) || !reps[id].length) return;
+        var rows = [];
+        reps[id].forEach(function (src) {
+            if (!src || typeof src !== 'object') return;
+            var row = blankRow(q);
+            var touched = false;
+            q.fields.forEach(function (f) {
+                if (src[f.id] === undefined || src[f.id] === null) return;
+                var v = src[f.id];
+                if (f.options) {
+                    var ok = f.options.some(function (o) { return String(o.v) === String(v); });
+                    if (!ok) { rejected.push(id + '.' + f.id + '=' + v); return; }
+                }
+                row[f.id] = v;
+                touched = true;
+            });
+            if (touched) rows.push(row);
+        });
+        if (rows.length) { repeats[id] = rows; seededFields[id] = true; applied += rows.length; }
+    });
+
+    return { applied: applied, rejected: rejected };
+}
+
+async function seedFromPrompt() {
+    var text = document.getElementById('seed-text').value.trim();
+    if (!text) { seedStatus('Describe the interface first.', 'err'); return; }
+
+    var btn = document.getElementById('seed-go');
+    btn.disabled = true;
+    seedNotes(null);
+    seedStatus('Reading your description…', '', true);
+
+    var message =
+        'QUESTIONNAIRE SCHEMA:\n' + JSON.stringify(schemaForLLM()) +
+        '\n\nDESCRIPTION:\n' + text +
+        '\n\nReturn only the JSON object described in your instructions.';
+
+    var headers = { 'Content-Type': 'application/json' };
+    var auth = authHeader();
+    if (auth) headers['Authorization'] = auth;
+    var ns = currentNamespace();
+    if (ns) headers['X-IRIS-Namespace'] = ns;
+
+    try {
+        var res = await fetch(API + '/chat?_t=' + Date.now(), {
+            method: 'POST',
+            headers: headers,
+            credentials: 'include',
+            body: JSON.stringify({ message: message, agentClass: EXTRACTOR, history: [] })
+        });
+        if (res.status === 401 || res.status === 403) {
+            seedStatus('Not authorized. Open the chat once to sign in, then retry.', 'err');
+            return;
+        }
+        if (!res.ok) { seedStatus('Request failed (HTTP ' + res.status + ').', 'err'); return; }
+
+        var j = await res.json();
+        if (!j.ok) { seedStatus(j.error ? String(j.error).slice(0, 160) : 'Extraction failed.', 'err'); return; }
+
+        var data = parseExtraction(j.response);
+        if (!data) { seedStatus('Could not read the response as structured data. Try rephrasing.', 'err'); return; }
+
+        var r = applyExtraction(data);
+        render();
+        document.getElementById('form-pane').scrollTop = 0;
+
+        if (!r.applied) {
+            seedStatus('Nothing definite to fill in from that description.', 'err');
+        } else {
+            seedStatus(r.applied + ' field' + (r.applied > 1 ? 's' : '') + ' filled in — please verify.', 'ok');
+        }
+        var notes = Array.isArray(data.notes) ? data.notes.slice() : [];
+        if (r.rejected.length) notes.push('Ignored ' + r.rejected.length + ' value(s) that did not match the form.');
+        seedNotes(notes);
+    } catch (e) {
+        seedStatus('Could not reach the agent: ' + e.message, 'err');
+    } finally {
+        btn.disabled = false;
+    }
+}
+
 /* ============================ boot ============================ */
 
-function boot() {
+async function boot() {
     // Namespace can be pre-seeded from the host page.
     var ns = qp('ns') || qp('namespace');
     if (ns) answers.namespace = ns;
+
+    // Capture the host SPA's JWT up front so "Fill the form" works on the
+    // first click rather than failing once and succeeding on retry.
+    try {
+        var bridge = await fetchBridgeAuth();
+        if (bridge && bridge.bearer) bridgeBearer = bridge.bearer;
+        if (!ns && bridge && bridge.namespace) answers.namespace = bridge.namespace;
+    } catch (e) {}
 
     initDefaults();
     render();
@@ -1178,6 +1426,17 @@ function boot() {
     pill.textContent = currentNamespace() || 'namespace not set';
 
     document.getElementById('btn-trial').addEventListener('click', openPreview);
+
+    // Describe-it-first: prose in, structured form out, user verifies.
+    document.getElementById('seed-go').addEventListener('click', seedFromPrompt);
+    document.getElementById('seed-text').addEventListener('keydown', function (e) {
+        if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') seedFromPrompt();
+    });
+    document.getElementById('seed-clear').addEventListener('click', function () {
+        document.getElementById('seed-text').value = '';
+        document.getElementById('seed-status').hidden = true;
+        document.getElementById('seed-notes').hidden = true;
+    });
 
     document.getElementById('btn-send').addEventListener('click', function () {
         var missing = missingRequired();
@@ -1203,6 +1462,9 @@ function boot() {
         if (!confirm('Clear every answer and start over?')) return;
         answers = {};
         repeats = {};
+        seededFields = {};
+        document.getElementById('seed-status').hidden = true;
+        document.getElementById('seed-notes').hidden = true;
         var ns2 = qp('ns') || qp('namespace');
         if (ns2) answers.namespace = ns2;
         initDefaults();

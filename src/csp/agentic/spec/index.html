@@ -20,8 +20,28 @@
 
 <div id="shell">
 
-  <!-- left rail: section navigation -->
-  <nav id="rail" aria-label="Sections"></nav>
+  <!-- left column: describe-it-first prompt, then section navigation -->
+  <aside id="side">
+
+    <div id="seed">
+      <h2>Start from a description</h2>
+      <p class="seed-help">
+        Describe the interface in your own words &mdash; transports, message
+        types, mappings, destinations. The agent fills the form in below and
+        you verify it. Nothing is built from this.
+      </p>
+      <textarea id="seed-text" spellcheck="false" rows="7"
+        placeholder="e.g. Receive HL7 v2.5 ADT^A01 from the HIS over MLLP on port 5000. Strip the dashes from the SSN in PID:19 and set the sending application to EPIC. Transform to ORU^R01 and send to the LIS at 10.1.4.22:6000. Anything that fails goes to /data/hl7/deadletter/."></textarea>
+      <div class="seed-actions">
+        <button type="button" class="btn primary sm" id="seed-go">Fill the form</button>
+        <button type="button" class="btn ghost sm" id="seed-clear">Clear</button>
+      </div>
+      <div id="seed-status" hidden></div>
+      <div id="seed-notes" hidden></div>
+    </div>
+
+    <nav id="rail" aria-label="Sections"></nav>
+  </aside>
 
   <!-- main: the questionnaire -->
   <main id="form-pane">
