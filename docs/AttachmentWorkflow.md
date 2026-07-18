@@ -2,7 +2,7 @@
 
 ## What
 
-The interop-editor chatbot (Health Interop agent) accepts file attachments
+The interop-editor chatbot (Agentic Interoperability Builder (AIB) agent) accepts file attachments
 (PDF, xlsx, txt, md) alongside the user's prompt, synthesizes the attached
 document into a structured Project Specification, presents it to the user
 for approval, and only on approval enters the existing plan → authorize →

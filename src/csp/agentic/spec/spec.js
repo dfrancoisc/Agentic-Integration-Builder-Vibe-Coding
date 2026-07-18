@@ -2,7 +2,7 @@
  *
  * A schema-driven questionnaire that collects everything Health Connect
  * needs to build an interface, then renders it as a [[SPEC]] prompt for
- * the Health Interop agent (AIB).
+ * the Agentic Interoperability Builder (AIB) agent (AIB).
  *
  * Design notes:
  *  - SCHEMA below is DATA. Every question maps to a real tool parameter or
@@ -1501,7 +1501,7 @@ function sendToAIB(text) {
         try {
             window.parent.postMessage({ type: 'agentic:spec:send', namespace: currentNamespace() }, '*');
             closePreview();
-            toast('Sent to the Agentic Integration Builder.');
+            toast('Sent to the Agentic Interoperability Builder.');
             return;
         } catch (e) { /* fall through to new tab */ }
     }

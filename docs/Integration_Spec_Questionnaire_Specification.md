@@ -1,6 +1,6 @@
 # InterSystems Integration Spec Questionnaire — Specification
 
-> **Component of:** Integration Agentic Builder (AIB)
+> **Component of:** Agentic Interoperability Builder (AIB)
 > **Built on:** InterSystems AI Hub (`%AI`) framework
 > **Platform:** IRIS for Health / Health Connect 2026.2+ · MVP target Health Connect Cloud
 > **Status:** Implemented and running · v0.1 · July 2026
@@ -15,7 +15,7 @@
 
 Customers struggle to **specify** interfaces more than they struggle to build them.
 
-The Agentic Integration Builder made building fast — an engineer describes an interface and the agent constructs it. That moved the bottleneck upstream. The agent can only build what it has been told, and what it is told is routinely incomplete in exactly the places that matter.
+The Agentic Interoperability Builder made building fast — an engineer describes an interface and the agent constructs it. That moved the bottleneck upstream. The agent can only build what it has been told, and what it is told is routinely incomplete in exactly the places that matter.
 
 Statements of Work, business requirements documents and field-mapping spreadsheets are written for humans. They describe intent — *"send admissions to the lab system"* — and omit the decisions Health Connect actually requires: which acknowledgment mode, where acknowledgments are written when the inbound is file-based, what happens to a message that fails to transform, whether ordering matters, which schema category the inbound service carries.
 

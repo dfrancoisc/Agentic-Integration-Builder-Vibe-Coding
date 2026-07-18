@@ -1,4 +1,4 @@
-# Agentic Health Interoperability - Lessons Learned
+# Agentic Agentic Interoperability Buildererability - Lessons Learned
 
 > Version 1.0 | May 2026 | InterSystems AI Hub  
 > Findings from the experimental build of an Agentic AI Copilot on IRIS for Health
@@ -7,7 +7,7 @@
 
 ## 1. Introduction
 
-This document captures the key lessons learned during the experimental build of the Agentic Health Interoperability project on InterSystems IRIS for Health 2026.2 with the %AI Framework (build 162.0). These findings cover framework bugs, performance optimizations using Vector Search, and strategies for reducing token consumption and improving response speed.
+This document captures the key lessons learned during the experimental build of the Agentic Agentic Interoperability Buildererability project on InterSystems IRIS for Health 2026.2 with the %AI Framework (build 162.0). These findings cover framework bugs, performance optimizations using Vector Search, and strategies for reducing token consumption and improving response speed.
 
 ---
 

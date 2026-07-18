@@ -1,7 +1,7 @@
 # Integration Specification Builder — High-Level Application Design
 
 > **Working name:** Integration Specification Builder (ISB)
-> **Relationship:** a new front-end application for the existing **Agentic Integration Builder** (`agentic_interop`). It does not replace the chatbot — it feeds it.
+> **Relationship:** a new front-end application for the existing **Agentic Interoperability Builder** (`agentic_interop`). It does not replace the chatbot — it feeds it.
 > **Platform:** InterSystems Health Connect / IRIS for Health 2026.2+, on the AI Hub (`%AI`) foundation
 > **Version:** 0.1 (design for review) · July 2026
 > **Grounded in:** `agentic_interop` @ `9a678b6` — tool signatures (`Tool/Production.cls`, `Tool/Transform.cls`, `Tool/Testing.cls`), the `HealthInterop.cls` INSTRUCTIONS gap-check contract, the skill catalog, and the `[[SPEC]]` workflow.
@@ -406,4 +406,4 @@ P0–P2 is the MVP and is worth demoing on its own.
 
 ## 12. Why this is the right next application
 
-It attacks the problem *upstream* of the one we already solved. The Agentic Integration Builder made building fast; specification is now the bottleneck, and it is the step where the most expensive errors are introduced. This application makes a complete, grounded, machine-readable specification the **default output** of a customer's thinking — and because it emits into the existing spec contract, it is additive rather than disruptive to everything already built.
+It attacks the problem *upstream* of the one we already solved. The Agentic Interoperability Builder made building fast; specification is now the bottleneck, and it is the step where the most expensive errors are introduced. This application makes a complete, grounded, machine-readable specification the **default output** of a customer's thinking — and because it emits into the existing spec contract, it is additive rather than disruptive to everything already built.
