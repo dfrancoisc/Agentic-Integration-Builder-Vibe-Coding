@@ -16,6 +16,22 @@
 Class AgenticInterop.Editor.SpecResponseService Extends %RegisteredObject
 {
 
+/// The namespace the CALLER is working in, which is what a saved
+/// specification is about -- not $namespace, which is wherever this code
+/// happens to execute (always the install namespace, since the classes
+/// live there and are package-mapped elsewhere).
+///
+/// Getting this wrong made the worklist look permanently empty for anyone
+/// working outside the install namespace: Record() stored the requested
+/// namespace from the body ("FHIR"), while List() filtered on $namespace
+/// ("HSCUSTOM"), so the two could never match.
+ClassMethod RequestNamespace() As %String
+{
+    Set ns = ""
+    Try { Set ns = $get(%request.CgiEnvs("HTTP_X_IRIS_NAMESPACE")) } Catch {}
+    Quit $select(ns '= "": ns, 1: $namespace)
+}
+
 /// GET /spec/responses[?all=1][&mine=1][&fav=1][&q=text][&limit=n]
 ///
 /// The worklist. Search runs server-side across interface name, short
@@ -32,10 +48,11 @@ ClassMethod List(pResponse As %CSP.Response, pRequest As %CSP.Request) As %Statu
     Set limit = +$get(%request.Data("limit", 1))
     If limit <= 0 { Set limit = 200 }
 
+    Set callerNs = ..RequestNamespace()
     Set where = "", args = 0
     If all '= 1 {
         Set where = where _ $select(where="":" WHERE ", 1:" AND ") _ "Namespace = ?"
-        Set args = args + 1, arg(args) = $namespace
+        Set args = args + 1, arg(args) = callerNs
     }
     If mine = 1 {
         Set where = where _ $select(where="":" WHERE ", 1:" AND ") _ "Username = ?"
@@ -79,7 +96,7 @@ ClassMethod List(pResponse As %CSP.Response, pRequest As %CSP.Request) As %Statu
     }
     Quit $classmethod(util, "WriteJSON", pResponse,
         {"responses": (arr), "count": (n), "favorites": (favs),
-         "query": (q), "namespace": ($namespace)})
+         "query": (q), "namespace": (callerNs)})
 }
 
 /// POST /spec/responses

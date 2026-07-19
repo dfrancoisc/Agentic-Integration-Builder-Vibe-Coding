@@ -82,7 +82,8 @@ ClassMethod Record(pProps As %DynamicObject, pUser As %String = "", Output pSC A
         Set util  = "AgenticInterop.Editor.Util"
         Set name  = $classmethod(util, "DObj", pProps, "interfaceName")
         Set user  = $select(pUser'="":pUser, 1:$username)
-        Set ns    = $classmethod(util, "DObj", pProps, "namespace", $namespace)
+        Set ns    = $classmethod(util, "DObj", pProps, "namespace",
+                                 ##class(AgenticInterop.Editor.SpecResponseService).RequestNamespace())
 
         ; A worklist wants one row per questionnaire, not one per keystroke.
         ; Re-saving or sending the same named questionnaire updates the row
