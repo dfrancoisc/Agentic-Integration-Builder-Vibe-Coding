@@ -378,6 +378,8 @@ Every specification the questionnaire generates is saved automatically, together
 
 Both halves are stored deliberately: the prompt alone cannot repopulate the form, and the answers alone do not record what was actually sent, because the preview is editable. A run is marked `draft` when generated and `sent` when handed to the agent, so the history distinguishes what you explored from what you acted on. Re-rendering unchanged output does not create a duplicate.
 
+It is a worklist, not just a log. **Search** by interface name, short name, user or namespace — server-side, so a long history is never shipped to the browser to be filtered. **Star** the specifications you keep coming back to and they sort above everything else regardless of age, with a *Starred only* filter when you want just those.
+
 **Load** restores a saved run into the form — answers, destinations and mappings — so a past specification becomes the starting point for the next one.
 
 ### Then hand it over

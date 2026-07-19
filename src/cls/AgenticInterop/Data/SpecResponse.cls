@@ -49,9 +49,14 @@ Property Status As %String(MAXLEN = 16) [ InitialExpression = "trial" ];
 /// How many required answers were complete when saved, e.g. "15/15".
 Property Completeness As %String(MAXLEN = 16);
 
+/// Starred by the user so it floats to the top of the worklist.
+Property Favorite As %Boolean [ InitialExpression = 0 ];
+
 Property CreatedAt As %TimeStamp [ InitialExpression = {$zdatetime($horolog, 3, 1)} ];
 
 Index ByCreated On CreatedAt;
+
+Index ByFavorite On Favorite;
 
 Index ByUser On Username;
 
@@ -94,6 +99,17 @@ ClassMethod Record(pProps As %DynamicObject, pUser As %String = "", Output pSC A
     Quit id
 }
 
+/// Star or unstar a run. Returns the resulting state, or "" if not found.
+ClassMethod SetFavorite(pId As %String, pOn As %Boolean, Output pSC As %Status) As %String
+{
+    Set pSC = $$$OK
+    Set o = ..%OpenId(pId)
+    If '$isobject(o) { Quit "" }
+    Set o.Favorite = ''pOn
+    Set pSC = o.%Save()
+    Quit o.Favorite
+}
+
 /// Summary row for the list view -- deliberately excludes the two streams
 /// so listing a hundred saved runs does not read a hundred blobs.
 ClassMethod Summary(pObj As AgenticInterop.Data.SpecResponse) As %DynamicObject
@@ -106,6 +122,7 @@ ClassMethod Summary(pObj As AgenticInterop.Data.SpecResponse) As %DynamicObject
         "username":      (pObj.Username),
         "outputFormat":  (pObj.OutputFormat),
         "status":        (pObj.Status),
+        "favorite":      (pObj.Favorite),
         "completeness":  (pObj.Completeness),
         "templateKey":   (pObj.TemplateKey),
         "createdAt":     (pObj.CreatedAt)
@@ -173,6 +190,9 @@ Storage Default
 </Value>
 <Value name="13">
 <Value>CreatedAt</Value>
+</Value>
+<Value name="14">
+<Value>Favorite</Value>
 </Value>
 </Data>
 <DataLocation>^AgInt.SpecRespD</DataLocation>

@@ -716,6 +716,21 @@ textarea { resize: vertical; min-height: 68px; line-height: 1.5; }
 .sv-tag.trial { color: var(--muted); border: 1px solid var(--line2); }
 .sv-actions { display: flex; gap: 6px; flex: 0 0 auto; }
 
+/* star toggle. An SVG glyph, not an emoji -- the data UI stays
+   emoji-free, but favouriting needs the star affordance to read as one. */
+.sv-star {
+  flex: 0 0 auto;
+  background: transparent;
+  border: 0;
+  padding: 2px;
+  cursor: pointer;
+  line-height: 0;
+  color: var(--line2);
+}
+.sv-star svg { width: 17px; height: 17px; display: block; }
+.sv-star:hover { color: var(--muted); }
+.sv-star.on { color: #f0b429; }
+
 /* ---------------- toast ---------------- */
 
 #toast {

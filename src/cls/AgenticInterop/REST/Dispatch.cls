@@ -102,6 +102,7 @@ XData UrlMap [ XMLNamespace = "http://www.intersystems.com/urlmap" ]
     <Route Url="/spec/responses"                Method="POST"   Call="SaveSpecResponse" />
     <Route Url="/spec/responses/:id"            Method="GET"    Call="GetSpecResponse" />
     <Route Url="/spec/responses/:id"            Method="DELETE" Call="DeleteSpecResponse" />
+    <Route Url="/spec/responses/:id/favorite"   Method="POST"   Call="FavoriteSpecResponse" />
 
     <!-- Phase 2 chat — non-streaming single turn against the default
          (or named) Connection. Kept for callers that don't want SSE. -->
@@ -921,6 +922,11 @@ ClassMethod SaveSpecResponse() As %Status
 ClassMethod GetSpecResponse(pId As %String) As %Status
 {
     Quit ##class(AgenticInterop.Editor.SpecResponseService).Get(%response, pId)
+}
+
+ClassMethod FavoriteSpecResponse(pId As %String) As %Status
+{
+    Quit ##class(AgenticInterop.Editor.SpecResponseService).Favorite(%response, pId, %request.Content)
 }
 
 ClassMethod DeleteSpecResponse(pId As %String) As %Status

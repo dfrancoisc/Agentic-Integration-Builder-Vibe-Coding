@@ -147,16 +147,17 @@
 <div id="saved" class="overlay" hidden>
   <div class="panel">
     <div class="panel-bar">
-      <span>Saved specifications</span>
+      <span>Saved specifications &mdash; worklist</span>
       <button type="button" class="x" id="sv-close" title="Close">&#10005;</button>
     </div>
     <div class="panel-note">
-      Every specification generated from this questionnaire is kept with the answers that
-      produced it. Load one to restore the form, or copy its prompt.
+      Every specification generated from this questionnaire is kept with the answers that produced it.
+      Search to find an earlier one, star the ones you return to, and Load to restore it into the form.
     </div>
     <div class="cp-search">
-      <input type="text" id="sv-q" placeholder="Filter by interface name, short name or user">
-      <label class="opt" style="white-space:nowrap"><input type="checkbox" id="sv-mine" checked> Only mine</label>
+      <input type="text" id="sv-q" placeholder="Search by interface name, short name, user or namespace">
+      <label class="opt"><input type="checkbox" id="sv-fav"> Starred only</label>
+      <label class="opt"><input type="checkbox" id="sv-mine" checked> Only mine</label>
       <span class="muted" id="sv-count"></span>
     </div>
     <div id="sv-list"></div>

@@ -1888,55 +1888,110 @@ async function openSaved() {
     await refreshSaved();
 }
 
+var savedSeq = 0;   // guards against a slow response overwriting a newer one
+
 async function refreshSaved() {
+    var q    = (document.getElementById('sv-q').value || '').trim();
     var mine = document.getElementById('sv-mine').checked ? '1' : '0';
+    var fav  = document.getElementById('sv-fav').checked ? '1' : '0';
     var list = document.getElementById('sv-list');
+    var seq  = ++savedSeq;
+
+    var url = API + '/spec/responses?mine=' + mine + '&fav=' + fav +
+              '&q=' + encodeURIComponent(q) + '&_t=' + Date.now();
     try {
-        var res = await fetch(API + '/spec/responses?mine=' + mine + '&_t=' + Date.now(),
-                              { headers: apiHeaders(false), credentials: 'include' });
+        var res = await fetch(url, { headers: apiHeaders(false), credentials: 'include' });
+        if (seq !== savedSeq) return;              // a newer search already ran
         if (res.status === 401 || res.status === 403) {
             list.innerHTML = '<div class="cp-empty">Not authorized. Open the chat once to sign in, then retry.</div>';
             return;
         }
         if (!res.ok) { list.innerHTML = '<div class="cp-empty">Could not load (HTTP ' + res.status + ').</div>'; return; }
         var j = await res.json();
+        if (seq !== savedSeq) return;
         savedRows = j.responses || [];
+        savedMeta = { favorites: j.favorites || 0, query: q };
         renderSaved();
     } catch (e) {
+        if (seq !== savedSeq) return;
         list.innerHTML = '<div class="cp-empty">Could not reach the server: ' + e.message + '</div>';
     }
 }
 
 var savedRows = [];
+var savedMeta = { favorites: 0, query: '' };
+
+var STAR_PATH = 'M12 2.6l2.9 5.9 6.5.95-4.7 4.6 1.1 6.5L12 17.5 6.2 20.5l1.1-6.5-4.7-4.6 6.5-.95z';
+
+function starButton(row) {
+    var b = el('button', 'sv-star' + (row.favorite ? ' on' : ''));
+    b.type = 'button';
+    b.title = row.favorite ? 'Starred - click to remove' : 'Star this specification';
+    b.setAttribute('aria-pressed', row.favorite ? 'true' : 'false');
+    b.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true">' +
+        '<path d="' + STAR_PATH + '" fill="' + (row.favorite ? 'currentColor' : 'none') +
+        '" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>';
+    b.addEventListener('click', function (e) {
+        e.stopPropagation();
+        toggleFavorite(row, b);
+    });
+    return b;
+}
+
+/* Optimistic: flip the star immediately, roll back if the server refuses.
+ * Waiting on a round trip to acknowledge a star feels broken. */
+async function toggleFavorite(row, btn) {
+    var want = !row.favorite;
+    row.favorite = want;
+    btn.classList.toggle('on', want);
+    btn.querySelector('path').setAttribute('fill', want ? 'currentColor' : 'none');
+    btn.setAttribute('aria-pressed', want ? 'true' : 'false');
+    try {
+        var res = await fetch(API + '/spec/responses/' + encodeURIComponent(row.id) + '/favorite', {
+            method: 'POST', headers: apiHeaders(true), credentials: 'include',
+            body: JSON.stringify({ favorite: want })
+        });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        // re-pull so the starred row moves to the top where it belongs
+        refreshSaved();
+    } catch (e) {
+        row.favorite = !want;
+        btn.classList.toggle('on', !want);
+        btn.querySelector('path').setAttribute('fill', !want ? 'currentColor' : 'none');
+        toast('Could not update the star: ' + e.message, true);
+    }
+}
 
 function renderSaved() {
-    var q = (document.getElementById('sv-q').value || '').toLowerCase().trim();
-    var rows = savedRows.filter(function (r) {
-        if (!q) return true;
-        return ((r.interfaceName || '') + ' ' + (r.shortName || '') + ' ' + (r.username || ''))
-               .toLowerCase().indexOf(q) >= 0;
-    });
-    document.getElementById('sv-count').textContent = rows.length + ' of ' + savedRows.length;
+    // filtering happens server-side now, so these rows are already the result
+    var rows = savedRows;
+    var count = document.getElementById('sv-count');
+    count.textContent = rows.length + (savedMeta.favorites ? '  (' + savedMeta.favorites + ' starred)' : '');
 
     var list = document.getElementById('sv-list');
     list.innerHTML = '';
     if (!rows.length) {
-        list.appendChild(el('div', 'cp-empty',
-            savedRows.length ? 'Nothing matches that filter.'
-                             : 'No saved specifications yet. Generate one with Output Trial.'));
+        var msg = savedMeta.query
+            ? 'Nothing matches "' + savedMeta.query + '".'
+            : (document.getElementById('sv-fav').checked
+                 ? 'No starred specifications yet. Star one to pin it here.'
+                 : 'No saved specifications yet. Generate one with Output Trial.');
+        list.appendChild(el('div', 'cp-empty', msg));
         return;
     }
     rows.forEach(function (r) {
         var item = el('div', 'sv-item');
+        item.appendChild(starButton(r));
+
         var main = el('div', 'sv-main');
         var name = el('div', 'sv-name', r.interfaceName || '(unnamed)');
         name.appendChild(el('span', 'sv-tag ' + (r.status === 'sent' ? 'sent' : 'trial'),
                             r.status === 'sent' ? 'sent to agent' : 'draft'));
         main.appendChild(name);
         main.appendChild(el('div', 'sv-meta',
-            [r.createdAt, r.username, r.namespace,
+            [r.createdAt, r.shortName, r.username, r.namespace,
              r.completeness ? r.completeness + ' answered' : '',
-             r.outputFormat].filter(Boolean).join('  ·  ')));
+             r.outputFormat].filter(Boolean).join('  \u00b7  ')));
         item.appendChild(main);
 
         var acts = el('div', 'sv-actions');
@@ -1945,12 +2000,10 @@ function renderSaved() {
         load.title = 'Restore these answers into the form';
         load.addEventListener('click', function () { loadRun(r.id); });
         acts.appendChild(load);
-
         var del = el('button', 'btn ghost sm', 'Delete');
         del.type = 'button';
         del.addEventListener('click', function () { deleteRun(r.id, r.interfaceName); });
         acts.appendChild(del);
-
         item.appendChild(acts);
         list.appendChild(item);
     });
@@ -2102,7 +2155,12 @@ async function boot() {
     document.getElementById('open-saved').addEventListener('click', openSaved);
     document.getElementById('sv-close').addEventListener('click', closeSaved);
     document.getElementById('sv-cancel').addEventListener('click', closeSaved);
-    document.getElementById('sv-q').addEventListener('input', renderSaved);
+    var svTimer = null;
+    document.getElementById('sv-q').addEventListener('input', function () {
+        clearTimeout(svTimer);
+        svTimer = setTimeout(refreshSaved, 220);   // search runs server-side
+    });
+    document.getElementById('sv-fav').addEventListener('change', refreshSaved);
     document.getElementById('sv-mine').addEventListener('change', refreshSaved);
     document.getElementById('saved').addEventListener('click', function (e) {
         if (e.target.id === 'saved') closeSaved();
