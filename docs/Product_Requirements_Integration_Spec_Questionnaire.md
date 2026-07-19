@@ -53,6 +53,72 @@ Any mature integration platform, and any competent build agent, already encodes 
 
 The questionnaire is that list, asked **up front in a form**, rather than discovered mid-conversation. Anything the implementing team's platform documentation prescribes as best practice (intake templates, naming conventions, modularity rules) should be treated as source material, so the tool encodes documented practice rather than inventing a parallel one.
 
+### 1.5 Where the need arises
+
+The diagram below is the argument for building this. It is drawn in terms of
+who is doing what and where the work goes wrong — no components, because at
+this point in the reasoning none have been chosen.
+
+```
+  TODAY — the decisions are discovered late, by whoever happens to know
+
+  Business asks         Engineer receives            Engineer builds
+  for an interface      a human-readable spec        against the platform
+       │                       │                            │
+       │  "send admissions     │  intent is clear           │  platform demands
+       │   to the lab"         │  decisions are absent      │  ~15 decisions
+       ▼                       ▼                            ▼
+  ┌──────────┐          ┌──────────────┐            ┌────────────────────┐
+  │  intent  │─────────▶│  a document  │───────────▶│  ????              │
+  └──────────┘          │  written for │            │  ack mode?         │
+                        │  humans      │            │  where do acks go? │
+                        └──────────────┘            │  failure path?     │
+                                                    │  ordering?         │
+                                                    │  schema version?   │
+                                                    └─────────┬──────────┘
+                                                              │
+                                     ┌────────────────────────┴───────────┐
+                                     ▼                                    ▼
+                            experienced engineer              anyone else
+                            asks the right questions          guesses, or is
+                            (slow, unrepeatable,              never asked
+                            depends who is assigned)          (silent defect)
+
+
+  THE SHIFT — an agent removes the build effort, so the constraint moves upstream
+
+           build effort ▼▼▼        specification quality ▲▲▲ now the bottleneck
+
+           The agent will either ASK (costing turns, drifting from intent)
+           or ASSUME (costing a defect that survives the demo).
+           Neither is acceptable at scale. Both have the same cause:
+           the decisions were never captured.
+
+
+  WITH THIS PRODUCT — the same decisions, asked up front, by the tool
+
+  Business asks         Engineer answers             Agent receives
+  for an interface      a guided question set        a complete specification
+       │                       │                            │
+       │                       │  every decision the        │  nothing to guess,
+       │                       │  build requires is         │  little to ask
+       ▼                       ▼  asked or explicitly       ▼
+  ┌──────────┐          ┌──────────────┐  deferred   ┌────────────────────┐
+  │  intent  │─────────▶│  answered    │────────────▶│  buildable         │
+  └──────────┘          │  decisions   │             │  specification     │
+                        └──────────────┘             └────────────────────┘
+                               ▲
+                               │ options grounded in what this
+                               │ environment actually offers
+                        ┌──────┴───────┐
+                        │  reference   │
+                        │  data        │
+                        └──────────────┘
+```
+
+The product's whole job is the middle box: turn intent into answered decisions
+**before** anyone or anything starts building.
+
 ---
 
 ## 2. Product definition
@@ -78,6 +144,81 @@ A **specification capture tool**. It collects, validates and records everything 
 | **Reviewer / Operator** | May produce or review a specification but not trigger a build. |
 | **Administrator** | Maintains the reference data the questionnaire draws its options from; owns the question set if it is made configurable. |
 | **Build agent** | Downstream consumer of the specification. Not a user. |
+
+### 2.4 Needs the product must satisfy
+
+Each need below belongs to an actor and earns its requirements. A capability
+that traces to no need does not belong in this build.
+
+```
+  ACTOR NEED                        WHAT THE PRODUCT MUST DO           SO THAT
+  ───────────────────────────────────────────────────────────────────────────────
+
+  Integration Engineer
+  ─────────────────────
+  "I know the clinical intent   ──▶ Ask the platform's required    ──▶ Expertise
+   but not what the platform        decisions in plain language        stops being
+   needs to be told"                                                   the gate
+
+  "I don't know which of these  ──▶ Offer only what this            ──▶ No invented
+   options my site supports"        environment actually provides       or unavailable
+                                                                        choices
+
+  "Typing a form is slower      ──▶ Accept a free description and  ──▶ Speed without
+   than describing it"              fill the form for review           losing rigour
+
+  "I don't want to be blamed    ──▶ Show exactly what will be      ──▶ Trust in what
+   for what the agent assumed"      handed over, before handover       gets built
+
+  "Unknowns shouldn't become    ──▶ Let a decision be deferred     ──▶ Silence never
+   silent guesses"                  explicitly, and carry it           reads as
+                                    forward as an open question        agreement
+
+  "Last month's interface is    ──▶ Save, search and reopen        ──▶ Specifications
+   nearly the same as this one"     past specifications                become assets
+
+  Reviewer / Operator
+  ─────────────────────
+  "I must review without        ──▶ Separate producing a spec      ──▶ Review is safe
+   risking a build"                 from triggering a build
+
+  Administrator
+  ─────────────────────
+  "Our practice changes"        ──▶ Question set and reference     ──▶ No code change
+                                    data maintained as data            to change policy
+
+  Build agent  (consumer, not a user)
+  ─────────────────────
+  "I must not have to guess"    ──▶ Emit machine-readable answers  ──▶ Fewer turns,
+                                    alongside human-readable prose     fewer assumptions
+```
+
+### 2.5 Lifecycle of a specification
+
+State belongs to the specification, not to any screen. A build is a
+**consequence** of a specification, never a side effect of editing one.
+
+```
+        ┌───────────┐   answer / describe    ┌───────────┐
+        │  empty    │───────────────────────▶│  partial  │◀────┐
+        └───────────┘                        └─────┬─────┘     │ reopen
+                                                   │           │ and revise
+                            all required answered  │           │
+                                   or deferred     ▼           │
+                                             ┌───────────┐     │
+                              ┌─────────────▶│ complete  │─────┘
+                              │              └─────┬─────┘
+                        save  │                    │ review, then hand over
+                     (at any  │                    ▼
+                       point) │              ┌───────────┐
+                              └──────────────│ handed to │
+                                             │ the agent │
+                                             └───────────┘
+                                                   │
+                          the handed-over text is retained verbatim,
+                          because what was sent is the record — not
+                          what the answers would render today
+```
 
 ---
 
