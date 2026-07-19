@@ -7,7 +7,23 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <title>InterSystems Integration Spec Questionnaire</title>
-<link rel="stylesheet" href="spec.css">
+<!-- Asset cache-busting.
+     index.html is served no-cache and the Interop Editor opens it with a
+     ?t= stamp, but spec.css / spec.js were referenced with no version, so
+     the browser happily kept serving an OLD spec.js against a NEW page.
+     The symptom is brutal to diagnose: the markup is current, so buttons
+     appear, but the stale script never attaches their handlers and clicks
+     do nothing at all. Same class of bug the project already fixed for
+     inject.js with a ?v= stamp.
+     document.write is deliberate -- it runs during parse, so ordering is
+     preserved and there is no second fetch or flash of unstyled content. -->
+<script>
+  (function () {
+    var p = new URLSearchParams(location.search);
+    window.__specV = p.get('t') || p.get('v') || String(Date.now());
+    document.write('<link rel="stylesheet" href="spec.css?v=' + window.__specV + '">');
+  })();
+</script>
 </head>
 <body>
 
@@ -186,6 +202,8 @@
 
 <div id="toast" hidden></div>
 
-<script src="spec.js"></script>
+<script>
+  document.write('<script src="spec.js?v=' + (window.__specV || Date.now()) + '"><\/script>');
+</script>
 </body>
 </html>
