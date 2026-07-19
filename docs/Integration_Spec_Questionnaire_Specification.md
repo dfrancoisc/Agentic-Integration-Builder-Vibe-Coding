@@ -1,5 +1,12 @@
 # InterSystems Integration Spec Questionnaire — Specification
 
+> **SUPERSEDED as the build specification — kept as the as-built record.**
+> For requirements to build from, use
+> [`Product_Requirements_Integration_Spec_Questionnaire.md`](Product_Requirements_Integration_Spec_Questionnaire.md),
+> which states the same product in use-case form without tying it to this
+> implementation. This document remains useful for *what was actually built here* —
+> concrete class names, endpoints and the framework workarounds they required.
+
 > **Component of:** Agentic Integration Builder (AIB)
 > **Built on:** InterSystems AI Hub (`%AI`) framework
 > **Platform:** IRIS for Health / Health Connect 2026.2+ · MVP target Health Connect Cloud
