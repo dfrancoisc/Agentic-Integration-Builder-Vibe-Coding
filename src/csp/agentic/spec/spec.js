@@ -1484,7 +1484,7 @@ function sendToAIB(text) {
     saveRun('sent', text);
     var payload = {
         text: text,
-        ns: currentNamespace(),
+        ns: sessionNamespace(),
         ts: Date.now()
     };
     try {
@@ -1514,8 +1514,26 @@ function sendToAIB(text) {
     toast('Opened the chatbot with your specification.');
 }
 
+/* TWO different namespaces, and conflating them was a bug.
+ *
+ * sessionNamespace() -- where the USER is working. Comes from the host
+ * page (?ns=, or the auth bridge) and never changes while the page is
+ * open. This is what a saved questionnaire is filed under, and what goes
+ * in the X-IRIS-Namespace header.
+ *
+ * currentNamespace() -- the "Target namespace" ANSWER inside the
+ * questionnaire: where the interface will be built. The user can type
+ * anything here, and it belongs in the specification, not in the row's
+ * identity. Filing rows under it meant that editing the field made the
+ * saved questionnaire vanish from the worklist. */
+var sessionNs = '';
+
+function sessionNamespace() {
+    return sessionNs || qp('ns') || qp('namespace') || '';
+}
+
 function currentNamespace() {
-    return (answers.namespace || '').trim() || qp('ns') || qp('namespace') || '';
+    return (answers.namespace || '').trim() || sessionNamespace();
 }
 
 /* ==================== describe-it-first (prompt -> form) ====================
@@ -1826,7 +1844,7 @@ function apiHeaders(json) {
     if (json) h['Content-Type'] = 'application/json';
     var auth = authHeader();
     if (auth) h['Authorization'] = auth;
-    var ns = currentNamespace();
+    var ns = sessionNamespace();
     if (ns) h['X-IRIS-Namespace'] = ns;
     return h;
 }
@@ -1849,7 +1867,7 @@ async function saveRun(status, promptText, force) {
     var body = {
         interfaceName: (answers.name || '').trim() || currentRunName || '(unnamed)',
         shortName:     answers.shortName || '',
-        namespace:     currentNamespace(),
+        namespace:     sessionNamespace(),   // where the user is, not the target field
         outputFormat:  previewFormat,
         status:        status,
         completeness:  done + '/' + total,
@@ -2288,13 +2306,14 @@ async function updateWorkCountFromServer() {
 async function boot() {
     // Namespace can be pre-seeded from the host page.
     var ns = qp('ns') || qp('namespace');
-    if (ns) answers.namespace = ns;
+    if (ns) { sessionNs = ns; answers.namespace = ns; }
 
     // Capture the host SPA's JWT up front so "Fill the form" works on the
     // first click rather than failing once and succeeding on retry.
     try {
         var bridge = await fetchBridgeAuth();
         if (bridge && bridge.bearer) bridgeBearer = bridge.bearer;
+        if (bridge && bridge.namespace) sessionNs = bridge.namespace;
         if (!ns && bridge && bridge.namespace) answers.namespace = bridge.namespace;
     } catch (e) {}
 
