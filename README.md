@@ -370,6 +370,16 @@ Two things make the output more than a transcript of the form:
 
 Artifact names are generated from the documented naming conventions (`From<Src>` / `To<Tgt>` / `<Src>Router` / `<Src>Rules`) and shown before you send.
 
+### Everything is kept
+
+![Saved specifications](docs/img/35_spec_saved.png)
+
+Every specification the questionnaire generates is saved automatically, together with the answers that produced it — you never have to remember to. **Saved specifications** in the form toolbar lists them, filterable and scoped to your namespace and user by default.
+
+Both halves are stored deliberately: the prompt alone cannot repopulate the form, and the answers alone do not record what was actually sent, because the preview is editable. A run is marked `draft` when generated and `sent` when handed to the agent, so the history distinguishes what you explored from what you acted on. Re-rendering unchanged output does not create a duplicate.
+
+**Load** restores a saved run into the form — answers, destinations and mappings — so a past specification becomes the starting point for the next one.
+
 ### Then hand it over
 
 **Send it to AIB** delivers the specification to the chatbot in the same namespace, as the first turn of a conversation. **GO TO DATA ATLAS** hands off to the visual tool for mapping work beyond a simple table (placeholder for now; target configurable via `?atlas=<url>`).

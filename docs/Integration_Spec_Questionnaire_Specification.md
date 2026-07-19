@@ -176,6 +176,19 @@ This also gives the work an unusually strong provenance argument: it is not an I
 | **FR-28** | Artifact names are generated from the documented InterSystems naming conventions and shown before sending. |
 | **FR-29** | **GO TO DATA ATLAS** hands off to the visual transformation tool. *Currently a placeholder; target configurable per deployment.* |
 
+### 4.5 Persistence
+
+| ID | Requirement |
+|---|---|
+| **FR-30** | Every specification the questionnaire generates is persisted automatically, with the answer set that produced it. The user never has to remember to save. |
+| **FR-31** | Both halves are stored. The prompt alone cannot repopulate the form; the answers alone do not record what was actually sent, because the preview is editable. |
+| **FR-32** | A run is saved when a specification is generated (status `trial`) and again when it is sent to the agent (status `sent`), so the record distinguishes drafts from what was actually handed over. |
+| **FR-33** | Re-rendering an unchanged specification does not create a duplicate record. Changing the output format or any answer does. |
+| **FR-34** | Saved runs are listable, filterable, and scoped to the caller's namespace and user by default. |
+| **FR-35** | A saved run can be reloaded into the form, restoring both answers and repeating groups. |
+| **FR-36** | A saved run can be deleted. |
+| **FR-37** | A failed save never blocks review or sending. Persistence is a side effect, not a gate. |
+
 ---
 
 ## 5. Technical requirements
@@ -227,7 +240,16 @@ Interop Editor (Angular, authenticated)
 | **TR-11** | Catalog results are cached per session; the picker opens instantly after first load. |
 | **TR-12** | Catalog access is read-only. |
 
-### 5.4 Security
+### 5.4 Persistence
+
+| ID | Requirement |
+|---|---|
+| **TR-18** | Runs persist to `AgenticInterop.Data.SpecResponse`. Answers and prompt are streams, because the mapping and destination tables have no fixed size. |
+| **TR-19** | Four endpoints under the existing dispatcher: list, save, get, delete. Listing returns summaries only, so a large history does not read every blob. |
+| **TR-20** | The record carries namespace, user, template key and version, completeness and output format, so a reload can tell whether the form has changed underneath it. |
+| **TR-21** | Distinct from `Data.ChatSpec`, which holds the per-conversation specification the agent synthesises from chat attachments. A questionnaire run is not tied to a chat session and outlives any conversation. |
+
+### 5.5 Security
 
 | ID | Requirement |
 |---|---|
@@ -237,7 +259,7 @@ Interop Editor (Angular, authenticated)
 | **TR-16** | An authorization failure is reported plainly and actionably; it never fails silently. |
 | **TR-17** | All requests are captured by the existing audit trail. |
 
-### 5.5 Performance
+### 5.6 Performance
 
 | Metric | Target | Measured |
 |---|---|---|
@@ -263,7 +285,6 @@ Interop Editor (Angular, authenticated)
 
 ## 7. Out of scope
 
-- Persisting questionnaire responses server-side for reuse across sessions.
 - Customer-facing template editing (add/remove/relabel fields through a UI). The schema supports it; the editor is not built.
 - Populating options from live production configuration (existing productions, hosts, credentials, SSL configurations). Only the class catalogs are wired.
 - Deriving a custom schema from sample messages.

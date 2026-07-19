@@ -695,6 +695,27 @@ textarea { resize: vertical; min-height: 68px; line-height: 1.5; }
 .btn.atlas { background: #0d9488; border-color: #0d9488; color: #fff; white-space: nowrap; }
 .btn.atlas:hover { background: #0f766e; }
 
+/* saved runs list */
+.sv-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  border-bottom: 1px solid var(--line);
+  padding: 10px 15px;
+}
+.sv-item:hover { background: rgba(79,70,229,.07); }
+.sv-main { flex: 1; min-width: 0; }
+.sv-name { font-size: 13px; font-weight: 600; color: var(--fg); }
+.sv-meta { font-size: 11.5px; color: var(--muted); margin-top: 2px; }
+.sv-tag {
+  font-size: 10px; text-transform: uppercase; letter-spacing: .4px;
+  border-radius: 3px; padding: 1px 5px; margin-left: 6px;
+}
+.sv-tag.sent  { color: var(--ok);   border: 1px solid rgba(16,185,129,.45); }
+.sv-tag.trial { color: var(--muted); border: 1px solid var(--line2); }
+.sv-actions { display: flex; gap: 6px; flex: 0 0 auto; }
+
 /* ---------------- toast ---------------- */
 
 #toast {

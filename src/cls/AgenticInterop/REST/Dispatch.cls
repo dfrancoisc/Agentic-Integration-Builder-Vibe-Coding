@@ -95,6 +95,14 @@ XData UrlMap [ XMLNamespace = "http://www.intersystems.com/urlmap" ]
     <Route Url="/chatbots/:key"                 Method="PUT"    Call="SaveChatbot" />
     <Route Url="/chatbots/:key"                 Method="DELETE" Call="DeleteChatbot" />
 
+    <!-- Saved Integration Spec Questionnaire runs. Each row holds both the
+         structured answers and the generated specification text, so a run
+         can be reloaded into the form or re-sent to the agent. -->
+    <Route Url="/spec/responses"                Method="GET"    Call="ListSpecResponses" />
+    <Route Url="/spec/responses"                Method="POST"   Call="SaveSpecResponse" />
+    <Route Url="/spec/responses/:id"            Method="GET"    Call="GetSpecResponse" />
+    <Route Url="/spec/responses/:id"            Method="DELETE" Call="DeleteSpecResponse" />
+
     <!-- Phase 2 chat — non-streaming single turn against the default
          (or named) Connection. Kept for callers that don't want SSE. -->
     <Route Url="/chat"                          Method="POST"   Call="Chat" />
@@ -898,6 +906,26 @@ ClassMethod SaveChatbot(pKey As %String) As %Status
 ClassMethod DeleteChatbot(pKey As %String) As %Status
 {
     Quit ##class(AgenticInterop.Editor.ChatbotService).Delete(%response, pKey)
+}
+
+ClassMethod ListSpecResponses() As %Status
+{
+    Quit ##class(AgenticInterop.Editor.SpecResponseService).List(%response, %request)
+}
+
+ClassMethod SaveSpecResponse() As %Status
+{
+    Quit ##class(AgenticInterop.Editor.SpecResponseService).Save(%response, %request.Content)
+}
+
+ClassMethod GetSpecResponse(pId As %String) As %Status
+{
+    Quit ##class(AgenticInterop.Editor.SpecResponseService).Get(%response, pId)
+}
+
+ClassMethod DeleteSpecResponse(pId As %String) As %Status
+{
+    Quit ##class(AgenticInterop.Editor.SpecResponseService).Delete(%response, pId)
 }
 
 ClassMethod Chat() As %Status

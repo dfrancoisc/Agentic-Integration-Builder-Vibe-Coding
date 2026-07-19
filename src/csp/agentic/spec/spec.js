@@ -1464,6 +1464,9 @@ var FORMAT_WHY = {
 function renderOutput() {
     var txt = buildOutput(previewFormat);
     document.getElementById('pv-text').value = txt;
+    // Persist every distinct specification the questionnaire produces.
+    // Fire-and-forget: a failed save must never block review or sending.
+    saveRun('trial', txt);
     document.getElementById('pv-stats').textContent =
         txt.split('\n').length + ' lines, ' + txt.length + ' characters';
     document.getElementById('pv-why').textContent = FORMAT_WHY[previewFormat] || '';
@@ -1482,6 +1485,7 @@ function closePreview() { document.getElementById('preview').hidden = true; }
  * the parent is asked to open the chat panel. When this page is opened
  * standalone the chat is opened in a new tab instead. */
 function sendToAIB(text) {
+    saveRun('sent', text);
     var payload = {
         text: text,
         ns: currentNamespace(),
@@ -1813,6 +1817,191 @@ async function seedFromPrompt() {
     }
 }
 
+/* ==================== saved runs ====================
+ * Every specification this questionnaire generates is persisted with the
+ * answers that produced it, so a run can be reloaded into the form or its
+ * prompt re-read later. Saving is a side effect of generating or sending —
+ * the user never has to remember to do it.
+ *
+ * Both halves are kept deliberately: the prompt alone cannot repopulate
+ * the form, and the answers alone do not record what was actually sent
+ * (the preview is editable). */
+
+var lastSavedPrompt = '';   // avoids a new row each time Output Trial is re-opened unchanged
+
+function apiHeaders(json) {
+    var h = {};
+    if (json) h['Content-Type'] = 'application/json';
+    var auth = authHeader();
+    if (auth) h['Authorization'] = auth;
+    var ns = currentNamespace();
+    if (ns) h['X-IRIS-Namespace'] = ns;
+    return h;
+}
+
+/* Persist the current run. status: 'trial' when generated, 'sent' when
+ * handed to the agent. Failure is reported but never blocks the user --
+ * losing a saved copy must not stop them sending a specification. */
+async function saveRun(status, promptText) {
+    if (status === 'trial' && promptText === lastSavedPrompt) return null;
+
+    var total = 0, done = 0;
+    SCHEMA.forEach(function (sec) {
+        sec.questions.forEach(function (q) {
+            if (!q.required || !visible(q)) return;
+            total++; if (answered(q)) done++;
+        });
+    });
+
+    var body = {
+        interfaceName: answers.name || '(unnamed)',
+        shortName:     answers.shortName || '',
+        namespace:     currentNamespace(),
+        outputFormat:  previewFormat,
+        status:        status,
+        completeness:  done + '/' + total,
+        templateKey:   'default',
+        templateVersion: '1',
+        answers:       { answers: answers, repeats: repeats },
+        prompt:        promptText
+    };
+
+    try {
+        var res = await fetch(API + '/spec/responses?_t=' + Date.now(), {
+            method: 'POST', headers: apiHeaders(true),
+            credentials: 'include', body: JSON.stringify(body)
+        });
+        if (!res.ok) { console.warn('spec save failed: HTTP ' + res.status); return null; }
+        var j = await res.json();
+        lastSavedPrompt = promptText;
+        return j.id || null;
+    } catch (e) {
+        console.warn('spec save failed:', e.message);
+        return null;
+    }
+}
+
+async function openSaved() {
+    document.getElementById('saved').hidden = false;
+    document.getElementById('sv-list').innerHTML =
+        '<div class="cp-empty">Loading saved specifications…</div>';
+    await refreshSaved();
+}
+
+async function refreshSaved() {
+    var mine = document.getElementById('sv-mine').checked ? '1' : '0';
+    var list = document.getElementById('sv-list');
+    try {
+        var res = await fetch(API + '/spec/responses?mine=' + mine + '&_t=' + Date.now(),
+                              { headers: apiHeaders(false), credentials: 'include' });
+        if (res.status === 401 || res.status === 403) {
+            list.innerHTML = '<div class="cp-empty">Not authorized. Open the chat once to sign in, then retry.</div>';
+            return;
+        }
+        if (!res.ok) { list.innerHTML = '<div class="cp-empty">Could not load (HTTP ' + res.status + ').</div>'; return; }
+        var j = await res.json();
+        savedRows = j.responses || [];
+        renderSaved();
+    } catch (e) {
+        list.innerHTML = '<div class="cp-empty">Could not reach the server: ' + e.message + '</div>';
+    }
+}
+
+var savedRows = [];
+
+function renderSaved() {
+    var q = (document.getElementById('sv-q').value || '').toLowerCase().trim();
+    var rows = savedRows.filter(function (r) {
+        if (!q) return true;
+        return ((r.interfaceName || '') + ' ' + (r.shortName || '') + ' ' + (r.username || ''))
+               .toLowerCase().indexOf(q) >= 0;
+    });
+    document.getElementById('sv-count').textContent = rows.length + ' of ' + savedRows.length;
+
+    var list = document.getElementById('sv-list');
+    list.innerHTML = '';
+    if (!rows.length) {
+        list.appendChild(el('div', 'cp-empty',
+            savedRows.length ? 'Nothing matches that filter.'
+                             : 'No saved specifications yet. Generate one with Output Trial.'));
+        return;
+    }
+    rows.forEach(function (r) {
+        var item = el('div', 'sv-item');
+        var main = el('div', 'sv-main');
+        var name = el('div', 'sv-name', r.interfaceName || '(unnamed)');
+        name.appendChild(el('span', 'sv-tag ' + (r.status === 'sent' ? 'sent' : 'trial'),
+                            r.status === 'sent' ? 'sent to agent' : 'draft'));
+        main.appendChild(name);
+        main.appendChild(el('div', 'sv-meta',
+            [r.createdAt, r.username, r.namespace,
+             r.completeness ? r.completeness + ' answered' : '',
+             r.outputFormat].filter(Boolean).join('  ·  ')));
+        item.appendChild(main);
+
+        var acts = el('div', 'sv-actions');
+        var load = el('button', 'btn sm', 'Load');
+        load.type = 'button';
+        load.title = 'Restore these answers into the form';
+        load.addEventListener('click', function () { loadRun(r.id); });
+        acts.appendChild(load);
+
+        var del = el('button', 'btn ghost sm', 'Delete');
+        del.type = 'button';
+        del.addEventListener('click', function () { deleteRun(r.id, r.interfaceName); });
+        acts.appendChild(del);
+
+        item.appendChild(acts);
+        list.appendChild(item);
+    });
+}
+
+async function loadRun(id) {
+    try {
+        var res = await fetch(API + '/spec/responses/' + encodeURIComponent(id) + '?_t=' + Date.now(),
+                              { headers: apiHeaders(false), credentials: 'include' });
+        if (!res.ok) { toast('Could not load that specification (HTTP ' + res.status + ').', true); return; }
+        var j = await res.json();
+        var a = j.answers || {};
+        if (!a.answers) { toast('That saved run has no answers to restore.', true); return; }
+
+        answers = a.answers;
+        repeats = a.repeats || {};
+        seededFields = {};
+        // Any repeat group the saved run did not carry still needs one blank row.
+        SCHEMA.forEach(function (sec) {
+            sec.questions.forEach(function (q) {
+                if (q.type === 'repeat' && (!repeats[q.id] || !repeats[q.id].length)) {
+                    repeats[q.id] = [blankRow(q)];
+                }
+            });
+        });
+        lastSavedPrompt = j.prompt || '';
+        closeSaved();
+        render();
+        document.getElementById('form-pane').scrollTop = 0;
+        toast('Loaded "' + (j.interfaceName || 'specification') + '". Review before sending.');
+    } catch (e) {
+        toast('Could not load: ' + e.message, true);
+    }
+}
+
+async function deleteRun(id, name) {
+    if (!confirm('Delete the saved specification "' + (name || id) + '"?')) return;
+    try {
+        var res = await fetch(API + '/spec/responses/' + encodeURIComponent(id), {
+            method: 'DELETE', headers: apiHeaders(false), credentials: 'include'
+        });
+        if (!res.ok) { toast('Delete failed (HTTP ' + res.status + ').', true); return; }
+        await refreshSaved();
+        toast('Deleted.');
+    } catch (e) {
+        toast('Delete failed: ' + e.message, true);
+    }
+}
+
+function closeSaved() { document.getElementById('saved').hidden = true; }
+
 /* ============================ boot ============================ */
 
 async function boot() {
@@ -1910,6 +2099,15 @@ async function boot() {
         document.getElementById('form-pane').scrollTop = 0;
     });
 
+    document.getElementById('open-saved').addEventListener('click', openSaved);
+    document.getElementById('sv-close').addEventListener('click', closeSaved);
+    document.getElementById('sv-cancel').addEventListener('click', closeSaved);
+    document.getElementById('sv-q').addEventListener('input', renderSaved);
+    document.getElementById('sv-mine').addEventListener('change', refreshSaved);
+    document.getElementById('saved').addEventListener('click', function (e) {
+        if (e.target.id === 'saved') closeSaved();
+    });
+
     // Catalog picker wiring
     document.getElementById('cp-close').addEventListener('click', closeCatalogPicker);
     document.getElementById('cp-cancel').addEventListener('click', closeCatalogPicker);
@@ -1922,6 +2120,7 @@ async function boot() {
 
     document.addEventListener('keydown', function (e) {
         if (e.key !== 'Escape') return;
+        if (!document.getElementById('saved').hidden) { closeSaved(); return; }
         if (!document.getElementById('catpick').hidden) { closeCatalogPicker(); return; }
         if (!document.getElementById('preview').hidden) closePreview();
     });

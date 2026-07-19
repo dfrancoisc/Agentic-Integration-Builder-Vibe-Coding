@@ -42,6 +42,8 @@
     <div id="form-tools">
       <span class="muted" id="form-tools-hint">Open a section to answer it</span>
       <span class="spacer"></span>
+      <button type="button" class="linkbtn" id="open-saved">Saved specifications</button>
+      <span class="sep">&middot;</span>
       <button type="button" class="linkbtn" id="expand-all">Expand all</button>
       <span class="sep">&middot;</span>
       <button type="button" class="linkbtn" id="collapse-all">Collapse all</button>
@@ -137,6 +139,31 @@
       <span class="muted">Selecting a class records it in the specification, so the agent uses it instead of choosing one.</span>
       <span class="spacer"></span>
       <button type="button" class="btn ghost" id="cp-cancel">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Saved questionnaire runs: every generated specification, reloadable. -->
+<div id="saved" class="overlay" hidden>
+  <div class="panel">
+    <div class="panel-bar">
+      <span>Saved specifications</span>
+      <button type="button" class="x" id="sv-close" title="Close">&#10005;</button>
+    </div>
+    <div class="panel-note">
+      Every specification generated from this questionnaire is kept with the answers that
+      produced it. Load one to restore the form, or copy its prompt.
+    </div>
+    <div class="cp-search">
+      <input type="text" id="sv-q" placeholder="Filter by interface name, short name or user">
+      <label class="opt" style="white-space:nowrap"><input type="checkbox" id="sv-mine" checked> Only mine</label>
+      <span class="muted" id="sv-count"></span>
+    </div>
+    <div id="sv-list"></div>
+    <div class="panel-foot">
+      <span class="muted">Saved automatically when you generate or send a specification.</span>
+      <span class="spacer"></span>
+      <button type="button" class="btn ghost" id="sv-cancel">Close</button>
     </div>
   </div>
 </div>
