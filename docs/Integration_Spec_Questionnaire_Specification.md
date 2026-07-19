@@ -182,13 +182,17 @@ This also gives the work an unusually strong provenance argument: it is not an I
 |---|---|
 | **FR-30** | Every specification the questionnaire generates is persisted automatically, with the answer set that produced it. The user never has to remember to save. |
 | **FR-31** | Both halves are stored. The prompt alone cannot repopulate the form; the answers alone do not record what was actually sent, because the preview is editable. |
-| **FR-32** | A run is saved when a specification is generated (status `trial`) and again when it is sent to the agent (status `sent`), so the record distinguishes drafts from what was actually handed over. |
-| **FR-33** | Re-rendering an unchanged specification does not create a duplicate record. Changing the output format or any answer does. |
+| **FR-32** | A questionnaire is saved by an explicit **Save**, and again when it is sent to the agent from either the preview or the footer. Both record it under the questionnaire's interface name. |
+| **FR-33** | One row per questionnaire per user per namespace. Re-saving or re-sending the same named questionnaire updates that row in place; only a new name creates a new entry. |
 | **FR-34** | Saved runs are listable, filterable, and scoped to the caller's namespace and user by default. |
 | **FR-35** | A saved run can be reloaded into the form, restoring both answers and repeating groups. |
 | **FR-36** | A saved run can be deleted. |
 | **FR-37** | A failed save never blocks review or sending. Persistence is a side effect, not a gate. |
-| **FR-38** | Saved runs are presented as a **worklist**: searchable by interface name, short name, user and namespace, so an engineer can find an earlier specification without scrolling. |
+| **FR-38** | The worklist is a **screen of its own**, reached from a tab in the header carrying a count, not a dialog buried in a toolbar. |
+| **FR-42** | Each row shows the questionnaire name as a link that reopens it, who created it, and when it was last saved. |
+| **FR-43** | Each row can copy its generated prompt to the clipboard, re-send it to the agent, or be deleted, without opening the questionnaire. |
+| **FR-44** | Saving requires an interface name. An unnamed row is useless in a worklist, so Save refuses and takes the user to the field. |
+| **FR-45** | Searchable by interface name, short name, user and namespace, so an engineer can find an earlier specification without scrolling. |
 | **FR-39** | Search runs server-side, so a long history is never shipped to the browser to be filtered. |
 | **FR-40** | A run can be **starred**. Starred runs sort above everything else regardless of age, and can be filtered to on their own. |
 | **FR-41** | Starring is optimistic — the star reflects the click immediately and rolls back only if the server refuses. |
@@ -251,7 +255,9 @@ Interop Editor (Angular, authenticated)
 | **TR-18** | Runs persist to `AgenticInterop.Data.SpecResponse`. Answers and prompt are streams, because the mapping and destination tables have no fixed size. |
 | **TR-19** | Four endpoints under the existing dispatcher: list, save, get, delete. Listing returns summaries only, so a large history does not read every blob. |
 | **TR-20** | The record carries namespace, user, template key and version, completeness and output format, so a reload can tell whether the form has changed underneath it. |
-| **TR-22** | Search is a parameterised, case-insensitive contains across the indexed identity columns. Ordering is `Favorite DESC, CreatedAt DESC`, so starring is a first-class sort key rather than a client-side reshuffle. |
+| **TR-22** | Search is a parameterised, case-insensitive contains across the indexed identity columns. Ordering is `Favorite DESC, UpdatedAt DESC`, so starring is a first-class sort key rather than a client-side reshuffle. |
+| **TR-24** | Upsert is keyed on `(InterfaceName, Username, Namespace)`, indexed. Streams are cleared before rewrite, so an update replaces the stored prompt rather than appending to it. |
+| **TR-25** | `UpdatedAt` is distinct from `CreatedAt`: the worklist sorts and displays on last-touched, which is the question a user is actually asking. |
 | **TR-23** | Rapid typing cannot render a stale result: each search carries a sequence number and a late response whose sequence is superseded is discarded. |
 | **TR-21** | Distinct from `Data.ChatSpec`, which holds the per-conversation specification the agent synthesises from chat attachments. A questionnaire run is not tied to a chat session and outlives any conversation. |
 

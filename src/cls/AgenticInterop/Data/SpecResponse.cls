@@ -54,9 +54,17 @@ Property Favorite As %Boolean [ InitialExpression = 0 ];
 
 Property CreatedAt As %TimeStamp [ InitialExpression = {$zdatetime($horolog, 3, 1)} ];
 
+/// Last time this questionnaire was saved or sent. The worklist sorts and
+/// displays on this, because "when did I last touch it" is the useful
+/// question -- CreatedAt stays as first-captured.
+Property UpdatedAt As %TimeStamp [ InitialExpression = {$zdatetime($horolog, 3, 1)} ];
+
 Index ByCreated On CreatedAt;
 
 Index ByFavorite On Favorite;
+
+/// One row per questionnaire per user per namespace -- the upsert key.
+Index ByIdentity On (InterfaceName, Username, Namespace);
 
 Index ByUser On Username;
 
@@ -71,24 +79,45 @@ ClassMethod Record(pProps As %DynamicObject, pUser As %String = "", Output pSC A
     Set pSC = $$$OK
     Set id = ""
     Try {
-        Set o = ..%New()
-        Set util = "AgenticInterop.Editor.Util"
-        Set o.InterfaceName   = $classmethod(util, "DObj", pProps, "interfaceName")
+        Set util  = "AgenticInterop.Editor.Util"
+        Set name  = $classmethod(util, "DObj", pProps, "interfaceName")
+        Set user  = $select(pUser'="":pUser, 1:$username)
+        Set ns    = $classmethod(util, "DObj", pProps, "namespace", $namespace)
+
+        ; A worklist wants one row per questionnaire, not one per keystroke.
+        ; Re-saving or sending the same named questionnaire updates the row
+        ; in place; only a new name creates a new entry.
+        Set o = ""
+        If name '= "", name '= "(unnamed)" {
+            Set rs = ##class(%SQL.Statement).%ExecDirect(,
+                "SELECT TOP 1 ID FROM AgenticInterop_Data.SpecResponse " _
+                "WHERE InterfaceName = ? AND Username = ? AND Namespace = ?",
+                name, user, ns)
+            If rs.%Next() { Set o = ..%OpenId(rs.%Get("ID")) }
+        }
+        If '$isobject(o) { Set o = ..%New() }
+
+        Set o.InterfaceName   = name
         Set o.ShortName       = $classmethod(util, "DObj", pProps, "shortName")
-        Set o.Namespace       = $classmethod(util, "DObj", pProps, "namespace", $namespace)
-        Set o.Username        = $select(pUser'="":pUser, 1:$username)
+        Set o.Namespace       = ns
+        Set o.Username        = user
         Set o.OutputFormat    = $classmethod(util, "DObj", pProps, "outputFormat", "both")
-        Set o.Status          = $classmethod(util, "DObj", pProps, "status", "trial")
+        Set o.Status          = $classmethod(util, "DObj", pProps, "status", "saved")
         Set o.Completeness    = $classmethod(util, "DObj", pProps, "completeness")
         Set o.TemplateKey     = $classmethod(util, "DObj", pProps, "templateKey", "default")
         Set o.TemplateVersion = $classmethod(util, "DObj", pProps, "templateVersion")
+        Set o.UpdatedAt       = $zdatetime($horolog, 3, 1)
 
-        ; answers arrives as an object; store the serialized form
+        ; streams are replaced wholesale, not appended to
         If pProps.%IsDefined("answers"), $isobject(pProps.answers) {
+            Do o.AnswersJson.Clear()
             Do o.AnswersJson.Write(pProps.answers.%ToJSON())
         }
         Set prompt = $classmethod(util, "DObj", pProps, "prompt")
-        If prompt '= "" { Do o.PromptText.Write(prompt) }
+        If prompt '= "" {
+            Do o.PromptText.Clear()
+            Do o.PromptText.Write(prompt)
+        }
 
         Set pSC = o.%Save()
         If $$$ISERR(pSC) { Quit }
@@ -125,7 +154,8 @@ ClassMethod Summary(pObj As AgenticInterop.Data.SpecResponse) As %DynamicObject
         "favorite":      (pObj.Favorite),
         "completeness":  (pObj.Completeness),
         "templateKey":   (pObj.TemplateKey),
-        "createdAt":     (pObj.CreatedAt)
+        "createdAt":     (pObj.CreatedAt),
+        "updatedAt":     (pObj.UpdatedAt)
     }
 }
 
@@ -193,6 +223,9 @@ Storage Default
 </Value>
 <Value name="14">
 <Value>Favorite</Value>
+</Value>
+<Value name="15">
+<Value>UpdatedAt</Value>
 </Value>
 </Data>
 <DataLocation>^AgInt.SpecRespD</DataLocation>

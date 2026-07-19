@@ -370,19 +370,26 @@ Two things make the output more than a transcript of the form:
 
 Artifact names are generated from the documented naming conventions (`From<Src>` / `To<Tgt>` / `<Src>Router` / `<Src>Rules`) and shown before you send.
 
-### Everything is kept
+### The worklist
 
-![Saved specifications](docs/img/35_spec_saved.png)
+![Worklist](docs/img/36_spec_worklist.png)
 
-Every specification the questionnaire generates is saved automatically, together with the answers that produced it — you never have to remember to. **Saved specifications** in the form toolbar lists them, filterable and scoped to your namespace and user by default.
+**Worklist** is a screen of its own, reached from the tab beside *Questionnaire* in the header, with a badge showing how many you have.
 
-Both halves are stored deliberately: the prompt alone cannot repopulate the form, and the answers alone do not record what was actually sent, because the preview is editable. A run is marked `draft` when generated and `sent` when handed to the agent, so the history distinguishes what you explored from what you acted on. Re-rendering unchanged output does not create a duplicate.
+**Save** on the questionnaire writes it to the worklist under its interface name. Sending to the agent saves it too — from the Output Trial or directly — so anything you act on is recorded without you having to remember. One row per questionnaire: re-saving or sending the same one updates it in place rather than piling up duplicates.
 
-It is a worklist, not just a log. **Search** by interface name, short name, user or namespace — server-side, so a long history is never shipped to the browser to be filtered. **Star** the specifications you keep coming back to and they sort above everything else regardless of age, with a *Starred only* filter when you want just those.
+Each row gives you:
 
-**Load** restores a saved run into the form — answers, destinations and mappings — so a past specification becomes the starting point for the next one.
+- The **questionnaire name as a link** — opens it back into the form, answers, destinations and mappings restored
+- **Who created it**, and when it was last saved
+- **Copy prompt** — puts the generated specification on your clipboard without opening anything
+- **Send to agent** — re-sends a saved specification directly
+- **Star** — starred questionnaires sort above everything else regardless of age, with a *Starred only* filter
+- **Delete**
 
-### Then hand it over
+Search runs server-side across name, short name, user and namespace, so a long history is never shipped to the browser to be filtered.
+
+### Then hand it over### Then hand it over
 
 **Send it to AIB** delivers the specification to the chatbot in the same namespace, as the first turn of a conversation. **GO TO DATA ATLAS** hands off to the visual tool for mapping work beyond a simple table (placeholder for now; target configurable via `?atlas=<url>`).
 

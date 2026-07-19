@@ -14,6 +14,10 @@
 <header id="hdr">
   <h1>InterSystems Integration Spec Questionnaire</h1>
   <span class="ns-pill" id="ns-pill" title="Target namespace">&mdash;</span>
+  <nav id="screens" aria-label="Screens">
+    <button type="button" class="screen-tab on" id="tab-form">Questionnaire</button>
+    <button type="button" class="screen-tab" id="tab-work">Worklist<span class="tab-count" id="work-count" hidden></span></button>
+  </nav>
   <span class="spacer"></span>
   <div class="progress-wrap">
     <span class="progress" id="progress">0 of 0 required answered</span>
@@ -42,8 +46,6 @@
     <div id="form-tools">
       <span class="muted" id="form-tools-hint">Open a section to answer it</span>
       <span class="spacer"></span>
-      <button type="button" class="linkbtn" id="open-saved">Saved specifications</button>
-      <span class="sep">&middot;</span>
       <button type="button" class="linkbtn" id="expand-all">Expand all</button>
       <span class="sep">&middot;</span>
       <button type="button" class="linkbtn" id="collapse-all">Collapse all</button>
@@ -88,6 +90,7 @@
     <span class="warn" id="warn"></span>
   </div>
   <div class="foot-right">
+    <button type="button" class="btn" id="btn-save">Save</button>
     <button type="button" class="btn" id="btn-trial">Output Trial</button>
     <button type="button" class="btn primary" id="btn-send">Send it to AIB</button>
   </div>
@@ -143,31 +146,43 @@
   </div>
 </div>
 
-<!-- Saved questionnaire runs: every generated specification, reloadable. -->
-<div id="saved" class="overlay" hidden>
-  <div class="panel">
-    <div class="panel-bar">
-      <span>Saved specifications &mdash; worklist</span>
-      <button type="button" class="x" id="sv-close" title="Close">&#10005;</button>
+<!-- ============ Worklist screen ============
+     Sibling screen to the questionnaire, not a modal. Every saved run
+     lives here: open one back into the form, copy its prompt, or send it
+     to the agent again without reopening the questionnaire. -->
+<main id="worklist" hidden>
+  <div class="wl-head">
+    <div>
+      <h2>Worklist</h2>
+      <p class="muted">
+        Every questionnaire you save, and every specification generated from one.
+        Open a questionnaire to keep working on it, or copy its prompt straight to the clipboard.
+      </p>
     </div>
-    <div class="panel-note">
-      Every specification generated from this questionnaire is kept with the answers that produced it.
-      Search to find an earlier one, star the ones you return to, and Load to restore it into the form.
-    </div>
-    <div class="cp-search">
-      <input type="text" id="sv-q" placeholder="Search by interface name, short name, user or namespace">
-      <label class="opt"><input type="checkbox" id="sv-fav"> Starred only</label>
-      <label class="opt"><input type="checkbox" id="sv-mine" checked> Only mine</label>
-      <span class="muted" id="sv-count"></span>
+    <button type="button" class="btn primary" id="wl-new">New questionnaire</button>
+  </div>
+
+  <div class="wl-tools">
+    <input type="text" id="sv-q" placeholder="Search by name, short name, user or namespace">
+    <label class="opt"><input type="checkbox" id="sv-fav"> Starred only</label>
+    <label class="opt"><input type="checkbox" id="sv-mine" checked> Only mine</label>
+    <span class="spacer"></span>
+    <span class="muted" id="sv-count"></span>
+    <button type="button" class="btn ghost sm" id="sv-refresh">Refresh</button>
+  </div>
+
+  <div class="wl-table" role="table" aria-label="Saved questionnaires">
+    <div class="wl-row wl-header" role="row">
+      <span class="wl-c-star"></span>
+      <span class="wl-c-name">Questionnaire</span>
+      <span class="wl-c-who">Created by</span>
+      <span class="wl-c-when">Saved</span>
+      <span class="wl-c-state">State</span>
+      <span class="wl-c-acts">Actions</span>
     </div>
     <div id="sv-list"></div>
-    <div class="panel-foot">
-      <span class="muted">Saved automatically when you generate or send a specification.</span>
-      <span class="spacer"></span>
-      <button type="button" class="btn ghost" id="sv-cancel">Close</button>
-    </div>
   </div>
-</div>
+</main>
 
 <div id="toast" hidden></div>
 

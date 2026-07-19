@@ -55,7 +55,7 @@ ClassMethod List(pResponse As %CSP.Response, pRequest As %CSP.Request) As %Statu
 
     ; starred first, then newest first
     Set sql = "SELECT ID FROM AgenticInterop_Data.SpecResponse" _ where _
-              " ORDER BY Favorite DESC, CreatedAt DESC"
+              " ORDER BY Favorite DESC, UpdatedAt DESC"
 
     Set stmt = ##class(%SQL.Statement).%New()
     Set sc = stmt.%Prepare(sql)

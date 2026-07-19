@@ -1464,9 +1464,6 @@ var FORMAT_WHY = {
 function renderOutput() {
     var txt = buildOutput(previewFormat);
     document.getElementById('pv-text').value = txt;
-    // Persist every distinct specification the questionnaire produces.
-    // Fire-and-forget: a failed save must never block review or sending.
-    saveRun('trial', txt);
     document.getElementById('pv-stats').textContent =
         txt.split('\n').length + ' lines, ' + txt.length + ' characters';
     document.getElementById('pv-why').textContent = FORMAT_WHY[previewFormat] || '';
@@ -1842,8 +1839,9 @@ function apiHeaders(json) {
 /* Persist the current run. status: 'trial' when generated, 'sent' when
  * handed to the agent. Failure is reported but never blocks the user --
  * losing a saved copy must not stop them sending a specification. */
-async function saveRun(status, promptText) {
-    if (status === 'trial' && promptText === lastSavedPrompt) return null;
+async function saveRun(status, promptText, force) {
+    // Automatic saves skip an unchanged re-render; an explicit Save never does.
+    if (!force && status === 'trial' && promptText === lastSavedPrompt) return null;
 
     var total = 0, done = 0;
     SCHEMA.forEach(function (sec) {
@@ -1854,7 +1852,7 @@ async function saveRun(status, promptText) {
     });
 
     var body = {
-        interfaceName: answers.name || '(unnamed)',
+        interfaceName: (answers.name || '').trim() || currentRunName || '(unnamed)',
         shortName:     answers.shortName || '',
         namespace:     currentNamespace(),
         outputFormat:  previewFormat,
@@ -1881,14 +1879,21 @@ async function saveRun(status, promptText) {
     }
 }
 
-async function openSaved() {
-    document.getElementById('saved').hidden = false;
-    document.getElementById('sv-list').innerHTML =
-        '<div class="cp-empty">Loading saved specifications…</div>';
-    await refreshSaved();
+/* ---- screen switching: the worklist is a sibling screen, not a modal ---- */
+
+function showScreen(which) {
+    var isWork = which === 'worklist';
+    document.getElementById('shell').hidden = isWork;
+    document.getElementById('foot').hidden = isWork;
+    document.getElementById('worklist').hidden = !isWork;
+    document.getElementById('tab-form').classList.toggle('on', !isWork);
+    document.getElementById('tab-work').classList.toggle('on', isWork);
+    if (isWork) refreshSaved();
 }
 
 var savedSeq = 0;   // guards against a slow response overwriting a newer one
+var savedRows = [];
+var savedMeta = { favorites: 0, query: '' };
 
 async function refreshSaved() {
     var q    = (document.getElementById('sv-q').value || '').trim();
@@ -1901,59 +1906,95 @@ async function refreshSaved() {
               '&q=' + encodeURIComponent(q) + '&_t=' + Date.now();
     try {
         var res = await fetch(url, { headers: apiHeaders(false), credentials: 'include' });
-        if (seq !== savedSeq) return;              // a newer search already ran
+        if (seq !== savedSeq) return;
         if (res.status === 401 || res.status === 403) {
-            list.innerHTML = '<div class="cp-empty">Not authorized. Open the chat once to sign in, then retry.</div>';
+            list.innerHTML = '<div class="wl-empty"><b>Not authorized</b>Open the chat once to sign in, then return here.</div>';
             return;
         }
-        if (!res.ok) { list.innerHTML = '<div class="cp-empty">Could not load (HTTP ' + res.status + ').</div>'; return; }
+        if (!res.ok) { list.innerHTML = '<div class="wl-empty">Could not load (HTTP ' + res.status + ').</div>'; return; }
         var j = await res.json();
         if (seq !== savedSeq) return;
         savedRows = j.responses || [];
         savedMeta = { favorites: j.favorites || 0, query: q };
         renderSaved();
+        updateWorkCount();
     } catch (e) {
         if (seq !== savedSeq) return;
-        list.innerHTML = '<div class="cp-empty">Could not reach the server: ' + e.message + '</div>';
+        list.innerHTML = '<div class="wl-empty">Could not reach the server: ' + e.message + '</div>';
     }
 }
 
-var savedRows = [];
-var savedMeta = { favorites: 0, query: '' };
+/* Badge on the tab, so the worklist advertises itself instead of hiding. */
+async function updateWorkCount() {
+    var badge = document.getElementById('work-count');
+    if (!badge) return;
+    var n = savedRows.length;
+    if (n > 0) { badge.textContent = n; badge.hidden = false; }
+    else { badge.hidden = true; }
+}
 
+var ICON = {
+    copy: 'M9 3h9a2 2 0 0 1 2 2v11M6 7h9a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2z',
+    send: 'M3 20.5 21 12 3 3.5 3 10l12 2-12 2z',
+    trash:'M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m-8 0 1 13h8l1-13',
+    tick: 'M4 12.5 9.5 18 20 6.5'
+};
 var STAR_PATH = 'M12 2.6l2.9 5.9 6.5.95-4.7 4.6 1.1 6.5L12 17.5 6.2 20.5l1.1-6.5-4.7-4.6 6.5-.95z';
+
+function svgIcon(path, filled) {
+    return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="' + path +
+           '" fill="' + (filled ? 'currentColor' : 'none') +
+           '" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+}
+
+function iconBtn(path, title, cls) {
+    var b = el('button', 'icon-btn' + (cls ? ' ' + cls : ''));
+    b.type = 'button';
+    b.title = title;
+    b.setAttribute('aria-label', title);
+    b.innerHTML = svgIcon(path, false);
+    return b;
+}
+
+/* "3 minutes ago" reads faster than a timestamp when scanning a list;
+   the exact time stays available on hover. */
+function relTime(ts) {
+    if (!ts) return '';
+    var t = Date.parse(String(ts).replace(' ', 'T'));
+    if (isNaN(t)) return ts;
+    var s = Math.max(0, (Date.now() - t) / 1000);
+    if (s < 60)    return 'just now';
+    if (s < 3600)  return Math.floor(s / 60) + ' min ago';
+    if (s < 86400) return Math.floor(s / 3600) + ' h ago';
+    if (s < 604800) return Math.floor(s / 86400) + ' d ago';
+    return String(ts).slice(0, 10);
+}
 
 function starButton(row) {
     var b = el('button', 'sv-star' + (row.favorite ? ' on' : ''));
     b.type = 'button';
-    b.title = row.favorite ? 'Starred - click to remove' : 'Star this specification';
+    b.title = row.favorite ? 'Starred — click to remove' : 'Star this questionnaire';
     b.setAttribute('aria-pressed', row.favorite ? 'true' : 'false');
-    b.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true">' +
-        '<path d="' + STAR_PATH + '" fill="' + (row.favorite ? 'currentColor' : 'none') +
+    b.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="' + STAR_PATH +
+        '" fill="' + (row.favorite ? 'currentColor' : 'none') +
         '" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>';
-    b.addEventListener('click', function (e) {
-        e.stopPropagation();
-        toggleFavorite(row, b);
-    });
+    b.addEventListener('click', function (e) { e.stopPropagation(); toggleFavorite(row, b); });
     return b;
 }
 
-/* Optimistic: flip the star immediately, roll back if the server refuses.
- * Waiting on a round trip to acknowledge a star feels broken. */
+/* Optimistic: flip the star immediately, roll back if the server refuses. */
 async function toggleFavorite(row, btn) {
     var want = !row.favorite;
     row.favorite = want;
     btn.classList.toggle('on', want);
     btn.querySelector('path').setAttribute('fill', want ? 'currentColor' : 'none');
-    btn.setAttribute('aria-pressed', want ? 'true' : 'false');
     try {
         var res = await fetch(API + '/spec/responses/' + encodeURIComponent(row.id) + '/favorite', {
             method: 'POST', headers: apiHeaders(true), credentials: 'include',
             body: JSON.stringify({ favorite: want })
         });
         if (!res.ok) throw new Error('HTTP ' + res.status);
-        // re-pull so the starred row moves to the top where it belongs
-        refreshSaved();
+        refreshSaved();      // starred rows sort to the top
     } catch (e) {
         row.favorite = !want;
         btn.classList.toggle('on', !want);
@@ -1963,65 +2004,129 @@ async function toggleFavorite(row, btn) {
 }
 
 function renderSaved() {
-    // filtering happens server-side now, so these rows are already the result
-    var rows = savedRows;
-    var count = document.getElementById('sv-count');
-    count.textContent = rows.length + (savedMeta.favorites ? '  (' + savedMeta.favorites + ' starred)' : '');
+    var rows = savedRows;                       // already filtered server-side
+    document.getElementById('sv-count').textContent =
+        rows.length + (savedMeta.favorites ? '  (' + savedMeta.favorites + ' starred)' : '');
 
     var list = document.getElementById('sv-list');
     list.innerHTML = '';
     if (!rows.length) {
-        var msg = savedMeta.query
-            ? 'Nothing matches "' + savedMeta.query + '".'
-            : (document.getElementById('sv-fav').checked
-                 ? 'No starred specifications yet. Star one to pin it here.'
-                 : 'No saved specifications yet. Generate one with Output Trial.');
-        list.appendChild(el('div', 'cp-empty', msg));
+        var e0 = el('div', 'wl-empty');
+        if (savedMeta.query) {
+            e0.appendChild(el('b', null, 'Nothing matches "' + savedMeta.query + '"'));
+            e0.appendChild(document.createTextNode('Try a different name, or clear the search.'));
+        } else if (document.getElementById('sv-fav').checked) {
+            e0.appendChild(el('b', null, 'No starred questionnaires'));
+            e0.appendChild(document.createTextNode('Star the ones you come back to and they will pin here.'));
+        } else {
+            e0.appendChild(el('b', null, 'Nothing saved yet'));
+            e0.appendChild(document.createTextNode('Fill in the questionnaire and press Save, or send one to the agent.'));
+        }
+        list.appendChild(e0);
         return;
     }
+
     rows.forEach(function (r) {
-        var item = el('div', 'sv-item');
-        item.appendChild(starButton(r));
+        var row = el('div', 'wl-row');
+        row.setAttribute('role', 'row');
 
-        var main = el('div', 'sv-main');
-        var name = el('div', 'sv-name', r.interfaceName || '(unnamed)');
-        name.appendChild(el('span', 'sv-tag ' + (r.status === 'sent' ? 'sent' : 'trial'),
-                            r.status === 'sent' ? 'sent to agent' : 'draft'));
-        main.appendChild(name);
-        main.appendChild(el('div', 'sv-meta',
-            [r.createdAt, r.shortName, r.username, r.namespace,
-             r.completeness ? r.completeness + ' answered' : '',
-             r.outputFormat].filter(Boolean).join('  \u00b7  ')));
-        item.appendChild(main);
+        row.appendChild(starButton(r));
 
-        var acts = el('div', 'sv-actions');
-        var load = el('button', 'btn sm', 'Load');
-        load.type = 'button';
-        load.title = 'Restore these answers into the form';
-        load.addEventListener('click', function () { loadRun(r.id); });
-        acts.appendChild(load);
-        var del = el('button', 'btn ghost sm', 'Delete');
-        del.type = 'button';
+        // name — the link that opens the questionnaire
+        var nameCell = el('div');
+        var name = el('button', 'wl-name', r.interfaceName || '(unnamed)');
+        name.type = 'button';
+        name.title = 'Open this questionnaire';
+        name.addEventListener('click', function () { loadRun(r.id); });
+        nameCell.appendChild(name);
+        nameCell.appendChild(el('div', 'wl-sub',
+            [r.shortName, r.namespace, r.completeness ? r.completeness + ' answered' : '']
+            .filter(Boolean).join('  \u00b7  ')));
+        row.appendChild(nameCell);
+
+        row.appendChild(el('div', 'wl-c-who', r.username || '—'));
+
+        var when = el('div', 'wl-c-when', relTime(r.updatedAt || r.createdAt));
+        when.title = 'Saved ' + (r.updatedAt || r.createdAt) + (r.createdAt ? '  ·  created ' + r.createdAt : '');
+        when.appendChild(el('span', null, r.outputFormat || ''));
+        row.appendChild(when);
+
+        var state = el('div');
+        state.appendChild(el('span', 'sv-tag ' + (r.status === 'sent' ? 'sent' : 'trial'),
+                             r.status === 'sent' ? 'sent to agent' : 'saved'));
+        row.appendChild(state);
+
+        // actions: copy prompt, send to agent, delete
+        var acts = el('div', 'wl-c-acts');
+        var copy = iconBtn(ICON.copy, 'Copy the prompt from this questionnaire');
+        copy.addEventListener('click', function () { copyPrompt(r, copy); });
+        acts.appendChild(copy);
+
+        var send = iconBtn(ICON.send, 'Send this specification to the agent');
+        send.addEventListener('click', function () { sendSaved(r); });
+        acts.appendChild(send);
+
+        var del = iconBtn(ICON.trash, 'Delete', 'danger');
         del.addEventListener('click', function () { deleteRun(r.id, r.interfaceName); });
         acts.appendChild(del);
-        item.appendChild(acts);
-        list.appendChild(item);
+        row.appendChild(acts);
+
+        list.appendChild(row);
     });
+}
+
+/* Fetch the stored prompt and put it on the clipboard. The list only
+   carries summaries, so the text is read on demand. */
+async function copyPrompt(row, btn) {
+    try {
+        var res = await fetch(API + '/spec/responses/' + encodeURIComponent(row.id) + '?_t=' + Date.now(),
+                              { headers: apiHeaders(false), credentials: 'include' });
+        if (!res.ok) { toast('Could not read that prompt (HTTP ' + res.status + ').', true); return; }
+        var j = await res.json();
+        if (!j.prompt) { toast('That entry has no prompt saved.', true); return; }
+        try { await navigator.clipboard.writeText(j.prompt); }
+        catch (e) {
+            var ta = document.createElement('textarea');
+            ta.value = j.prompt; document.body.appendChild(ta); ta.select();
+            document.execCommand('copy'); document.body.removeChild(ta);
+        }
+        // brief confirmation on the button itself
+        btn.classList.add('ok');
+        btn.innerHTML = svgIcon(ICON.tick, false);
+        setTimeout(function () { btn.classList.remove('ok'); btn.innerHTML = svgIcon(ICON.copy, false); }, 1400);
+        toast('Prompt copied — ' + j.prompt.length + ' characters.');
+    } catch (e) {
+        toast('Copy failed: ' + e.message, true);
+    }
+}
+
+/* Re-send a saved specification without reopening the questionnaire. */
+async function sendSaved(row) {
+    try {
+        var res = await fetch(API + '/spec/responses/' + encodeURIComponent(row.id) + '?_t=' + Date.now(),
+                              { headers: apiHeaders(false), credentials: 'include' });
+        if (!res.ok) { toast('Could not read that specification (HTTP ' + res.status + ').', true); return; }
+        var j = await res.json();
+        if (!j.prompt) { toast('That entry has no prompt to send.', true); return; }
+        if (!confirm('Send "' + (j.interfaceName || 'this specification') + '" to the agent?')) return;
+        sendToAIB(j.prompt);
+    } catch (e) {
+        toast('Could not send: ' + e.message, true);
+    }
 }
 
 async function loadRun(id) {
     try {
         var res = await fetch(API + '/spec/responses/' + encodeURIComponent(id) + '?_t=' + Date.now(),
                               { headers: apiHeaders(false), credentials: 'include' });
-        if (!res.ok) { toast('Could not load that specification (HTTP ' + res.status + ').', true); return; }
+        if (!res.ok) { toast('Could not open that questionnaire (HTTP ' + res.status + ').', true); return; }
         var j = await res.json();
         var a = j.answers || {};
-        if (!a.answers) { toast('That saved run has no answers to restore.', true); return; }
+        if (!a.answers) { toast('That entry has no answers to restore.', true); return; }
 
         answers = a.answers;
         repeats = a.repeats || {};
         seededFields = {};
-        // Any repeat group the saved run did not carry still needs one blank row.
         SCHEMA.forEach(function (sec) {
             sec.questions.forEach(function (q) {
                 if (q.type === 'repeat' && (!repeats[q.id] || !repeats[q.id].length)) {
@@ -2030,17 +2135,18 @@ async function loadRun(id) {
             });
         });
         lastSavedPrompt = j.prompt || '';
-        closeSaved();
+        currentRunName = j.interfaceName || '';
         render();
+        showScreen('form');
         document.getElementById('form-pane').scrollTop = 0;
-        toast('Loaded "' + (j.interfaceName || 'specification') + '". Review before sending.');
+        toast('Opened "' + (j.interfaceName || 'questionnaire') + '".');
     } catch (e) {
-        toast('Could not load: ' + e.message, true);
+        toast('Could not open: ' + e.message, true);
     }
 }
 
 async function deleteRun(id, name) {
-    if (!confirm('Delete the saved specification "' + (name || id) + '"?')) return;
+    if (!confirm('Delete "' + (name || id) + '" from the worklist?')) return;
     try {
         var res = await fetch(API + '/spec/responses/' + encodeURIComponent(id), {
             method: 'DELETE', headers: apiHeaders(false), credentials: 'include'
@@ -2053,7 +2159,53 @@ async function deleteRun(id, name) {
     }
 }
 
-function closeSaved() { document.getElementById('saved').hidden = true; }
+var currentRunName = '';
+
+/* Explicit Save. Unlike the automatic saves this one is user-initiated,
+   so it insists on a name -- an unnamed row is useless in a worklist. */
+async function saveQuestionnaire() {
+    var name = (answers.name || '').trim();
+    if (!name) {
+        toast('Give the questionnaire an interface name before saving.', true);
+        sectionOpen.identity = true;
+        render();
+        showScreen('form');
+        var f = document.querySelector('.field[data-qid="name"]');
+        if (f) {
+            f.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            f.classList.add('flash');
+            var i = f.querySelector('input');
+            if (i) setTimeout(function () { try { i.focus({ preventScroll: true }); } catch (e) {} }, 250);
+            setTimeout(function () { f.classList.remove('flash'); }, 1400);
+        }
+        return;
+    }
+    var btn = document.getElementById('btn-save');
+    btn.disabled = true;
+    var id = await saveRun('saved', buildOutput(previewFormat), true);
+    btn.disabled = false;
+    if (id) {
+        currentRunName = name;
+        toast('Saved "' + name + '" to the worklist.');
+        updateWorkCountFromServer();
+    } else {
+        toast('Could not save to the worklist.', true);
+    }
+}
+
+/* Keep the tab badge honest even while the user is on the form screen. */
+async function updateWorkCountFromServer() {
+    try {
+        var res = await fetch(API + '/spec/responses?mine=1&_t=' + Date.now(),
+                              { headers: apiHeaders(false), credentials: 'include' });
+        if (!res.ok) return;
+        var j = await res.json();
+        var badge = document.getElementById('work-count');
+        if (!badge) return;
+        if (j.count > 0) { badge.textContent = j.count; badge.hidden = false; }
+        else { badge.hidden = true; }
+    } catch (e) {}
+}
 
 /* ============================ boot ============================ */
 
@@ -2152,9 +2304,17 @@ async function boot() {
         document.getElementById('form-pane').scrollTop = 0;
     });
 
-    document.getElementById('open-saved').addEventListener('click', openSaved);
-    document.getElementById('sv-close').addEventListener('click', closeSaved);
-    document.getElementById('sv-cancel').addEventListener('click', closeSaved);
+    document.getElementById('tab-form').addEventListener('click', function () { showScreen('form'); });
+    document.getElementById('tab-work').addEventListener('click', function () { showScreen('worklist'); });
+    document.getElementById('sv-refresh').addEventListener('click', refreshSaved);
+    document.getElementById('btn-save').addEventListener('click', saveQuestionnaire);
+    document.getElementById('wl-new').addEventListener('click', function () {
+        if (!confirm('Start a new questionnaire? Anything unsaved on the form will be cleared.')) return;
+        answers = {}; repeats = {}; seededFields = {}; currentRunName = ''; lastSavedPrompt = '';
+        var ns = qp('ns') || qp('namespace'); if (ns) answers.namespace = ns;
+        initDefaults(); render(); showScreen('form');
+        toast('New questionnaire.');
+    });
     var svTimer = null;
     document.getElementById('sv-q').addEventListener('input', function () {
         clearTimeout(svTimer);
@@ -2162,9 +2322,7 @@ async function boot() {
     });
     document.getElementById('sv-fav').addEventListener('change', refreshSaved);
     document.getElementById('sv-mine').addEventListener('change', refreshSaved);
-    document.getElementById('saved').addEventListener('click', function (e) {
-        if (e.target.id === 'saved') closeSaved();
-    });
+
 
     // Catalog picker wiring
     document.getElementById('cp-close').addEventListener('click', closeCatalogPicker);
@@ -2178,10 +2336,11 @@ async function boot() {
 
     document.addEventListener('keydown', function (e) {
         if (e.key !== 'Escape') return;
-        if (!document.getElementById('saved').hidden) { closeSaved(); return; }
         if (!document.getElementById('catpick').hidden) { closeCatalogPicker(); return; }
         if (!document.getElementById('preview').hidden) closePreview();
     });
+
+    updateWorkCountFromServer();
 
     // Keep the namespace pill in step with the namespace answer.
     setInterval(function () {
