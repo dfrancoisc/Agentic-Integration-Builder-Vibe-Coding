@@ -397,9 +397,8 @@ async function loadCatalog(name) {
     var ns = currentNamespace();
     if (ns) headers['X-IRIS-Namespace'] = ns;
 
-    var res = await fetch(API + '/catalog/browse?catalog=' + encodeURIComponent(name) +
-                          '&pageSize=500&_t=' + Date.now(),
-                          { headers: headers, credentials: 'include' });
+    var res = await apiFetch('/catalog/browse?catalog=' + encodeURIComponent(name) +
+                             '&pageSize=500&_t=' + Date.now());
     if (!res.ok) throw new Error('HTTP ' + res.status);
     var j = await res.json();
     var entries = (j.entries || []).map(function (e) {
@@ -1777,12 +1776,8 @@ async function seedFromPrompt() {
     if (ns) headers['X-IRIS-Namespace'] = ns;
 
     try {
-        var res = await fetch(API + '/chat?_t=' + Date.now(), {
-            method: 'POST',
-            headers: headers,
-            credentials: 'include',
-            body: JSON.stringify({ message: message, agentClass: EXTRACTOR, history: [] })
-        });
+        var res = await apiFetch('/chat?_t=' + Date.now(),
+            { method: 'POST', body: JSON.stringify({ message: message, agentClass: EXTRACTOR, history: [] }) });
         if (res.status === 401 || res.status === 403) {
             seedStatus('Not authorized. Open the chat once to sign in, then retry.', 'err');
             return;
@@ -1865,10 +1860,8 @@ async function saveRun(status, promptText, force) {
     };
 
     try {
-        var res = await fetch(API + '/spec/responses?_t=' + Date.now(), {
-            method: 'POST', headers: apiHeaders(true),
-            credentials: 'include', body: JSON.stringify(body)
-        });
+        var res = await apiFetch('/spec/responses?_t=' + Date.now(),
+                                 { method: 'POST', body: JSON.stringify(body) });
         if (!res.ok) { console.warn('spec save failed: HTTP ' + res.status); return null; }
         var j = await res.json();
         lastSavedPrompt = promptText;
@@ -1877,6 +1870,95 @@ async function saveRun(status, promptText, force) {
         console.warn('spec save failed:', e.message);
         return null;
     }
+}
+
+
+/* ---- authentication ----
+ * Embedded in the Interop Editor the page inherits the host's JWT. Opened
+ * on its own there is nothing to inherit, and every API call 401s. It used
+ * to fail with a bare "could not save", which told the user nothing and
+ * looked like the Save button was broken. Now a 401 raises the same
+ * sign-in prompt the chat uses, and the original request is retried.
+ *
+ * The credential is the user's own, typed by them, and is stored under the
+ * key the chat already uses so one sign-in covers both surfaces. */
+
+var signInPending = null;
+
+function promptSignIn(message) {
+    if (signInPending) return signInPending;          // never stack two prompts
+    signInPending = new Promise(function (resolve) {
+        var old = document.getElementById('spec-login');
+        if (old) old.remove();
+        var ov = document.createElement('div');
+        ov.id = 'spec-login';
+        ov.className = 'overlay';
+        ov.innerHTML =
+            '<form class="panel" id="spec-login-form" style="width:360px">' +
+              '<div class="panel-bar"><span>Sign in to save your work</span></div>' +
+              '<div class="panel-note">' +
+                (message || 'This questionnaire is open on its own, so it needs your IRIS credentials before it can reach the server.') +
+              '</div>' +
+              '<div style="padding:14px 15px;display:flex;flex-direction:column;gap:10px">' +
+                '<label class="flabel">Username<input type="text" id="spec-login-user" autocomplete="username"></label>' +
+                '<label class="flabel">Password<input type="password" id="spec-login-pass" autocomplete="current-password"></label>' +
+                '<div id="spec-login-err" class="warn" hidden></div>' +
+              '</div>' +
+              '<div class="panel-foot">' +
+                '<span class="muted">Stored in this browser only.</span><span class="spacer"></span>' +
+                '<button type="button" class="btn ghost" id="spec-login-cancel">Cancel</button>' +
+                '<button type="submit" class="btn primary">Sign in</button>' +
+              '</div>' +
+            '</form>';
+        document.body.appendChild(ov);
+        var err = ov.querySelector('#spec-login-err');
+        setTimeout(function () { try { ov.querySelector('#spec-login-user').focus(); } catch (e) {} }, 50);
+
+        function finish(ok) { ov.remove(); signInPending = null; resolve(ok); }
+        ov.querySelector('#spec-login-cancel').addEventListener('click', function () { finish(false); });
+        ov.querySelector('#spec-login-form').addEventListener('submit', async function (e) {
+            e.preventDefault();
+            var u = ov.querySelector('#spec-login-user').value;
+            var pw = ov.querySelector('#spec-login-pass').value;
+            if (!u || !pw) return;
+            var basic = 'Basic ' + btoa(u + ':' + pw);
+            try {
+                var res = await fetch(API + '/whoami', { headers: { Authorization: basic }, cache: 'no-store' });
+                if (!res.ok) {
+                    err.textContent = 'Those credentials were rejected.';
+                    err.hidden = false;
+                    return;
+                }
+                try { localStorage.setItem(AUTH_KEY, basic); } catch (e2) {}
+                bridgeBearer = '';          // prefer the freshly entered credential
+                finish(true);
+            } catch (e3) {
+                err.textContent = 'Could not reach the server: ' + e3.message;
+                err.hidden = false;
+            }
+        });
+    });
+    return signInPending;
+}
+
+/* Single entry point for every API call this page makes, so authentication
+ * recovery lives in exactly one place. */
+async function apiFetch(path, opts) {
+    opts = opts || {};
+    var isJson = !!opts.body;
+    var build = function () {
+        return Object.assign({}, opts, {
+            headers: Object.assign({}, opts.headers || {}, apiHeaders(isJson)),
+            credentials: 'include'
+        });
+    };
+    var res = await fetch(API + path, build());
+    if (res.status === 401 || res.status === 403) {
+        var ok = await promptSignIn();
+        if (!ok) return res;
+        res = await fetch(API + path, build());   // headers rebuilt with the new credential
+    }
+    return res;
 }
 
 /* ---- screen switching: the worklist is a sibling screen, not a modal ---- */
@@ -1905,7 +1987,7 @@ async function refreshSaved() {
     var url = API + '/spec/responses?mine=' + mine + '&fav=' + fav +
               '&q=' + encodeURIComponent(q) + '&_t=' + Date.now();
     try {
-        var res = await fetch(url, { headers: apiHeaders(false), credentials: 'include' });
+        var res = await apiFetch(url.replace(API, ''));
         if (seq !== savedSeq) return;
         if (res.status === 401 || res.status === 403) {
             list.innerHTML = '<div class="wl-empty"><b>Not authorized</b>Open the chat once to sign in, then return here.</div>';
@@ -1989,10 +2071,8 @@ async function toggleFavorite(row, btn) {
     btn.classList.toggle('on', want);
     btn.querySelector('path').setAttribute('fill', want ? 'currentColor' : 'none');
     try {
-        var res = await fetch(API + '/spec/responses/' + encodeURIComponent(row.id) + '/favorite', {
-            method: 'POST', headers: apiHeaders(true), credentials: 'include',
-            body: JSON.stringify({ favorite: want })
-        });
+        var res = await apiFetch('/spec/responses/' + encodeURIComponent(row.id) + '/favorite',
+                                 { method: 'POST', body: JSON.stringify({ favorite: want }) });
         if (!res.ok) throw new Error('HTTP ' + res.status);
         refreshSaved();      // starred rows sort to the top
     } catch (e) {
@@ -2079,8 +2159,7 @@ function renderSaved() {
    carries summaries, so the text is read on demand. */
 async function copyPrompt(row, btn) {
     try {
-        var res = await fetch(API + '/spec/responses/' + encodeURIComponent(row.id) + '?_t=' + Date.now(),
-                              { headers: apiHeaders(false), credentials: 'include' });
+        var res = await apiFetch('/spec/responses/' + encodeURIComponent(row.id) + '?_t=' + Date.now());
         if (!res.ok) { toast('Could not read that prompt (HTTP ' + res.status + ').', true); return; }
         var j = await res.json();
         if (!j.prompt) { toast('That entry has no prompt saved.', true); return; }
@@ -2117,8 +2196,7 @@ async function sendSaved(row) {
 
 async function loadRun(id) {
     try {
-        var res = await fetch(API + '/spec/responses/' + encodeURIComponent(id) + '?_t=' + Date.now(),
-                              { headers: apiHeaders(false), credentials: 'include' });
+        var res = await apiFetch('/spec/responses/' + encodeURIComponent(id) + '?_t=' + Date.now());
         if (!res.ok) { toast('Could not open that questionnaire (HTTP ' + res.status + ').', true); return; }
         var j = await res.json();
         var a = j.answers || {};
@@ -2148,9 +2226,7 @@ async function loadRun(id) {
 async function deleteRun(id, name) {
     if (!confirm('Delete "' + (name || id) + '" from the worklist?')) return;
     try {
-        var res = await fetch(API + '/spec/responses/' + encodeURIComponent(id), {
-            method: 'DELETE', headers: apiHeaders(false), credentials: 'include'
-        });
+        var res = await apiFetch('/spec/responses/' + encodeURIComponent(id), { method: 'DELETE' });
         if (!res.ok) { toast('Delete failed (HTTP ' + res.status + ').', true); return; }
         await refreshSaved();
         toast('Deleted.');
@@ -2189,7 +2265,7 @@ async function saveQuestionnaire() {
         toast('Saved "' + name + '" to the worklist.');
         updateWorkCountFromServer();
     } else {
-        toast('Could not save to the worklist.', true);
+        toast('Could not save to the worklist. Check the connection and try again.', true);
     }
 }
 
@@ -2197,7 +2273,7 @@ async function saveQuestionnaire() {
 async function updateWorkCountFromServer() {
     try {
         var res = await fetch(API + '/spec/responses?mine=1&_t=' + Date.now(),
-                              { headers: apiHeaders(false), credentials: 'include' });
+                              { headers: apiHeaders(false), credentials: 'include' });  // silent: no prompt on a background badge refresh
         if (!res.ok) return;
         var j = await res.json();
         var badge = document.getElementById('work-count');
