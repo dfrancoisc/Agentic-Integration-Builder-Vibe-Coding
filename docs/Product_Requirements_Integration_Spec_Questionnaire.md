@@ -1,6 +1,6 @@
 # Integration Specification Questionnaire — Product and Technical Requirements
 
-> **Audience:** the engineer who will build this. Written to be implementable without reference to any existing codebase.
+> **Audience:** the team who will build this. States what the product must do and why; every decision about how is deliberately left to the build team.
 > **Product:** a guided specification capture tool for healthcare integration work.
 > **Context:** a component of an AI-assisted integration builder. It runs *before* the build agent, not instead of it.
 > **Status:** requirements for build · Version 1.0 · July 2026
@@ -385,7 +385,7 @@ The requirements in §4 derive from these. Each use case states its own acceptan
 
 | ID | Requirement |
 |---|---|
-| FR-1 | The question set is **defined as data**, not hard-coded, so questions can be added, removed, reordered or relabelled without changing rendering logic. |
+| FR-1 | What gets asked must be changeable — questions added, removed, reordered, relabelled — as an act of maintenance rather than an act of development. |
 | FR-2 | Every question traces to a decision the downstream build genuinely requires. No question exists for completeness alone. |
 | FR-3 | Questions carry a tier — essential, recommended, advanced — and the essential path is short enough to complete in one sitting. |
 | FR-4 | Questions appear conditionally, based on answers already given. A question that cannot apply is never shown. |
@@ -420,10 +420,10 @@ The requirements in §4 derive from these. Each use case states its own acceptan
 
 | ID | Requirement |
 |---|---|
-| FR-21 | The system produces a specification artefact in the form the downstream consumer expects. |
-| FR-22 | A human-readable rendering and a machine-readable payload are both available; the machine-readable form is authoritative where they could differ. |
-| FR-23 | The machine-readable payload is keyed to the vocabulary the downstream consumer uses, so it maps to actions without inference. |
-| FR-24 | An absent value in the payload means *not specified*, and the artefact must instruct the consumer to ask rather than assume. |
+| FR-21 | The specification must be something the build agent can act on directly, with no manual step between the two. |
+| FR-22 | The specification must be readable by the person who has to approve it and unambiguous to the agent that has to act on it. Where those two purposes could diverge, the agent must not have to interpret prose. |
+| FR-23 | The specification must reach the agent in the agent's own vocabulary, so that nothing is lost or guessed in translation. |
+| FR-24 | An unanswered question must reach the agent as an open question. Absence must never be readable as agreement. |
 | FR-25 | The artefact carries an explicit block confirming the defaulted decisions, so the consumer need not re-ask them. |
 | FR-26 | Names for artefacts to be created follow the platform's documented naming conventions and are derived automatically, shown before hand-over. |
 | FR-27 | The output is previewable and editable before it is sent. |
@@ -434,13 +434,13 @@ The requirements in §4 derive from these. Each use case states its own acceptan
 |---|---|
 | FR-28 | A questionnaire can be saved explicitly, under a name supplied by the user. Saving refuses an unnamed item. |
 | FR-29 | Sending a specification also records it, so anything acted upon is captured without user effort. |
-| FR-30 | Both the answers and the generated specification are stored. Neither alone is sufficient: answers cannot reproduce an edited artefact, and the artefact cannot repopulate the form. |
+| FR-30 | Reopening a specification must restore the user to where they left off, and must also show exactly what was handed over. Both are needed: one is the work, the other is the record. |
 | FR-31 | One record per named questionnaire per owner per environment. Re-saving or re-sending updates that record rather than accumulating duplicates. |
 | FR-32 | The worklist is a **first-class screen**, discoverable from the questionnaire, not a dialog behind a secondary control. |
 | FR-33 | Each entry shows its name as a link that reopens it, its owner, and when it was last saved. |
 | FR-34 | Each entry allows: reopen, copy the specification text, re-send to the consumer, mark as favourite, delete. |
 | FR-35 | Entries can be marked as favourite; favourites sort above all others regardless of age and can be filtered to exclusively. |
-| FR-36 | Search executes at the data source across the attributes a user would recall, so a large history is never transferred to the client to be filtered. |
+| FR-36 | A user must be able to find a past specification by anything they are likely to remember about it, and finding it must stay fast as history grows. |
 | FR-37 | A failed save must report clearly but must never block review or hand-over. Persistence is a side effect, not a gate. |
 
 ### 4.6 Convergence with document intake
@@ -451,36 +451,38 @@ The requirements in §4 derive from these. Each use case states its own acceptan
 
 ---
 
-## 5. Data requirements
+## 5. What the product must remember
 
-Described as entities, not as a schema for any particular store.
+Stated as information the product is responsible for, not as a schema. How it
+is stored, and in what shape, is a build decision.
 
-| Entity | Purpose | Key attributes |
-|---|---|---|
-| **Question set** | The definition of what is asked | Identifier, version, ordered areas, questions with type, tier, applicability condition, option source, default, and the downstream vocabulary term each answer maps to |
-| **Saved questionnaire** | One captured run | Name, owner, target environment, answer set, generated specification text, output format, state (saved / handed over), completeness, favourite flag, created and last-updated timestamps |
-| **Environment reference data** | Option sources | Component identifier, kind, description, provenance |
-
-**Requirements**
+| Information | Why the product needs it |
+|---|---|
+| **The question set** | So what gets asked can change as practice changes, without the product being rebuilt |
+| **A captured questionnaire** | So work survives interruption, and so a specification becomes an asset that can be found and reused rather than a message that was sent once |
+| **The options a site offers** | So the engineer chooses from what exists here rather than from a generic list |
 
 | ID | Requirement |
 |---|---|
-| DR-1 | The answer set must accommodate repeating groups of unbounded size (destinations, field mappings) without schema change. |
-| DR-2 | The generated specification is stored as captured, including any user edits made at preview time. |
-| DR-3 | The record notes the question-set version it was captured against, so a later reload can detect that the question set has moved on. |
-| DR-4 | Records must distinguish **created** from **last updated**; the worklist orders and displays on last updated. |
-| DR-5 | Updating a record replaces stored content rather than appending to it. |
+| DR-1 | Lists a user can extend without limit — destinations, field mappings — must be capturable however long they run. A user must never be told they have reached a maximum. |
+| DR-2 | What was handed over is retained exactly as handed over, including any edit made at review time. The record is what was sent, not what the answers would produce today. |
+| DR-3 | A specification captured against an older question set must be recognisable as such when reopened, so the user is not silently shown something different from what they answered. |
+| DR-4 | The worklist orders and displays on when the user last touched a specification, which is what they remember; when it was first created must remain available. |
+| DR-5 | Reopening and re-saving a specification updates it. Re-saving must never produce a second entry for the same specification, and must never leave remnants of the previous version. |
 
 ---
 
-## 6. Integration requirements
+## 6. Product constraints
 
-| ID | Requirement |
+Constraints on the outcome, not on the design. Where a constraint exists, the
+reason is stated so the build can satisfy it in whatever way is soundest.
+
+| ID | Constraint |
 |---|---|
-| IR-1 | The questionnaire is a client of existing services. It must not require a new backend surface where an existing one serves — specifically it should reuse the existing consumer interface, environment metadata interface, and authentication. |
-| IR-2 | Hand-over must use the contract the downstream consumer already accepts, so no new consumer pathway is introduced. |
-| IR-3 | Interpretation of free text (FR-9) should run against a **minimal, isolated configuration** of the language model — no tools, no auxiliary knowledge, deterministic settings, single round trip. It is a transformation, not a reasoning task, and loading it with unnecessary capability adds cost, latency and failure modes. |
-| IR-4 | The component must be deployable as part of the existing product package with no separate installation step. |
+| PC-1 | This is a component of an existing product, not a product of its own. It must arrive with that product and be available without a separate installation, licence or configuration step for the user. |
+| PC-2 | It must not introduce a second way for work to reach the build agent. Whatever pathway already carries a user's request must carry this one, so behaviour, governance and audit stay identical no matter how the specification was produced. |
+| PC-3 | Interpreting a free-text description is a translation task, not a reasoning task. It must be treated and resourced as such — the cost and latency of understanding a paragraph should not resemble the cost of building an interface. |
+| PC-4 | The product must remain usable when any single supporting capability is unavailable. A user who cannot look up site options, or cannot have their description interpreted, must still be able to complete a specification by answering questions. |
 
 ---
 
@@ -490,8 +492,8 @@ Described as entities, not as a schema for any particular store.
 |---|---|
 | SR-1 | The component performs **no mutating operation** on the target environment. All state change remains behind the build agent's approval gate. |
 | SR-2 | It operates as the authenticated user and inherits their permissions. It must never widen access. |
-| SR-3 | Embedded in a host application it must inherit the existing session; opened independently it must offer a clear authentication path rather than failing silently. |
-| SR-4 | **Records must be scoped to the environment the user is working in**, and that environment must be determined consistently on write and on read. See §9 — this is the single most likely defect in implementation. |
+| SR-3 | However the user arrives at the product, they must never be blocked without being told why or offered a way through. Signing in must never cost them work already entered. |
+| SR-4 | A user must only see the specifications belonging to the environment they are working in, and must always see all of them. See §9 — this is the most commonly broken requirement in this product. |
 | SR-5 | An authorisation failure must be reported in terms the user can act on, and the interrupted action retried after authentication rather than lost. |
 | SR-6 | All requests are subject to the product's existing audit trail. |
 | SR-7 | The component handles no patient data. Anything captured is configuration intent; any sample data used for illustration must be synthetic. |
@@ -505,25 +507,28 @@ Described as entities, not as a schema for any particular store.
 | First render | Under 1 second |
 | Environment option lookup | Under 2 seconds first use, immediate thereafter |
 | Free-text interpretation | Under 30 seconds, with continuous visible progress; it must never appear frozen |
-| Specification generation | Immediate; no server round trip required |
+| Specification generation | Immediate |
 | Worklist search | Under 1 second at a realistic history size |
 | Accessibility | Keyboard-navigable; controls labelled; state conveyed by more than colour alone |
 | Resilience | No single failure — save, option lookup, interpretation — may prevent the user completing and handing over a specification |
 
 ---
 
-## 9. Implementation hazards
+## 9. Failure modes the product must not exhibit
 
-These are not hypothetical. Each was encountered building the reference implementation and each produced a defect that looked like something else.
+These are stated as product requirements because each one was observed, and
+each presented to the user as something other than its cause. None of them
+prescribes a solution — how they are prevented is a build decision. Each must
+have a test that would catch it.
 
-| Hazard | Consequence | Requirement |
-|---|---|---|
-| **Two meanings of "environment"** | The environment the *user is working in* is not the environment an *interface targets*; the latter is an answer the user can type. Filing records under the answer makes them vanish from the owner's worklist the moment it is edited. | Record identity uses the working environment. The target is specification content. |
-| **Execution context ≠ user context** | Where shared code runs in one environment and serves users in many, reading the execution context on query while storing the user's context on write means the two never match, and the worklist appears permanently empty while data is stored correctly. | Resolve the user's environment from the request, identically on read and write. |
-| **Asset caching** | If the page document is revalidated but its scripts are not versioned, a current page can load a stale script. Controls render but do nothing — no error, no request, no clue. | Version client assets so a document and its scripts are always a matched set. |
-| **Seeded defaults leaking from hidden branches** | Defaults initialised for every question, including inapplicable ones, will surface in output unless gated by the same applicability rule the user saw. | Serialise only what was applicable. |
-| **Client-side filtering of an unbounded list** | Works in demonstration, degrades in production. | Filter and search at the data source. |
-| **Optimistic UI without rollback** | A favourite that silently fails to persist teaches users not to trust the tool. | Reflect intent immediately; reconcile with the server; roll back visibly on failure. |
+| The user sees | Why it is unacceptable |
+|---|---|
+| A saved specification does not appear in the worklist, although saving reported success | The user concludes the product loses work. Trust does not recover from this, and the user cannot diagnose it. |
+| Work saved while in one working environment cannot be found from another, or disappears after an unrelated answer is edited | Where a specification is filed must depend on who saved it and where they were working — never on an answer the user is free to change. |
+| A control is visible but does nothing when clicked — no message, no progress, no error | The user has no next action. The product appears broken in a way they cannot report precisely. |
+| The handed-over specification contains settings for a path the user never chose | The build agent acts on a decision the user never made. This is the exact failure the product exists to prevent, reintroduced by the product itself. |
+| The worklist is fast in a demonstration and slow once real history accumulates | Search must stay usable at the size a working team reaches, not the size a demonstration reaches. |
+| A star, a save, or any other confirmed action silently fails to persist | Any action the product confirms must be true afterwards. If it cannot be, the failure must be visible at the moment it happens. |
 
 ---
 
