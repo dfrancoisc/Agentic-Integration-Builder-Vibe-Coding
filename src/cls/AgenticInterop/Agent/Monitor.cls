@@ -39,6 +39,15 @@ Property TokenBudget As %Integer [ InitialExpression = 50000 ];
 
 Property TotalTokens As %Integer [ InitialExpression = 0 ];
 
+/// Input (prompt) tokens summed across iterations. On this project this
+/// number is dominated by the agent's tool + skill catalog, which is
+/// re-sent as context on every LLM round — so it is the actionable half
+/// for the Bedrock throughput problem: trim bound tools, cut this number.
+Property InputTokens As %Integer [ InitialExpression = 0 ];
+
+/// Output (completion) tokens summed across iterations.
+Property OutputTokens As %Integer [ InitialExpression = 0 ];
+
 Property IterationCount As %Integer [ InitialExpression = 0 ];
 
 /// Last tool call seen — informational. The chat envelope can surface
@@ -102,9 +111,26 @@ Method OnIterationComplete(iteration As %Integer, response As %AI.LLM.Response, 
     Try {
         Set u = response.Usage
         If $isobject(u) {
+            ; Capture the input/output split first; providers vary in
+            ; shape (Bedrock: input_tokens/output_tokens; Anthropic-direct
+            ; also exposes total_tokens). Each iteration is a distinct
+            ; billed API call that re-sends the growing context, so summing
+            ; across iterations is the true billed cost, not a double-count.
+            ; Verified shape on this instance (Bedrock via the %AI bridge):
+            ; {"prompt_tokens","completion_tokens","total_tokens",
+            ;  "cache_creation_tokens","cache_read_tokens"} — OpenAI-style
+            ; names, NOT input_tokens/output_tokens. Read those first and
+            ; fall back to the Anthropic-style names for other providers.
+            Set inTok = 0, outTok = 0
+            Try { Set inTok = +u."prompt_tokens" } Catch  {}
+            If 'inTok { Try { Set inTok = +u."input_tokens" } Catch  {} }
+            Try { Set outTok = +u."completion_tokens" } Catch  {}
+            If 'outTok { Try { Set outTok = +u."output_tokens" } Catch  {} }
+            Set ..InputTokens = ..InputTokens + inTok
+            Set ..OutputTokens = ..OutputTokens + outTok
             Set t = 0
             Try { Set t = +u."total_tokens" } Catch  {}
-            If 't { Try { Set t = (+u."input_tokens") + (+u."output_tokens") } Catch  {} }
+            If 't { Set t = inTok + outTok }
             Set ..TotalTokens = ..TotalTokens + t
         }
     } Catch  {}

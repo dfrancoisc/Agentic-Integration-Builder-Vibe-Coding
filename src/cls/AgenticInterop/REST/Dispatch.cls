@@ -124,6 +124,9 @@ XData UrlMap [ XMLNamespace = "http://www.intersystems.com/urlmap" ]
     <Route Url="/audit/log"                     Method="GET"    Call="AuditList" />
     <Route Url="/audit/kinds"                   Method="GET"    Call="AuditKinds" />
 
+    <!-- Tokens log: per-prompt token + tool spend, one row per chat turn. -->
+    <Route Url="/tokens"                        Method="GET"    Call="TokenUsageList" />
+
     <!-- Transformation Catalog: read-only inventory of shipped HS.*
          transformation classes organized by pipeline direction. -->
     <Route Url="/transforms/inventory"          Method="GET"    Call="TransformInventory" />
@@ -967,6 +970,11 @@ ClassMethod CatalogSearch() As %Status
 ClassMethod AuditList() As %Status
 {
     Quit ##class(AgenticInterop.Editor.AuditService).List(%response)
+}
+
+ClassMethod TokenUsageList() As %Status
+{
+    Quit ##class(AgenticInterop.Editor.TokenUsageService).List(%response)
 }
 
 ClassMethod AuditKinds() As %Status

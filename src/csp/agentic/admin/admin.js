@@ -12,7 +12,7 @@
 
 const API = '/api/agentic';
 const ADMIN_VERSION = '2026.05.11.3';
-const TABS = ['agents', 'mcps', 'toolsets', 'tools', 'skills', 'connections', 'chatbots', 'catalogs', 'transforms', 'audit'];
+const TABS = ['agents', 'mcps', 'toolsets', 'tools', 'skills', 'connections', 'chatbots', 'catalogs', 'transforms', 'tokens', 'audit'];
 const AUTH_KEY = 'AGENTIC_AUTH';
 
 // [CSP cookie fix] Force credentials:'omit' on every fetch from this
@@ -250,11 +250,11 @@ function setTab(tab) {
     // Tabs without a per-row detail pane (audit, catalogs) get the
     // whole viewport — body[data-layout=full] hides #detail-panel
     // and lets #list-panel flex to 100% width.
-    document.body.dataset.layout = (tab === 'audit' || tab === 'catalogs' || tab === 'transforms') ? 'full' : 'split';
+    document.body.dataset.layout = (tab === 'audit' || tab === 'tokens' || tab === 'catalogs' || tab === 'transforms') ? 'full' : 'split';
     $('list-title').textContent = ({
-        agents: 'Agents', mcps: 'MCPs', toolsets: 'ToolSets', tools: 'Tools', skills: 'Skills', connections: 'Connections', chatbots: 'Chatbots', catalogs: 'Catalogs', transforms: 'Transforms', audit: 'Audit'
+        agents: 'Agents', mcps: 'MCPs', toolsets: 'ToolSets', tools: 'Tools', skills: 'Skills', connections: 'Connections', chatbots: 'Chatbots', catalogs: 'Catalogs', transforms: 'Transforms', tokens: 'Tokens', audit: 'Audit'
     })[tab];
-    $('btn-new').style.display = (tab === 'tools' || tab === 'skills' || tab === 'catalogs' || tab === 'audit' || tab === 'transforms') ? 'none' : 'inline-block';
+    $('btn-new').style.display = (tab === 'tools' || tab === 'skills' || tab === 'catalogs' || tab === 'audit' || tab === 'tokens' || tab === 'transforms') ? 'none' : 'inline-block';
     $('detail-panel').hidden = true;
     loadList();
 }
@@ -305,6 +305,8 @@ async function loadList() {
             await loadTransformInventory();
         } else if (state.tab === 'audit') {
             await loadAuditList();
+        } else if (state.tab === 'tokens') {
+            await loadTokenList();
         } else if (state.tab === 'tools') {
             // Tools view: flatten across all toolsets that the registry knows
             const data = await get('/registry/toolsets');
@@ -1963,6 +1965,169 @@ function renderAuditList(rows, kinds) {
         auditState.limit = Math.max(1, Math.min(1000, Number($('f-audit-limit').value) || 100));
         loadAuditList();
     });
+}
+
+// Tokens log. One row per chat prompt: how many tokens it spent and which
+// tools it called. Populated by ChatService at the end of every turn. The
+// header line sums the whole filtered set (not just the shown page), so it
+// answers "how much has this cost" at a glance. On this project InputTokens
+// dwarfs OutputTokens because the agent's tool + skill catalog is re-sent as
+// context every round — the log is the evidence for trimming bound tools.
+const tokenState = { q: '', mine: false, toolsOnly: false, channel: '', ns: '', limit: 100 };
+
+function fmtInt(n) {
+    n = Number(n) || 0;
+    return n.toLocaleString('en-US');
+}
+
+async function loadTokenList() {
+    const list = $('list');
+    list.innerHTML = '<div class="empty-state">Loading token log…</div>';
+    try {
+        const p = new URLSearchParams();
+        p.set('limit', String(tokenState.limit));
+        if (tokenState.q) p.set('q', tokenState.q);
+        if (tokenState.mine) p.set('mine', '1');
+        if (tokenState.toolsOnly) p.set('toolsOnly', 'true');
+        if (tokenState.channel) p.set('channel', tokenState.channel);
+        if (tokenState.ns === 'all') p.set('ns', 'all');
+        const data = await get('/tokens?' + p.toString());
+        renderTokenList(data.rows || [], data.summary || {}, data.namespace || '');
+    } catch (e) {
+        list.innerHTML = `<div class="empty-state">Failed: ${escapeHtml(e.message)}</div>`;
+    }
+}
+
+function renderTokenList(rows, summary, ns) {
+    const list = $('list');
+    list.innerHTML = '';
+    const wrap = document.createElement('div');
+    wrap.className = 'audit-wrap';
+    wrap.innerHTML = `
+        <div class="audit-controls">
+            <div class="audit-control" style="flex:1 1 220px;">
+                <label>Search prompt / tool / user</label>
+                <input id="f-tok-q" type="text" value="${escapeAttr(tokenState.q)}" placeholder="e.g. production, CreateDTL, jsmith">
+            </div>
+            <div class="audit-control">
+                <label>Channel</label>
+                <select id="f-tok-channel">
+                    <option value="" ${tokenState.channel === '' ? 'selected' : ''}>all</option>
+                    <option value="stream" ${tokenState.channel === 'stream' ? 'selected' : ''}>stream</option>
+                    <option value="chat" ${tokenState.channel === 'chat' ? 'selected' : ''}>chat</option>
+                </select>
+            </div>
+            <div class="audit-control">
+                <label>With tools</label>
+                <select id="f-tok-tools">
+                    <option value="false" ${!tokenState.toolsOnly ? 'selected' : ''}>all prompts</option>
+                    <option value="true"  ${tokenState.toolsOnly ? 'selected' : ''}>tool calls only</option>
+                </select>
+            </div>
+            <div class="audit-control">
+                <label>Scope</label>
+                <select id="f-tok-ns">
+                    <option value="" ${tokenState.ns !== 'all' ? 'selected' : ''}>this namespace</option>
+                    <option value="all" ${tokenState.ns === 'all' ? 'selected' : ''}>all namespaces</option>
+                </select>
+            </div>
+            <div class="audit-control">
+                <label>Mine only</label>
+                <select id="f-tok-mine">
+                    <option value="false" ${!tokenState.mine ? 'selected' : ''}>no</option>
+                    <option value="true"  ${tokenState.mine ? 'selected' : ''}>yes</option>
+                </select>
+            </div>
+            <div class="audit-control">
+                <label>Limit</label>
+                <input id="f-tok-limit" type="text" value="${tokenState.limit}">
+            </div>
+            <div class="audit-control audit-actions">
+                <button id="f-tok-refresh" class="primary" type="button">Refresh</button>
+            </div>
+        </div>
+        <div class="audit-controls" style="border:none;padding-top:0;">
+            <span class="audit-summary">
+                ${fmtInt(summary.prompts)} prompt(s) in ${escapeHtml(tokenState.ns === 'all' ? 'all namespaces' : (ns || '—'))}
+                &nbsp;·&nbsp; <strong>${fmtInt(summary.totalTokens)}</strong> total tokens
+                &nbsp;·&nbsp; ${fmtInt(summary.inputTokens)} in / ${fmtInt(summary.outputTokens)} out
+                &nbsp;·&nbsp; ${fmtInt(summary.toolCalls)} tool call(s)
+            </span>
+        </div>
+        <table class="audit-table">
+            <thead>
+                <tr>
+                    <th class="t-when">When</th>
+                    <th class="t-user">User</th>
+                    <th class="t-kind">Agent</th>
+                    <th class="t-path">Prompt</th>
+                    <th class="t-status">Tools</th>
+                    <th class="t-ms" style="text-align:right;">In</th>
+                    <th class="t-ms" style="text-align:right;">Out</th>
+                    <th class="t-ms" style="text-align:right;">Total</th>
+                    <th class="t-ms" style="text-align:right;">Iters</th>
+                    <th class="t-ms" style="text-align:right;">Latency</th>
+                </tr>
+            </thead>
+            <tbody id="tok-body"></tbody>
+        </table>
+    `;
+    list.appendChild(wrap);
+    const tbody = wrap.querySelector('#tok-body');
+    if (!rows.length) {
+        tbody.innerHTML = '<tr><td colspan="10" class="audit-empty">No prompts logged yet. Every chat turn records one row here.</td></tr>';
+    }
+    for (const r of rows) {
+        const agentShort = (r.agentClass || '').split('.').pop() || '—';
+        const isErr = !r.ok;
+        const tr = document.createElement('tr');
+        tr.className = 'audit-row' + (isErr ? ' audit-error' : '');
+        tr.innerHTML = `
+            <td class="t-when">${escapeHtml(r.created || '')}</td>
+            <td>${escapeHtml(r.username || '?')}</td>
+            <td>${escapeHtml(agentShort)}</td>
+            <td class="t-path">${escapeHtml((r.promptSnippet || '').slice(0, 80))}${(r.promptLength || 0) > 80 ? '…' : ''}</td>
+            <td>${r.toolCount ? `<span class="badge user">${r.toolCount}</span>` : '<span class="dim">0</span>'}</td>
+            <td class="t-ms" style="text-align:right;">${fmtInt(r.inputTokens)}</td>
+            <td class="t-ms" style="text-align:right;">${fmtInt(r.outputTokens)}</td>
+            <td class="t-ms" style="text-align:right;"><strong>${fmtInt(r.totalTokens)}</strong></td>
+            <td class="t-ms" style="text-align:right;">${r.iterations || 0}</td>
+            <td class="t-ms" style="text-align:right;">${r.latencyMs || 0}ms</td>
+        `;
+        tbody.appendChild(tr);
+        const detailTr = document.createElement('tr');
+        detailTr.className = 'audit-detail';
+        detailTr.hidden = true;
+        const tools = (r.toolTrace || '').split(',').filter(Boolean)
+            .map(t => `<span class="badge user">${escapeHtml(t.split('.').pop())}</span>`).join(' ');
+        detailTr.innerHTML = `
+            <td colspan="10">
+                <div class="audit-detail-body">
+                    <span><span class="dim">model:</span> ${escapeHtml(r.model || '—')}</span>
+                    <span><span class="dim">connection:</span> ${escapeHtml(r.connection || '—')}</span>
+                    <span><span class="dim">channel:</span> ${escapeHtml(r.channel || '—')}</span>
+                    <span><span class="dim">namespace:</span> ${escapeHtml(r.namespace || '—')}</span>
+                    <span><span class="dim">session:</span> ${escapeHtml(r.sessionId || '—')}</span>
+                    <span><span class="dim">prompt chars:</span> ${fmtInt(r.promptLength)}</span>
+                    ${tools ? `<div style="margin-top:6px;"><span class="dim">tools in order:</span> ${tools}</div>` : ''}
+                    ${r.promptSnippet ? `<pre class="dryrun-output" style="margin:6px 0 0 0;">${escapeHtml(r.promptSnippet)}</pre>` : ''}
+                </div>
+            </td>
+        `;
+        tbody.appendChild(detailTr);
+        tr.style.cursor = 'pointer';
+        tr.addEventListener('click', () => { detailTr.hidden = !detailTr.hidden; });
+    }
+    $('f-tok-refresh').addEventListener('click', () => {
+        tokenState.q = $('f-tok-q').value.trim();
+        tokenState.channel = $('f-tok-channel').value;
+        tokenState.toolsOnly = ($('f-tok-tools').value === 'true');
+        tokenState.ns = $('f-tok-ns').value;
+        tokenState.mine = ($('f-tok-mine').value === 'true');
+        tokenState.limit = Math.max(1, Math.min(2000, Number($('f-tok-limit').value) || 100));
+        loadTokenList();
+    });
+    $('f-tok-q').addEventListener('keydown', e => { if (e.key === 'Enter') $('f-tok-refresh').click(); });
 }
 
 async function renderToolList() {

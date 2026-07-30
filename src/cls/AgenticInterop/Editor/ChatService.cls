@@ -163,11 +163,53 @@ ClassMethod Chat(pResponse As %CSP.Response, pBodyStream) As %Status
             Set out.agentClass = agentClass
             Set out.connection = $S(connectionName="":..ResolvedDefaultName(),1:connectionName)
             Set out.namespace = $namespace
+            Set out.inputTokens = monitor.InputTokens
+            Set out.outputTokens = monitor.OutputTokens
+            ; Persist this prompt's token + tool spend. Best-effort: Record
+            ; swallows its own errors, and we guard the call so a logging
+            ; fault can never turn a good turn into a failed one.
+            Try {
+                Do ##class(AgenticInterop.Data.TokenUsage).Record({
+                    "channel":      "chat",
+                    "namespace":    (##class(AgenticInterop.Editor.SpecResponseService).RequestNamespace()),
+                    "sessionId":    ($get(%agenticChatSessionId)),
+                    "agentClass":   (agentClass),
+                    "connection":   (out.connection),
+                    "model":        (agent.Model),
+                    "prompt":       (message),
+                    "iterations":   (monitor.IterationCount),
+                    "inputTokens":  (monitor.InputTokens),
+                    "outputTokens": (monitor.OutputTokens),
+                    "totalTokens":  (monitor.TotalTokens),
+                    "toolTrace":    (monitor.ToolCallTrace),
+                    "latencyMs":    (out.latencyMs),
+                    "ok":           1
+                })
+            } Catch  {}
         }
     } Catch ex {
         Set out.ok = 0
         Set out.error = $extract(ex.DisplayString(), 1, 1000)
         Set out.stage = stage
+        ; Record the failed turn too — a prompt that errored still consumed
+        ; whatever the monitor counted before it threw, and the tool trace
+        ; up to the failure is diagnostic.
+        Try {
+            Do ##class(AgenticInterop.Data.TokenUsage).Record({
+                "channel":      "chat",
+                "namespace":    (##class(AgenticInterop.Editor.SpecResponseService).RequestNamespace()),
+                "sessionId":    ($get(%agenticChatSessionId)),
+                "agentClass":   (agentClass),
+                "prompt":       (message),
+                "iterations":   ($select($isobject($get(monitor)):monitor.IterationCount, 1:0)),
+                "inputTokens":  ($select($isobject($get(monitor)):monitor.InputTokens, 1:0)),
+                "outputTokens": ($select($isobject($get(monitor)):monitor.OutputTokens, 1:0)),
+                "totalTokens":  ($select($isobject($get(monitor)):monitor.TotalTokens, 1:0)),
+                "toolTrace":    ($select($isobject($get(monitor)):monitor.ToolCallTrace, 1:"")),
+                "ok":           0,
+                "error":        (out.error)
+            })
+        } Catch  {}
     }
     ; Clean up LiveFeed session so Observer shows completion
     If $get(%agenticChatSessionId) '= "" {
@@ -703,9 +745,47 @@ ClassMethod ChatStream(pResponse As %CSP.Response, pBodyStream) As %Status
         // post-hoc EmitToolEventsFromSession — the Monitor emits tool
         // lifecycle events in real-time during the Run() loop.
         Set done.toolTrace = monitor.ToolCallTrace
+        Set done.inputTokens = monitor.InputTokens
+        Set done.outputTokens = monitor.OutputTokens
         Do ..SSEEvent("done", done)
+        ; Persist this prompt's token + tool spend (streaming path). Same
+        ; best-effort contract as the non-streaming endpoint.
+        Try {
+            Do ##class(AgenticInterop.Data.TokenUsage).Record({
+                "channel":      "stream",
+                "namespace":    (##class(AgenticInterop.Editor.SpecResponseService).RequestNamespace()),
+                "sessionId":    ($get(%agenticChatSessionId)),
+                "agentClass":   (agentClass),
+                "connection":   (effectiveName),
+                "model":        (agent.Model),
+                "prompt":       (message),
+                "iterations":   (monitor.IterationCount),
+                "inputTokens":  (monitor.InputTokens),
+                "outputTokens": (monitor.OutputTokens),
+                "totalTokens":  (monitor.TotalTokens),
+                "toolTrace":    (monitor.ToolCallTrace),
+                "latencyMs":    (done.latencyMs),
+                "ok":           1
+            })
+        } Catch  {}
     } Catch ex {
         Do ..SSEEvent("error", {"error":($extract(ex.DisplayString(),1,1000)),"stage":(stage)})
+        Try {
+            Do ##class(AgenticInterop.Data.TokenUsage).Record({
+                "channel":      "stream",
+                "namespace":    (##class(AgenticInterop.Editor.SpecResponseService).RequestNamespace()),
+                "sessionId":    ($get(%agenticChatSessionId)),
+                "agentClass":   ($get(agentClass)),
+                "prompt":       ($get(message)),
+                "iterations":   ($select($isobject($get(monitor)):monitor.IterationCount, 1:0)),
+                "inputTokens":  ($select($isobject($get(monitor)):monitor.InputTokens, 1:0)),
+                "outputTokens": ($select($isobject($get(monitor)):monitor.OutputTokens, 1:0)),
+                "totalTokens":  ($select($isobject($get(monitor)):monitor.TotalTokens, 1:0)),
+                "toolTrace":    ($select($isobject($get(monitor)):monitor.ToolCallTrace, 1:"")),
+                "ok":           0,
+                "error":        ($extract(ex.DisplayString(),1,1000))
+            })
+        } Catch  {}
     }
     ; Mark session as finished in the LiveFeed so the Observer shows
     ; the completed state and stops polling.
