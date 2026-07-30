@@ -2046,12 +2046,16 @@ function renderTokenList(rows, summary, ns) {
                 <button id="f-tok-refresh" class="primary" type="button">Refresh</button>
             </div>
         </div>
-        <div class="audit-controls" style="border:none;padding-top:0;">
+        <div class="audit-controls" style="border:none;padding-top:0;flex-direction:column;align-items:flex-start;gap:2px;">
             <span class="audit-summary">
                 ${fmtInt(summary.prompts)} prompt(s) in ${escapeHtml(tokenState.ns === 'all' ? 'all namespaces' : (ns || '—'))}
                 &nbsp;·&nbsp; <strong>${fmtInt(summary.totalTokens)}</strong> total tokens
                 &nbsp;·&nbsp; ${fmtInt(summary.inputTokens)} in / ${fmtInt(summary.outputTokens)} out
                 &nbsp;·&nbsp; ${fmtInt(summary.toolCalls)} tool call(s)
+            </span>
+            <span class="audit-summary dim" style="font-weight:normal;">
+                A tilde (~) marks the true cost across all model rounds: a tool turn re-sends the whole context each round,
+                so it bills several times the final round. Rounds = model calls; the final round's exact figure is in each row's detail.
             </span>
         </div>
         <table class="audit-table">
@@ -2065,7 +2069,7 @@ function renderTokenList(rows, summary, ns) {
                     <th class="t-ms" style="text-align:right;">In</th>
                     <th class="t-ms" style="text-align:right;">Out</th>
                     <th class="t-ms" style="text-align:right;">Total</th>
-                    <th class="t-ms" style="text-align:right;">Iters</th>
+                    <th class="t-ms" style="text-align:right;">Rounds</th>
                     <th class="t-ms" style="text-align:right;">Latency</th>
                 </tr>
             </thead>
@@ -2080,6 +2084,10 @@ function renderTokenList(rows, summary, ns) {
     for (const r of rows) {
         const agentShort = (r.agentClass || '').split('.').pop() || '—';
         const isErr = !r.ok;
+        const est = r.estimated ? '~' : '';
+        const totalCell = est
+            ? `<span title="Estimated true cost across all ${r.rounds} rounds. Final round alone: ${fmtInt(r.finalRoundTokens)}.">~${fmtInt(r.totalTokens)}</span>`
+            : fmtInt(r.totalTokens);
         const tr = document.createElement('tr');
         tr.className = 'audit-row' + (isErr ? ' audit-error' : '');
         tr.innerHTML = `
@@ -2088,10 +2096,10 @@ function renderTokenList(rows, summary, ns) {
             <td>${escapeHtml(agentShort)}</td>
             <td class="t-path">${escapeHtml((r.promptSnippet || '').slice(0, 80))}${(r.promptLength || 0) > 80 ? '…' : ''}</td>
             <td>${r.toolCount ? `<span class="badge user">${r.toolCount}</span>` : '<span class="dim">0</span>'}</td>
-            <td class="t-ms" style="text-align:right;">${fmtInt(r.inputTokens)}</td>
-            <td class="t-ms" style="text-align:right;">${fmtInt(r.outputTokens)}</td>
-            <td class="t-ms" style="text-align:right;"><strong>${fmtInt(r.totalTokens)}</strong></td>
-            <td class="t-ms" style="text-align:right;">${r.iterations || 0}</td>
+            <td class="t-ms" style="text-align:right;">${est}${fmtInt(r.inputTokens)}</td>
+            <td class="t-ms" style="text-align:right;">${est}${fmtInt(r.outputTokens)}</td>
+            <td class="t-ms" style="text-align:right;"><strong>${totalCell}</strong></td>
+            <td class="t-ms" style="text-align:right;">${r.rounds || 1}</td>
             <td class="t-ms" style="text-align:right;">${r.latencyMs || 0}ms</td>
         `;
         tbody.appendChild(tr);
@@ -2100,9 +2108,13 @@ function renderTokenList(rows, summary, ns) {
         detailTr.hidden = true;
         const tools = (r.toolTrace || '').split(',').filter(Boolean)
             .map(t => `<span class="badge user">${escapeHtml(t.split('.').pop())}</span>`).join(' ');
+        const costLine = r.estimated
+            ? `<span><span class="dim">cost:</span> ~${fmtInt(r.totalTokens)} tokens across ${r.rounds} rounds (estimated) &nbsp;·&nbsp; final round alone billed ${fmtInt(r.finalRoundTokens)} exactly</span>`
+            : `<span><span class="dim">cost:</span> ${fmtInt(r.totalTokens)} tokens, single round (exact)</span>`;
         detailTr.innerHTML = `
             <td colspan="10">
                 <div class="audit-detail-body">
+                    ${costLine}
                     <span><span class="dim">model:</span> ${escapeHtml(r.model || '—')}</span>
                     <span><span class="dim">connection:</span> ${escapeHtml(r.connection || '—')}</span>
                     <span><span class="dim">channel:</span> ${escapeHtml(r.channel || '—')}</span>

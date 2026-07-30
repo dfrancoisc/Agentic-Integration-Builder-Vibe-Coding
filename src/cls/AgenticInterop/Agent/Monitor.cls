@@ -211,6 +211,92 @@ Method CaptureFromSession(session As %AI.Agent.Session)
     } Catch  {}
 }
 
+/// Chars-per-token used to size messages the transcript exposes but the
+/// provider bills as tokens. ~4 chars/token is the standard rule of thumb
+/// for English + JSON; the exact final-round anchor (below) corrects most
+/// of the residual error, so the precise value matters little.
+Parameter CHARSPERTOKEN = 4;
+
+/// Reconstruct the TRUE cumulative token cost of a turn from the session
+/// transcript, because the framework only ever exposes the FINAL round's
+/// usage (verified: agent.Run and agent.Chat both report one round's
+/// Usage even after an N-tool loop). Without this, a 6-tool build reports
+/// ~1/5 of what it actually billed.
+///
+/// Model. A turn is R model rounds, one per assistant message. Each round
+/// re-sends: (a) the tool/skill schemas, a fixed overhead S that is NOT in
+/// the transcript, plus (b) every message accumulated so far, which IS in
+/// the transcript. So a round's input tokens ~= S + rho * (chars of the
+/// messages before it), rho = 1/CHARSPERTOKEN.
+///
+/// Anchor. The final round's real prompt_tokens (T) is known exactly, and
+/// its message-prefix is the whole transcript (M chars). One equation,
+/// T = S + rho*M, pins S = T - rho*M — so S falls out as a measured number
+/// (it lands near the ~29k catalog cost on this project, which cross-checks
+/// against the ~36k no-tool floor). Cumulative input is then the sum of
+/// S + rho*prefix over every round; the fixed S, re-paid each round, is the
+/// dominant term and the whole reason the real cost dwarfs the final round.
+///
+/// Returns {rounds, estInput, estOutput, estTotal, estimated, schemaOverhead}.
+/// estimated=0 (and est*=final values) when there is only one round, when
+/// the anchor is missing, or when the transcript cannot be read — in those
+/// cases the caller should trust the exact final-round figures instead.
+ClassMethod ReconstructUsage(session As %AI.Agent.Session, finalPromptTok As %Integer, finalCompletionTok As %Integer) As %DynamicObject
+{
+    Set out = {"rounds": 1, "estInput": (+finalPromptTok), "estOutput": (+finalCompletionTok),
+               "estTotal": (+finalPromptTok + +finalCompletionTok), "estimated": 0, "schemaOverhead": 0}
+    Try {
+        If '$isobject(session) Quit
+        Set count = session.MessageCount()
+        If count < 1 Quit
+        Set rho = 1 / ..#CHARSPERTOKEN
+
+        ; Walk once: record each message's char size and cumulative prefix,
+        ; and collect the prefix-char total that precedes each assistant
+        ; message (that prefix is what the model was sent to produce it).
+        Set prefixChars = 0, rounds = 0, sumPrefix = 0, lastPrefix = 0
+        Set asstChars = 0    ; chars of assistant messages other than the last
+        Set lastAsstChars = 0
+        For i = 0:1:count-1 {
+            Set m = session.GetMessage(i)
+            If '$isobject(m) { Continue }
+            Set role = "" Try { Set role = m.role } Catch  {}
+            Set sz = 0 Try { Set sz = $length(m.%ToJSON()) } Catch  {}
+            If role = "assistant" {
+                Set rounds = rounds + 1
+                Set sumPrefix = sumPrefix + prefixChars   ; input prefix for THIS round
+                Set lastPrefix = prefixChars
+                Set asstChars = asstChars + lastAsstChars ; roll previous assistant into "non-last"
+                Set lastAsstChars = sz
+            }
+            Set prefixChars = prefixChars + sz
+        }
+
+        ; Nothing to reconstruct: single round, or no usable anchor.
+        If (rounds <= 1) || (+finalPromptTok <= 0) || (lastPrefix <= 0) Quit
+
+        ; S = fixed non-transcript overhead (tool schemas). Floor at 0; if the
+        ; message prefix alone would already exceed T, drop the fixed term and
+        ; scale rho so the anchor still holds exactly (rho = T / lastPrefix).
+        Set S = +finalPromptTok - (rho * lastPrefix)
+        If S < 0 { Set S = 0, rho = (+finalPromptTok) / lastPrefix }
+
+        ; Cumulative input = sum over rounds of (S + rho*prefix_r).
+        Set estInput = (rounds * S) + (rho * sumPrefix)
+        ; Output: last round exact, earlier assistant messages (tool-call
+        ; requests, usually small) estimated from their size.
+        Set estOutput = (+finalCompletionTok) + (rho * asstChars)
+
+        Set out.rounds = rounds
+        Set out.estInput = $normalize(estInput, 0)
+        Set out.estOutput = $normalize(estOutput, 0)
+        Set out.estTotal = $normalize(estInput + estOutput, 0)
+        Set out.schemaOverhead = $normalize(S, 0)
+        Set out.estimated = 1
+    } Catch  {}
+    Quit out
+}
+
 /// Scan session messages from LastScanIdx onward. For assistant messages,
 /// extract tool_call_id → name mappings and emit tool_start events. For
 /// tool messages, emit tool_result events with resolved names.

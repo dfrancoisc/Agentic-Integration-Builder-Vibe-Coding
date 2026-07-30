@@ -163,8 +163,19 @@ ClassMethod Chat(pResponse As %CSP.Response, pBodyStream) As %Status
             Set out.agentClass = agentClass
             Set out.connection = $S(connectionName="":..ResolvedDefaultName(),1:connectionName)
             Set out.namespace = $namespace
-            Set out.inputTokens = monitor.InputTokens
-            Set out.outputTokens = monitor.OutputTokens
+            ; Reconstruct the TRUE cumulative cost from the transcript — the
+            ; framework only exposes the final round's usage, so anchor on the
+            ; final response's exact prompt/completion and sum every round.
+            Set fpTok = 0, fcTok = 0
+            Try { Set fpTok = +response.Usage."prompt_tokens" } Catch  {}
+            Try { Set fcTok = +response.Usage."completion_tokens" } Catch  {}
+            Set recon = ##class(AgenticInterop.Agent.Monitor).ReconstructUsage(session, fpTok, fcTok)
+            Set out.inputTokens = recon.estInput
+            Set out.outputTokens = recon.estOutput
+            Set out.totalTokens = recon.estTotal
+            Set out.rounds = recon.rounds
+            Set out.estimated = recon.estimated
+            Set out.finalRoundTokens = fpTok + fcTok
             ; Persist this prompt's token + tool spend. Best-effort: Record
             ; swallows its own errors, and we guard the call so a logging
             ; fault can never turn a good turn into a failed one.
@@ -177,10 +188,13 @@ ClassMethod Chat(pResponse As %CSP.Response, pBodyStream) As %Status
                     "connection":   (out.connection),
                     "model":        (agent.Model),
                     "prompt":       (message),
-                    "iterations":   (monitor.IterationCount),
-                    "inputTokens":  (monitor.InputTokens),
-                    "outputTokens": (monitor.OutputTokens),
-                    "totalTokens":  (monitor.TotalTokens),
+                    "iterations":   (recon.rounds),
+                    "inputTokens":  (recon.estInput),
+                    "outputTokens": (recon.estOutput),
+                    "totalTokens":  (recon.estTotal),
+                    "rounds":       (recon.rounds),
+                    "estimated":    (recon.estimated),
+                    "finalRoundTokens": (fpTok + fcTok),
                     "toolTrace":    (monitor.ToolCallTrace),
                     "latencyMs":    (out.latencyMs),
                     "ok":           1
@@ -745,8 +759,18 @@ ClassMethod ChatStream(pResponse As %CSP.Response, pBodyStream) As %Status
         // post-hoc EmitToolEventsFromSession — the Monitor emits tool
         // lifecycle events in real-time during the Run() loop.
         Set done.toolTrace = monitor.ToolCallTrace
-        Set done.inputTokens = monitor.InputTokens
-        Set done.outputTokens = monitor.OutputTokens
+        ; Reconstruct true cumulative cost from the transcript (final round's
+        ; exact usage is the anchor; every earlier round is added back).
+        Set fpTok = 0, fcTok = 0
+        Try { Set fpTok = +response.Usage."prompt_tokens" } Catch  {}
+        Try { Set fcTok = +response.Usage."completion_tokens" } Catch  {}
+        Set recon = ##class(AgenticInterop.Agent.Monitor).ReconstructUsage(session, fpTok, fcTok)
+        Set done.inputTokens = recon.estInput
+        Set done.outputTokens = recon.estOutput
+        Set done.totalTokens = recon.estTotal
+        Set done.rounds = recon.rounds
+        Set done.estimated = recon.estimated
+        Set done.finalRoundTokens = fpTok + fcTok
         Do ..SSEEvent("done", done)
         ; Persist this prompt's token + tool spend (streaming path). Same
         ; best-effort contract as the non-streaming endpoint.
@@ -759,10 +783,13 @@ ClassMethod ChatStream(pResponse As %CSP.Response, pBodyStream) As %Status
                 "connection":   (effectiveName),
                 "model":        (agent.Model),
                 "prompt":       (message),
-                "iterations":   (monitor.IterationCount),
-                "inputTokens":  (monitor.InputTokens),
-                "outputTokens": (monitor.OutputTokens),
-                "totalTokens":  (monitor.TotalTokens),
+                "iterations":   (recon.rounds),
+                "inputTokens":  (recon.estInput),
+                "outputTokens": (recon.estOutput),
+                "totalTokens":  (recon.estTotal),
+                "rounds":       (recon.rounds),
+                "estimated":    (recon.estimated),
+                "finalRoundTokens": (fpTok + fcTok),
                 "toolTrace":    (monitor.ToolCallTrace),
                 "latencyMs":    (done.latencyMs),
                 "ok":           1

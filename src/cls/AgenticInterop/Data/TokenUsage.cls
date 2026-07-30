@@ -56,14 +56,35 @@ Property PromptLength As %Integer [ InitialExpression = 0 ];
 /// How many LLM rounds the turn took (1 = no tools; more = tool loop).
 Property Iterations As %Integer [ InitialExpression = 0 ];
 
-/// Prompt (input) tokens summed across iterations — the tool-catalog cost.
+/// Input (prompt) tokens for the WHOLE turn. When the turn ran more than
+/// one model round (Estimated=1) this is the reconstructed cumulative cost
+/// across every round, not the final round alone — see Monitor.ReconstructUsage.
 Property InputTokens As %Integer [ InitialExpression = 0 ];
 
-/// Completion (output) tokens summed across iterations.
+/// Output (completion) tokens for the whole turn (cumulative when Estimated=1).
 Property OutputTokens As %Integer [ InitialExpression = 0 ];
 
-/// Total billed tokens for this prompt.
+/// Total billed tokens for this prompt (cumulative when Estimated=1). This is
+/// the headline number: what the prompt actually cost the provider.
 Property TotalTokens As %Integer [ InitialExpression = 0 ];
+
+/// How many model rounds the turn took. The framework runs the whole tool
+/// loop inside one call and only reports the final round's usage, so a
+/// multi-tool turn is many rounds even though the framework's iteration
+/// counter says 1. Derived from the transcript (one round per assistant
+/// message). This is the multiplier behind the real cost.
+Property Rounds As %Integer [ InitialExpression = 1 ];
+
+/// 1 when InputTokens/OutputTokens/TotalTokens are a multi-round
+/// reconstruction (anchored to the exact final round, but an estimate for
+/// the earlier rounds). 0 when the turn was a single round and the numbers
+/// are the provider's exact figures.
+Property Estimated As %Boolean [ InitialExpression = 0 ];
+
+/// The provider's EXACT usage for the final round only — prompt + completion.
+/// Kept for transparency: it is the one number the framework reports directly,
+/// and equals TotalTokens when Estimated=0.
+Property FinalRoundTokens As %Integer [ InitialExpression = 0 ];
 
 /// Comma-separated tool names in fire order, exactly as the Monitor saw
 /// them. Empty when the turn called no tools.
@@ -113,6 +134,9 @@ ClassMethod Record(pProps As %DynamicObject) As %String
         Set o.InputTokens  = +$classmethod(util, "DObj", pProps, "inputTokens", 0)
         Set o.OutputTokens = +$classmethod(util, "DObj", pProps, "outputTokens", 0)
         Set o.TotalTokens  = +$classmethod(util, "DObj", pProps, "totalTokens", 0)
+        Set o.Rounds       = +$classmethod(util, "DObj", pProps, "rounds", 1)
+        Set o.Estimated    = +$classmethod(util, "DObj", pProps, "estimated", 0)
+        Set o.FinalRoundTokens = +$classmethod(util, "DObj", pProps, "finalRoundTokens", 0)
         Set trace          = $classmethod(util, "DObj", pProps, "toolTrace")
         Set o.ToolTrace    = $extract(trace, 1, 4000)
         Set o.ToolCount    = $select(trace="":0, 1:$length(trace, ","))
@@ -147,6 +171,9 @@ ClassMethod Summary(pObj As AgenticInterop.Data.TokenUsage) As %DynamicObject
         "inputTokens":  (pObj.InputTokens),
         "outputTokens": (pObj.OutputTokens),
         "totalTokens":  (pObj.TotalTokens),
+        "rounds":       (pObj.Rounds),
+        "estimated":    (pObj.Estimated),
+        "finalRoundTokens": (pObj.FinalRoundTokens),
         "toolTrace":    (pObj.ToolTrace),
         "toolCount":    (pObj.ToolCount),
         "latencyMs":    (pObj.LatencyMs),
@@ -179,6 +206,9 @@ Storage Default
 <Value name="19"><Value>Ok</Value></Value>
 <Value name="20"><Value>ErrorText</Value></Value>
 <Value name="21"><Value>Channel</Value></Value>
+<Value name="22"><Value>Rounds</Value></Value>
+<Value name="23"><Value>Estimated</Value></Value>
+<Value name="24"><Value>FinalRoundTokens</Value></Value>
 </Data>
 <DataLocation>^AgenticInterop.Data.TokenUsageD</DataLocation>
 <DefaultData>TokenUsageDefaultData</DefaultData>

@@ -48,7 +48,7 @@ ClassMethod List(pResponse As %CSP.Response) As %Status
 
     ; ConnName is the SQL projection of the Connection property (CONNECTION
     ; is a reserved word); see AgenticInterop.Data.TokenUsage.
-    Set cols = "ID, Created, Username, Namespace, SessionId, AgentClass, ConnName, Model, PromptSnippet, PromptLength, Iterations, InputTokens, OutputTokens, TotalTokens, ToolTrace, ToolCount, LatencyMs, Ok, Channel"
+    Set cols = "ID, Created, Username, Namespace, SessionId, AgentClass, ConnName, Model, PromptSnippet, PromptLength, Iterations, InputTokens, OutputTokens, TotalTokens, Rounds, Estimated, FinalRoundTokens, ToolTrace, ToolCount, LatencyMs, Ok, Channel"
     Set where = " WHERE 1=1"
     If nsScope '= "all"    { Set where = where _ " AND Namespace = '" _ $tr(callerNs, "'", "") _ "'" }
     If mine                { Set where = where _ " AND Username = '" _ $tr($username, "'", "") _ "'" }
@@ -79,6 +79,9 @@ ClassMethod List(pResponse As %CSP.Response) As %Status
         Set row.inputTokens   = rs.%Get("InputTokens")
         Set row.outputTokens  = rs.%Get("OutputTokens")
         Set row.totalTokens   = rs.%Get("TotalTokens")
+        Set row.rounds        = rs.%Get("Rounds")
+        Set row.estimated     = rs.%Get("Estimated")
+        Set row.finalRoundTokens = rs.%Get("FinalRoundTokens")
         Set row.toolTrace     = rs.%Get("ToolTrace")
         Set row.toolCount     = rs.%Get("ToolCount")
         Set row.latencyMs     = rs.%Get("LatencyMs")
