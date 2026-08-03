@@ -46,7 +46,17 @@ Skills: `FHIRServer`, `FHIRR4`, `SDA`, `BulkFHIR`, `FHIRSQLBuilder` (`AgenticInt
 
 ## Status
 
-Version 1.2 ships. All build phases complete (Phase 0 through Phase 7), the 1.1 build-quality round (32 new tools across Transform and Production), and the 1.2 specification round: the InterSystems Integration Spec Questionnaire, which attacks the problem upstream of building — customers struggle to *specify* interfaces more than to build them. The agents operate under the Daniel persona -- a senior system integrator and healthcare interoperability architect who plans before building, searches before creating, and tests before declaring success.
+Version 1.5 ships. All build phases complete (Phase 0 through Phase 7), the 1.1 build-quality round (32 new tools across Transform and Production), the 1.2 specification round (the InterSystems Integration Spec Questionnaire, which attacks the problem upstream of building — customers struggle to *specify* interfaces more than to build them), and the 1.5 observability round: per-prompt and per-session token accounting, plus Python authoring for transformations and business hosts. The agents operate under the Daniel persona -- a senior system integrator and healthcare interoperability architect who plans before building, searches before creating, and tests before declaring success.
+
+## What's new in 1.5
+
+**Token accounting (Tokens tab).** Every chat prompt now records what it spent and which tools it ran. Three layers:
+
+- **Per-prompt log** — one row per turn: input/output tokens, tools called in order, latency, model, user, namespace. Searchable and filterable.
+- **True cumulative cost** — the `%AI` framework runs a whole tool loop inside one call and only reports the *final* round's usage, so a 6-tool build was undercounting by ~5×. The log reconstructs the real billed cost across every round from the transcript, anchored to the exact final-round figure, and marks reconstructed totals with a tilde.
+- **Per-session cards** — one card per conversation in the Claude Code panel style: cost, API time, active time, model mix, and a per-model input/output/cache breakdown. (Cache figures read 0 — the Bedrock connection does not use prompt caching; the card says so rather than faking them.)
+
+**Python authoring.** Two new agent skills so the builder can write in Python, not just ObjectScript: `dtl-python` (transformation expressions in Python, `language="python"` DTL) and `productions-python` (business hosts via Embedded Python worker methods, with PEX and the callback-must-be-ObjectScript constraint documented). Both were verified by compiling and running against a live instance.
 
 ## What's new in 1.2
 
@@ -91,8 +101,9 @@ Also new: `AgenticInterop.Agent.SpecExtractor`, the lean extraction agent behind
 - 122 tools across 7 domains: Production, Transform, Testing, Catalog, Monitoring, FHIR Server, Bulk FHIR
 - FHIR Server Audit panel: a left-nav menu in the FHIR Management app showing FHIR server storage (the per-endpoint repository databases via CORE `SYS.Database`, not the namespace DB), resource counts by type (CORE FHIR `_summary=count`), and ingestion performance (duration, resources/sec, bottlenecks) — backed by `GET /api/agentic/fhir/audit`
 - Load FHIR Data menu: a left-nav menu in the FHIR Management app to upload FHIR JSON files to a server-readable staging folder (`mgr/Temp/agentic-fhir-upload/`), so the FHIR Assistant can then load them into a FHIR server with `LoadFHIRDirectory` — backed by `POST/GET/DELETE /api/agentic/fhir/upload`
+- Token accounting: per-prompt log and per-session cards (cost, API/active time, model mix, per-model input/output/cache breakdown), with true cumulative cost reconstructed across every model round — the framework only reports the final round
 - Three agents: Agentic Integration Builder (generalist builder), FHIR Specialist (FHIR platform), and SpecExtractor (prose-to-schema extraction for the questionnaire)
-- 16 domain skills covering Productions, DTL, BPL, Routing Rules, HL7v2, FHIR R4, FHIR Interop (production-to-FHIR-server connectivity), FHIR Server, Bulk FHIR, FHIR SQL Builder, SDA, REST, ESB, X12/HIPAA, CDA/C-CDA, and Adapters
+- 19 domain skills covering Productions (ObjectScript and Python), DTL (ObjectScript and Python), BPL, Routing Rules, HL7v2, FHIR R4, FHIR Interop (production-to-FHIR-server connectivity), FHIR Server, Bulk FHIR, FHIR SQL Builder, SDA, REST, ESB, X12/HIPAA, CDA/C-CDA, Adapters, and Health Connect version downgrade checks
 - FHIR Specialist agent: a dedicated FHIR platform agent (FHIR Server MCP + Bulk FHIR MCP + Catalog, with the FHIR Server / FHIR R4 / SDA / Bulk FHIR / FHIR SQL Builder skills) alongside the generalist Agentic Integration Builder (AIB) agent
 - Chatbot configuration layer: bind each chatbot surface to an agent in the admin "Chatbots" tab (the chat resolves its agent from the chatbot key at request time — no redeploy). Ships an Interop chatbot (Agentic Integration Builder, in the Interop Editor) and a FHIR Management chatbot (FHIR Specialist, a launcher button injected into the header of the shipped `/csp/fhir-management` FHIR Server Management page)
 - Confirmation gate on every mutating tool -- create, update, delete, compile, start, stop all require explicit user approval before executing
@@ -229,6 +240,7 @@ The admin UI provides configuration pages for all entities. No code edits requir
 | Chatbots | Bind each chatbot surface to an %AI.Agent (key → agent + host page + title); ships the Interop and FHIR Management chatbots |
 | Catalogs | Vector catalog rebuild, source namespace selection, test search, browse entries |
 | Transforms | Field-level mapping explorer (Transformation and Mapping Catalog) across HL7 v2, SDA3, FHIR R4, CDA, X12 |
+| Tokens | Token and tool spend — per-session cards (cost, API/active time, model mix, per-model breakdown) and a per-prompt log with true cumulative cost |
 | Audit | Searchable log of every API request with method, path, status, duration, user, namespace |
 
 ## Transformation and Mapping Catalog (Transforms tab)
@@ -265,25 +277,29 @@ The agent's capabilities are organized into 7 Tool classes (122 tools total). Ea
 
 ![Skill detail](docs/img/08_skill_detail.png)
 
-Sixteen domain skills teach the agents IRIS-specific concepts. Each skill is a `%AI.Agent.Skill` subclass with markdown INSTRUCTIONS distilled from InterSystems documentation. The FHIR Assistant draws on the FHIRServer, FHIRR4, SDA, BulkFHIR, and FHIRSQLBuilder skills.
+Nineteen domain skills teach the agents IRIS-specific concepts. Each skill is a `%AI.Agent.Skill` subclass with markdown INSTRUCTIONS distilled from InterSystems documentation. The FHIR Assistant draws on the FHIRServer, FHIRR4, SDA, BulkFHIR, and FHIRSQLBuilder skills.
 
 | Skill | Domain |
 |---|---|
 | Productions | Production anatomy, BS/BP/BO patterns, lifecycle management |
 | DTL | DTL syntax, foreach, subtransforms, lookup tables, virtual documents |
+| DTLPython | **(new)** DTL transformations whose expressions are Python — `language="python"`, `<pyFromImport>`, regex/date/hashing/library work, verified on a live instance |
 | BPL | BPL activities, compensation handlers, async patterns |
 | RoutingRules | Rule sets, constraints, when-conditions, dead-letter handling |
 | HL7v2 | Message types, segments, ACK semantics, schema navigation |
 | FHIRR4 | Resources, references, search parameters, R4 bundles |
+| FHIRInterop | Production-side FHIR connectivity: accept FHIR into a production and send FHIR out over HTTP (SSL + OAuth 2.0), HL7-to-SDA-to-FHIR pipeline, interop FHIR client |
 | FHIRServer | FHIR R4 server build/admin: discover foundation namespace, endpoints, config, metadata packages, resource CRUD/search/$validate, CapabilityStatement, guarded provisioning |
 | BulkFHIR | Bulk FHIR Coordinator config + `$export` (system/Patient/Group), SMART Backend Services, fetch/storage adapters, async REST flow |
 | FHIRSQLBuilder | Project FHIR data into relational SQL (Analysis → Spec → Projection), columns/subtables/filters, query over SQL/JDBC/ODBC |
 | SDA | SDA3 model as transformation hub, HL7-to-SDA-to-FHIR pipeline |
+| Productions (Python) | **(new)** Business hosts in Python — Embedded Python worker methods behind ObjectScript callbacks, PEX external language servers, and the callback-must-be-ObjectScript constraint that decides the approach |
 | RestInProductions | REST services and operations inside productions |
 | ESBPattern | Using a production as an Enterprise Service Bus |
 | X12 | HIPAA EDI transactions, envelope structures, schemas |
 | CDA | CDA/C-CDA documents, XSLT pipelines, SDA conversion |
 | Adapters | File/TCP/HTTP/REST/FTP/SQL/MQTT/SOAP adapter selection and configuration |
+| Downgrade | Whether code authored on a newer Health Connect version breaks when promoted to an older one (Cloud BASE/UAT → LIVE) |
 
 ## Vector Catalogs
 
