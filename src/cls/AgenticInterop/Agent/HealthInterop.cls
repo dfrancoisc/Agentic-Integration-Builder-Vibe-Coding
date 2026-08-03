@@ -43,7 +43,7 @@ Parameter MCPS = "AgenticInterop.MCP.Production,AgenticInterop.MCP.Transform,Age
 /// CSV of Skill class names (AgenticInterop.Skill.Base subclasses) that
 /// this agent attaches as sub-agent tools. UI-editable. SkillLoader reads
 /// this parameter (falls back to its own DEFAULTSKILLS for compatibility).
-Parameter SKILLS = "AgenticInterop.Skill.Productions,AgenticInterop.Skill.DTL,AgenticInterop.Skill.DTLPython,AgenticInterop.Skill.ProductionsPython,AgenticInterop.Skill.BPL,AgenticInterop.Skill.RoutingRules,AgenticInterop.Skill.HL7v2,AgenticInterop.Skill.FHIRR4,AgenticInterop.Skill.FHIRInterop,AgenticInterop.Skill.SDA,AgenticInterop.Skill.RestInProductions,AgenticInterop.Skill.ESBPattern,AgenticInterop.Skill.X12,AgenticInterop.Skill.CDA,AgenticInterop.Skill.Adapters";
+Parameter SKILLS = "AgenticInterop.Skill.Productions,AgenticInterop.Skill.DTL,AgenticInterop.Skill.DTLPython,AgenticInterop.Skill.ProductionsPython,AgenticInterop.Skill.BPL,AgenticInterop.Skill.RoutingRules,AgenticInterop.Skill.HL7v2,AgenticInterop.Skill.FHIRR4,AgenticInterop.Skill.FHIRInterop,AgenticInterop.Skill.SDA,AgenticInterop.Skill.RestInProductions,AgenticInterop.Skill.ESBPattern,AgenticInterop.Skill.X12,AgenticInterop.Skill.CDA,AgenticInterop.Skill.Adapters,AgenticInterop.Skill.Downgrade";
 
 XData INSTRUCTIONS [ MimeType = "text/markdown" ]
 {

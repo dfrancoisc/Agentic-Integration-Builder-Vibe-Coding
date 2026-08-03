@@ -306,7 +306,7 @@ async function loadList() {
         } else if (state.tab === 'audit') {
             await loadAuditList();
         } else if (state.tab === 'tokens') {
-            await loadTokenList();
+            await loadTokens();
         } else if (state.tab === 'tools') {
             // Tools view: flatten across all toolsets that the registry knows
             const data = await get('/registry/toolsets');
@@ -1973,11 +1973,164 @@ function renderAuditList(rows, kinds) {
 // answers "how much has this cost" at a glance. On this project InputTokens
 // dwarfs OutputTokens because the agent's tool + skill catalog is re-sent as
 // context every round — the log is the evidence for trimming bound tools.
-const tokenState = { q: '', mine: false, toolsOnly: false, channel: '', ns: '', limit: 100 };
+const tokenState = { view: 'sessions', q: '', mine: false, toolsOnly: false, channel: '', ns: '', limit: 100 };
 
 function fmtInt(n) {
     n = Number(n) || 0;
     return n.toLocaleString('en-US');
+}
+
+// Compact token count in the Claude session-panel style: 2.0M, 129.1k, 392.
+function fmtTok(n) {
+    n = Number(n) || 0;
+    if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
+    if (n >= 1e3) return (n / 1e3).toFixed(1) + 'k';
+    return String(n);
+}
+
+// Duration like the panel: "7m 22s", "33s".
+function fmtDur(s) {
+    s = Math.round(Number(s) || 0);
+    const m = Math.floor(s / 60), r = s % 60;
+    return m > 0 ? (m + 'm ' + r + 's') : (r + 's');
+}
+
+// Route the Tokens tab to the session cards (default) or the per-prompt table.
+async function loadTokens() {
+    if (tokenState.view === 'prompts') return loadTokenList();
+    return loadTokenSessions();
+}
+
+// A small two-button switch shared by both views.
+function tokenViewSwitch() {
+    return `
+        <div class="seg" id="tok-view" style="margin-bottom:12px;">
+            <button type="button" data-view="sessions" class="${tokenState.view === 'sessions' ? 'on' : ''}">Sessions</button>
+            <button type="button" data-view="prompts" class="${tokenState.view === 'prompts' ? 'on' : ''}">Prompts</button>
+        </div>`;
+}
+function wireTokenViewSwitch(root) {
+    const seg = (root || document).querySelector('#tok-view');
+    if (!seg) return;
+    seg.querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
+        tokenState.view = b.dataset.view;
+        loadTokens();
+    }));
+}
+
+// Session summary cards — one per conversation, in the Claude Code panel
+// layout. Cost/API/Active/model-mix up top, a per-model Input/Output/Cache
+// breakdown below. Cache figures are 0 on the Bedrock connection (no prompt
+// caching); the note says so rather than hiding the rows.
+async function loadTokenSessions() {
+    const list = $('list');
+    list.innerHTML = '<div class="empty-state">Loading sessions…</div>';
+    try {
+        const p = new URLSearchParams();
+        p.set('limit', '50');
+        if (tokenState.mine) p.set('mine', '1');
+        if (tokenState.ns === 'all') p.set('ns', 'all');
+        const data = await get('/tokens/sessions?' + p.toString());
+        renderTokenSessions(data.sessions || [], data.namespace || '');
+    } catch (e) {
+        list.innerHTML = `<div class="empty-state">Failed: ${escapeHtml(e.message)}</div>`;
+    }
+}
+
+function renderTokenSessions(sessions, ns) {
+    const list = $('list');
+    list.innerHTML = '';
+    const wrap = document.createElement('div');
+    wrap.className = 'audit-wrap';
+
+    const controls = `
+        <div class="audit-controls" style="align-items:center;">
+            ${tokenViewSwitch()}
+            <span class="spacer"></span>
+            <div class="audit-control">
+                <label>Scope</label>
+                <select id="f-tok-ns">
+                    <option value="" ${tokenState.ns !== 'all' ? 'selected' : ''}>this namespace</option>
+                    <option value="all" ${tokenState.ns === 'all' ? 'selected' : ''}>all namespaces</option>
+                </select>
+            </div>
+            <div class="audit-control">
+                <label>Mine only</label>
+                <select id="f-tok-mine">
+                    <option value="false" ${!tokenState.mine ? 'selected' : ''}>no</option>
+                    <option value="true"  ${tokenState.mine ? 'selected' : ''}>yes</option>
+                </select>
+            </div>
+            <button id="f-tok-refresh" class="primary" type="button">Refresh</button>
+        </div>`;
+
+    if (!sessions.length) {
+        wrap.innerHTML = controls + '<div class="empty-state">No sessions yet. Each conversation in the chat becomes a session here.</div>';
+        list.appendChild(wrap);
+        wireTokenSessionControls(wrap);
+        return;
+    }
+
+    const cards = sessions.map(s => {
+        const est = s.estimated ? '~' : '';
+        // Model mix by token share, most-used first.
+        const totalTok = s.models.reduce((a, m) => a + (m.inputTokens + m.outputTokens), 0) || 1;
+        const mix = s.models.slice().sort((a, b) =>
+            (b.inputTokens + b.outputTokens) - (a.inputTokens + a.outputTokens));
+        const mixRow = mix.slice(0, 2).map(m => {
+            const pct = Math.round(((m.inputTokens + m.outputTokens) / totalTok) * 100);
+            return `<div class="tok-stat"><span class="dim">${escapeHtml(shortModel(m.model))}</span><span>${pct}%</span></div>`;
+        }).join('');
+
+        const breakdowns = s.models.map(m => `
+            <div class="tok-break">
+                <div class="tok-break-head"><span>Breakdown</span><span class="dim">${escapeHtml(shortModel(m.model))}</span></div>
+                <div class="tok-break-row"><span class="dim">Input</span><span>${fmtTok(m.inputTokens)}</span></div>
+                <div class="tok-break-row"><span class="dim">Output</span><span>${fmtTok(m.outputTokens)}</span></div>
+                <div class="tok-break-row"><span class="dim">Cache read</span><span>${fmtTok(m.cacheReadTokens)}</span></div>
+                <div class="tok-break-row"><span class="dim">Cache write</span><span>${fmtTok(m.cacheWriteTokens)}</span></div>
+            </div>`).join('');
+
+        return `
+        <div class="tok-card">
+            <div class="tok-card-title" title="${escapeAttr(s.title || '')}">${escapeHtml(s.title || 'Untitled conversation')}</div>
+            <div class="tok-grid">
+                <div class="tok-stat"><span class="dim">Cost</span><span>${est}$${(Number(s.costUsd) || 0).toFixed(2)}</span></div>
+                <div class="tok-stat"><span class="dim">API</span><span>${fmtDur(s.apiSecs)}</span></div>
+                <div class="tok-stat"><span class="dim">Active</span><span>${fmtDur(s.activeSecs)}</span></div>
+                <div class="tok-stat"><span class="dim">Prompts</span><span>${fmtInt(s.prompts)}</span></div>
+                ${mixRow}
+                <div class="tok-stat"><span class="dim">Rounds</span><span>${fmtInt(s.rounds)}</span></div>
+                <div class="tok-stat"><span class="dim">Tools</span><span>${fmtInt(s.tools)}</span></div>
+                <div class="tok-stat"><span class="dim">Cache hit</span><span>${s.cacheHitPct}%</span></div>
+            </div>
+            ${breakdowns}
+        </div>`;
+    }).join('');
+
+    wrap.innerHTML = controls
+        + `<div class="tok-note dim">Cost is derived from public list prices and the measured token counts; a tilde marks a session whose totals include a reconstructed multi-round estimate. Cache figures are 0 because the Bedrock connection does not use prompt caching.</div>`
+        + `<div class="tok-cards">${cards}</div>`;
+    list.appendChild(wrap);
+    wireTokenSessionControls(wrap);
+}
+
+function shortModel(m) {
+    m = m || '';
+    // global.anthropic.claude-sonnet-4-20250514-v1:0 -> "claude-sonnet-4"
+    const seg = m.split('.').pop() || m;
+    const mm = seg.match(/(claude-[a-z]+-[0-9.]+|sonnet|opus|haiku)/i);
+    return mm ? mm[1] : (seg.length > 24 ? seg.slice(0, 24) : seg);
+}
+
+function wireTokenSessionControls(root) {
+    wireTokenViewSwitch(root);
+    const refresh = root.querySelector('#f-tok-refresh');
+    if (refresh) refresh.addEventListener('click', () => {
+        tokenState.ns = root.querySelector('#f-tok-ns').value;
+        tokenState.mine = (root.querySelector('#f-tok-mine').value === 'true');
+        loadTokenSessions();
+    });
 }
 
 async function loadTokenList() {
@@ -2004,6 +2157,7 @@ function renderTokenList(rows, summary, ns) {
     const wrap = document.createElement('div');
     wrap.className = 'audit-wrap';
     wrap.innerHTML = `
+        ${tokenViewSwitch()}
         <div class="audit-controls">
             <div class="audit-control" style="flex:1 1 220px;">
                 <label>Search prompt / tool / user</label>
@@ -2140,6 +2294,7 @@ function renderTokenList(rows, summary, ns) {
         loadTokenList();
     });
     $('f-tok-q').addEventListener('keydown', e => { if (e.key === 'Enter') $('f-tok-refresh').click(); });
+    wireTokenViewSwitch();
 }
 
 async function renderToolList() {

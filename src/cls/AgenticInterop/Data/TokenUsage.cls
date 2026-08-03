@@ -29,8 +29,14 @@ Property Username As %String(MAXLEN = 128);
 /// The caller's working namespace (from X-IRIS-Namespace), NOT $namespace.
 Property Namespace As %String(MAXLEN = 128);
 
-/// Chat session / observer id, so a whole conversation's turns group.
+/// Per-TURN observer id (fresh each send) — identifies one turn's live feed.
 Property SessionId As %String(MAXLEN = 128);
+
+/// Stable per-CONVERSATION id (the chat UI's currentConvId), constant across
+/// every turn of one conversation. This is what the session summary groups on —
+/// SessionId changes every turn and cannot group a conversation. Falls back to
+/// SessionId for callers that send no conversation id (e.g. the raw API).
+Property ConversationId As %String(MAXLEN = 128);
 
 Property Job As %Integer;
 
@@ -86,6 +92,14 @@ Property Estimated As %Boolean [ InitialExpression = 0 ];
 /// and equals TotalTokens when Estimated=0.
 Property FinalRoundTokens As %Integer [ InitialExpression = 0 ];
 
+/// Prompt-cache tokens read / written (provider's cache_read_tokens /
+/// cache_creation_tokens). Zero on the Bedrock connection, which does not use
+/// prompt caching; stored so the session breakdown is correct if a caching
+/// provider is ever configured.
+Property CacheReadTokens As %Integer [ InitialExpression = 0 ];
+
+Property CacheWriteTokens As %Integer [ InitialExpression = 0 ];
+
 /// Comma-separated tool names in fire order, exactly as the Monitor saw
 /// them. Empty when the turn called no tools.
 Property ToolTrace As %String(MAXLEN = 4000);
@@ -123,6 +137,9 @@ ClassMethod Record(pProps As %DynamicObject) As %String
         Set o.Username     = $classmethod(util, "DObj", pProps, "username", $username)
         Set o.Namespace    = $classmethod(util, "DObj", pProps, "namespace", $namespace)
         Set o.SessionId    = $classmethod(util, "DObj", pProps, "sessionId")
+        ; Group key: the conversation id when supplied, else the turn's session id.
+        Set convId = $classmethod(util, "DObj", pProps, "conversationId")
+        Set o.ConversationId = $select(convId '= "": convId, 1: o.SessionId)
         Set o.Job          = $job
         Set o.AgentClass   = $classmethod(util, "DObj", pProps, "agentClass")
         Set o.Connection   = $classmethod(util, "DObj", pProps, "connection")
@@ -137,6 +154,8 @@ ClassMethod Record(pProps As %DynamicObject) As %String
         Set o.Rounds       = +$classmethod(util, "DObj", pProps, "rounds", 1)
         Set o.Estimated    = +$classmethod(util, "DObj", pProps, "estimated", 0)
         Set o.FinalRoundTokens = +$classmethod(util, "DObj", pProps, "finalRoundTokens", 0)
+        Set o.CacheReadTokens  = +$classmethod(util, "DObj", pProps, "cacheReadTokens", 0)
+        Set o.CacheWriteTokens = +$classmethod(util, "DObj", pProps, "cacheWriteTokens", 0)
         Set trace          = $classmethod(util, "DObj", pProps, "toolTrace")
         Set o.ToolTrace    = $extract(trace, 1, 4000)
         Set o.ToolCount    = $select(trace="":0, 1:$length(trace, ","))
@@ -209,6 +228,9 @@ Storage Default
 <Value name="22"><Value>Rounds</Value></Value>
 <Value name="23"><Value>Estimated</Value></Value>
 <Value name="24"><Value>FinalRoundTokens</Value></Value>
+<Value name="25"><Value>ConversationId</Value></Value>
+<Value name="26"><Value>CacheReadTokens</Value></Value>
+<Value name="27"><Value>CacheWriteTokens</Value></Value>
 </Data>
 <DataLocation>^AgenticInterop.Data.TokenUsageD</DataLocation>
 <DefaultData>TokenUsageDefaultData</DefaultData>

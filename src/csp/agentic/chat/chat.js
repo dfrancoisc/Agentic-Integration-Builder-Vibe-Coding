@@ -989,10 +989,16 @@ async function send(message, attachments) {
         if (observerChannel) {
             try { observerChannel.postMessage({ type: 'session', id: observerId }); } catch {}
         }
+        // Stable per-conversation id so the Tokens tab can group a whole
+        // conversation's turns into one session card. observerId is fresh
+        // every send (it identifies one live feed); currentConvId is the
+        // conversation. Mint it now if this is the first turn of a new chat
+        // so even turn 1 carries it — persistConversation reuses the same id.
+        if (!currentConvId) currentConvId = genConvId();
         // Build a fresh body each retry — FormData (when attachments) is a
         // one-shot stream, so it must be reconstructed each time fetch
         // consumes one. The JSON path is also rebuilt for consistency.
-        const payload = { message, history, approvedTokens: tokensThisTurn, observerId, chatbot: CHATBOT };
+        const payload = { message, history, approvedTokens: tokensThisTurn, observerId, conversationId: currentConvId, chatbot: CHATBOT };
         const bodyMaker = () => {
             if (hasAttachments) {
                 const fd = new FormData();

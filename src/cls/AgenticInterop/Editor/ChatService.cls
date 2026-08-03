@@ -166,9 +166,11 @@ ClassMethod Chat(pResponse As %CSP.Response, pBodyStream) As %Status
             ; Reconstruct the TRUE cumulative cost from the transcript — the
             ; framework only exposes the final round's usage, so anchor on the
             ; final response's exact prompt/completion and sum every round.
-            Set fpTok = 0, fcTok = 0
+            Set fpTok = 0, fcTok = 0, crTok = 0, cwTok = 0
             Try { Set fpTok = +response.Usage."prompt_tokens" } Catch  {}
             Try { Set fcTok = +response.Usage."completion_tokens" } Catch  {}
+            Try { Set crTok = +response.Usage."cache_read_tokens" } Catch  {}
+            Try { Set cwTok = +response.Usage."cache_creation_tokens" } Catch  {}
             Set recon = ##class(AgenticInterop.Agent.Monitor).ReconstructUsage(session, fpTok, fcTok)
             Set out.inputTokens = recon.estInput
             Set out.outputTokens = recon.estOutput
@@ -184,6 +186,7 @@ ClassMethod Chat(pResponse As %CSP.Response, pBodyStream) As %Status
                     "channel":      "chat",
                     "namespace":    (##class(AgenticInterop.Editor.SpecResponseService).RequestNamespace()),
                     "sessionId":    ($get(%agenticChatSessionId)),
+                    "conversationId": ($classmethod(util, "DObj", req, "conversationId")),
                     "agentClass":   (agentClass),
                     "connection":   (out.connection),
                     "model":        (agent.Model),
@@ -195,6 +198,8 @@ ClassMethod Chat(pResponse As %CSP.Response, pBodyStream) As %Status
                     "rounds":       (recon.rounds),
                     "estimated":    (recon.estimated),
                     "finalRoundTokens": (fpTok + fcTok),
+                    "cacheReadTokens":  (crTok),
+                    "cacheWriteTokens": (cwTok),
                     "toolTrace":    (monitor.ToolCallTrace),
                     "latencyMs":    (out.latencyMs),
                     "ok":           1
@@ -761,9 +766,11 @@ ClassMethod ChatStream(pResponse As %CSP.Response, pBodyStream) As %Status
         Set done.toolTrace = monitor.ToolCallTrace
         ; Reconstruct true cumulative cost from the transcript (final round's
         ; exact usage is the anchor; every earlier round is added back).
-        Set fpTok = 0, fcTok = 0
+        Set fpTok = 0, fcTok = 0, crTok = 0, cwTok = 0
         Try { Set fpTok = +response.Usage."prompt_tokens" } Catch  {}
         Try { Set fcTok = +response.Usage."completion_tokens" } Catch  {}
+        Try { Set crTok = +response.Usage."cache_read_tokens" } Catch  {}
+        Try { Set cwTok = +response.Usage."cache_creation_tokens" } Catch  {}
         Set recon = ##class(AgenticInterop.Agent.Monitor).ReconstructUsage(session, fpTok, fcTok)
         Set done.inputTokens = recon.estInput
         Set done.outputTokens = recon.estOutput
@@ -779,6 +786,7 @@ ClassMethod ChatStream(pResponse As %CSP.Response, pBodyStream) As %Status
                 "channel":      "stream",
                 "namespace":    (##class(AgenticInterop.Editor.SpecResponseService).RequestNamespace()),
                 "sessionId":    ($get(%agenticChatSessionId)),
+                "conversationId": ($classmethod(util, "DObj", req, "conversationId")),
                 "agentClass":   (agentClass),
                 "connection":   (effectiveName),
                 "model":        (agent.Model),
@@ -790,6 +798,8 @@ ClassMethod ChatStream(pResponse As %CSP.Response, pBodyStream) As %Status
                 "rounds":       (recon.rounds),
                 "estimated":    (recon.estimated),
                 "finalRoundTokens": (fpTok + fcTok),
+                "cacheReadTokens":  (crTok),
+                "cacheWriteTokens": (cwTok),
                 "toolTrace":    (monitor.ToolCallTrace),
                 "latencyMs":    (done.latencyMs),
                 "ok":           1

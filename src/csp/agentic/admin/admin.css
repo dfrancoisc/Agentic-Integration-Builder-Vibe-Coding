@@ -1156,3 +1156,29 @@ code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
   color: var(--muted);
   font-size: 12px;
 }
+
+/* ---- Tokens tab: session summary cards (Claude-panel style) ---- */
+.dim { color: var(--muted); }
+
+/* view toggle */
+.seg { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+.seg button { background: transparent; color: var(--muted); border: 0; padding: 5px 14px; font: inherit; cursor: pointer; }
+.seg button + button { border-left: 1px solid var(--border); }
+.seg button.on { background: var(--primary); color: #fff; }
+
+.tok-note { font-size: 12px; margin: 4px 2px 14px; line-height: 1.5; max-width: 900px; }
+
+.tok-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px; }
+.tok-card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px; }
+.tok-card-title { color: var(--text); font-weight: 600; margin-bottom: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.tok-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px 14px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+.tok-stat { display: flex; flex-direction: column; gap: 2px; }
+.tok-stat .dim { font-size: 12px; }
+.tok-stat span:last-child { color: var(--text); font-size: 15px; }
+
+.tok-break { margin-top: 12px; }
+.tok-break-head { display: flex; justify-content: space-between; color: var(--text); font-weight: 600; margin-bottom: 6px; }
+.tok-break-head .dim { font-weight: normal; }
+.tok-break-row { display: flex; justify-content: space-between; padding: 3px 0; }
+.tok-break-row span:last-child { color: var(--text); }

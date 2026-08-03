@@ -126,6 +126,7 @@ XData UrlMap [ XMLNamespace = "http://www.intersystems.com/urlmap" ]
 
     <!-- Tokens log: per-prompt token + tool spend, one row per chat turn. -->
     <Route Url="/tokens"                        Method="GET"    Call="TokenUsageList" />
+    <Route Url="/tokens/sessions"               Method="GET"    Call="TokenUsageSessions" />
 
     <!-- Transformation Catalog: read-only inventory of shipped HS.*
          transformation classes organized by pipeline direction. -->
@@ -975,6 +976,11 @@ ClassMethod AuditList() As %Status
 ClassMethod TokenUsageList() As %Status
 {
     Quit ##class(AgenticInterop.Editor.TokenUsageService).List(%response)
+}
+
+ClassMethod TokenUsageSessions() As %Status
+{
+    Quit ##class(AgenticInterop.Editor.TokenUsageService).Sessions(%response)
 }
 
 ClassMethod AuditKinds() As %Status
